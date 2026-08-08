@@ -113,8 +113,15 @@ class ContentSettings:
     release_check_url: str = ""
     release_page_url: str = ""  # where "View the release" points (optional)
     release_check_ttl_hours: float = 6.0
-    # Age at which the installed yt-dlp is called out as stale (D-20). 0 = off.
-    ytdlp_max_age_days: int = 30
+    # Age at which the installed yt-dlp is called out as stale (D-20).
+    # 0 = off — the default. Age alone cannot tell "stale" from "newest
+    # available": yt-dlp's release cadence is irregular, so a freshly built
+    # image carrying the pinned, most recent upstream release can already be
+    # "35 days old" and the banner would nag every fresh install about a
+    # situation nobody can improve. Upstream freshness is the maintainer's
+    # loop (the weekly base-image check files an issue); users hear about it
+    # through Content releases. Operators who rebuild rarely can opt back in.
+    ytdlp_max_age_days: int = 0
     # Server-side credentials: id -> cookies file path. Sources reference these
     # by `auth.credential_id`; the secret content never enters a request.
     credentials: dict[str, Path] = field(default_factory=dict)
@@ -434,7 +441,8 @@ def describe_environment(
             "notifications",
             False,
             str(settings.ytdlp_max_age_days),
-            "Age at which the installed yt-dlp is flagged as stale (0 = off).",
+            "Age at which the installed yt-dlp is flagged as stale (0 = off, "
+            "the default — age cannot tell stale from newest-available).",
         ),
     ]
     return [
@@ -524,5 +532,5 @@ def settings_from_env() -> ContentSettings:
         release_check_ttl_hours=_to_float(
             os.getenv("CONTENT_RELEASE_CHECK_TTL_HOURS"), 6.0
         ),
-        ytdlp_max_age_days=_to_int(os.getenv("CONTENT_YTDLP_MAX_AGE_DAYS"), 30),
+        ytdlp_max_age_days=_to_int(os.getenv("CONTENT_YTDLP_MAX_AGE_DAYS"), 0),
     )

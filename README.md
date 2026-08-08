@@ -233,11 +233,12 @@ language preferences, cookie credentials, optional LLM/STT runners, CORS, and
 notifications. See [deployment](docs/operations/deployment.md) for configuration,
 health checks, authenticated sources, data layout, and production guidance.
 
-The web apps surface operational notices as dismissible banners: an installed
-yt-dlp old enough that YouTube may break it, UI and backend images running
-different versions of Content, and — if you opt in to the release check — a
-newer release being available. None of these involve an outbound call unless
-you configure one.
+The web apps surface operational notices as dismissible banners: UI and
+backend images running different versions of Content, a newer Content release
+being available (if you opt in to the release check), and — optionally — an
+installed yt-dlp older than a threshold you choose. None of these involve an
+outbound call unless you configure one, and a fresh install shows none of
+them.
 
 The V1 API has no built-in authentication. Keep it on a trusted network or put
 an authenticating reverse proxy in front of any externally reachable instance.

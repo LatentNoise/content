@@ -10,9 +10,14 @@ Two sources today:
   ``CONTENT_RELEASE_CHECK_URL`` (GitHub's and Forgejo's release APIs share the
   ``tag_name`` shape). Only *major/minor* releases notify: a patch bump would
   turn the banner into noise, and a banner people ignore is worse than none.
-* **yt-dlp is stale** — YouTube breaks old builds quickly, and the symptom is an
-  opaque ``analysis_failed`` / "No video formats found" (D-20). Saying so up
-  front turns a confusing failure into a known one.
+* **yt-dlp is stale** — opt-in (``CONTENT_YTDLP_MAX_AGE_DAYS``, off by
+  default). YouTube breaks old builds quickly, and the symptom is an opaque
+  ``analysis_failed`` / "No video formats found" (D-20) — but *age* cannot
+  tell "stale" from "newest available" (yt-dlp releases irregularly, so the
+  freshest possible image may already be weeks old). Off by default so a
+  fresh install never opens on an unactionable warning; upstream freshness
+  is the maintainer's loop, and users hear about it through Content
+  releases.
 
 Everything here is **failure-silent by contract**: an unreachable, slow, rate
 limited or malformed release endpoint yields *no* notification, never an error.
@@ -183,7 +188,9 @@ def ytdlp_notification(
         message=(
             f"The installed yt-dlp ({tool_version}) is {age} days old. YouTube "
             "breaks older builds quickly — the symptom is an analysis that fails "
-            "with 'No video formats found'. Rebuild the backend image to update it."
+            "with 'No video formats found'. Updates ship with Content releases; "
+            "to refresh this image yourself, rebuild with "
+            "--build-arg YTDLP_SELF_UPDATE=true."
         ),
     )
 

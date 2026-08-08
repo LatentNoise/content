@@ -161,6 +161,21 @@ def test_ytdlp_staleness_comes_from_the_registry(tmp_path, monkeypatch):
     assert [n["id"] for n in notes] == ["ytdlp-stale:2026.01.01"]
 
 
+def test_the_staleness_check_is_off_by_default(tmp_path):
+    """A fresh install must never open on the yt-dlp age warning: age alone
+    cannot tell "stale" from "newest available" (yt-dlp releases irregularly,
+    and the image pins the latest), so an unactionable banner would greet
+    every new user and invite needless bug reports. The check is opt-in."""
+
+    class FakeRegistry:
+        def describe(self):
+            return [{"name": "ytdlp", "tool_version": "2020.01.01"}]  # ancient
+
+    settings = _settings(tmp_path)  # defaults: no CONTENT_YTDLP_MAX_AGE_DAYS
+    notes = notif.build_notifications(settings, FakeRegistry(), today=date(2026, 8, 8))
+    assert notes == []
+
+
 def test_a_broken_registry_does_not_break_notifications(tmp_path):
     class BadRegistry:
         def describe(self):
