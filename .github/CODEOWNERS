@@ -1,0 +1,8 @@
+# Content is maintained by one person and accepts no code contributions
+# (CONTRIBUTING.md). Pull requests are disabled in the repository settings.
+#
+# This file records ownership explicitly and, should pull requests ever be
+# re-enabled, requests the maintainer's review on every path. On its own it
+# does not block a merge — that requires a branch protection rule requiring
+# review from Code Owners.
+* @YannOrieult

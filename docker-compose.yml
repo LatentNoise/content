@@ -1,0 +1,140 @@
+# Content — multi-container deployment.
+#
+#   docker compose up --build
+#
+# - content   : back-end API + embedded worker (ADR 0007), :8010
+# - frontend  : Streamlit client of the API, :8501
+# Data (SQLite DB, jobs, artifacts, analysis cache) persists in ./data.
+services:
+  content:
+    build:
+      # Repo-root context so LICENSE/NOTICE ship inside the image (AGPL §4),
+      # matching the UI images.
+      context: .
+      dockerfile: apps/backend/Dockerfile
+      args:
+        # Optional speech-to-text runner (transcript/summary from audio).
+        # Heavy wheels — opt-in: CONTENT_INSTALL_STT=true in .env, then rebuild.
+        INSTALL_STT: ${CONTENT_INSTALL_STT:-false}
+    container_name: content
+    environment:
+      - TZ=${TZ:-Europe/Paris}
+      - CONTENT_DATA_DIR=/data
+      - CONTENT_DB_PATH=/data/content.db
+      - CONTENT_MAX_CONCURRENT_JOBS=${CONTENT_MAX_CONCURRENT_JOBS:-2}
+      - CONTENT_STEP_TIMEOUT_SECONDS=${CONTENT_STEP_TIMEOUT_SECONDS:-3600}
+      - CONTENT_ALLOW_PRIVATE_NETWORKS=${CONTENT_ALLOW_PRIVATE_NETWORKS:-false}
+      # playground/input is the only root allowed for file sources.
+      - CONTENT_ALLOWED_INPUT_ROOTS=/input
+      # Delivery library: outputs are also dropped under /output/<folder>/<name>.
+      - CONTENT_DELIVERY_DIR=/output
+      # Deliver by default (ADR 0018): every artifact lands in the library
+      # under its display name unless the request says otherwise
+      # (delivery.mode: "none"). Off in the bare engine, on here.
+      - CONTENT_DELIVERY_DEFAULT=${CONTENT_DELIVERY_DEFAULT:-true}
+      # Storage roots + cache switch (docs/storage.md, ADR 0009). Enabled here:
+      # the controlled HomeTube use case reuses the downloaded video across
+      # content generations, and keeps the URL analysis JSON for 3 days.
+      - CONTENT_CACHE_ENABLED=${CONTENT_CACHE_ENABLED:-true}
+      - CONTENT_ANALYSIS_TTL_HOURS=${CONTENT_ANALYSIS_TTL_HOURS:-72}
+      # LLM daemon on the host (summaries); empty model = first installed.
+      # Cloud LLM summarizers (optional): a token enables Anthropic/OpenAI as a
+      # text.summarize runner (privacy-aware). Secrets — pass via the shell/.env.
+      - CONTENT_ANTHROPIC_API_KEY=${CONTENT_ANTHROPIC_API_KEY:-}
+      - CONTENT_ANTHROPIC_MODEL=${CONTENT_ANTHROPIC_MODEL:-claude-sonnet-5}
+      - CONTENT_OPENAI_API_KEY=${CONTENT_OPENAI_API_KEY:-}
+      - CONTENT_OPENAI_MODEL=${CONTENT_OPENAI_MODEL:-gpt-4o-mini}
+      - CONTENT_OLLAMA_URL=${CONTENT_OLLAMA_URL:-http://host.docker.internal:11434}
+      - CONTENT_OLLAMA_MODEL=${CONTENT_OLLAMA_MODEL:-}
+      # Speech-to-text model (only used when the image was built with
+      # INSTALL_STT=true; see build args above).
+      - CONTENT_WHISPER_MODEL=${CONTENT_WHISPER_MODEL:-small}
+      # Language preferences (HomeTube parity): order audio tracks (VO first,
+      # then primary, then secondaries) and seed default subtitles.
+      - CONTENT_LANGUAGE_PRIMARY=${CONTENT_LANGUAGE_PRIMARY:-}
+      - CONTENT_LANGUAGES_SECONDARIES=${CONTENT_LANGUAGES_SECONDARIES:-}
+      - CONTENT_VO_FIRST=${CONTENT_VO_FIRST:-true}
+      - CONTENT_LANGUAGE_PRIMARY_INCLUDED_IN_SUBTITLES=${CONTENT_LANGUAGE_PRIMARY_INCLUDED_IN_SUBTITLES:-true}
+      # Cookies for authenticated sources: id=path pairs (paths as seen in the
+      # container). Mount the cookie file(s) below and reference by credential_id.
+      - CONTENT_CREDENTIALS=${CONTENT_CREDENTIALS:-}
+      # Browser cross-origin access (empty = none; curl/SDK never need it).
+      - CONTENT_CORS_ORIGINS=${CONTENT_CORS_ORIGINS:-}
+    ports:
+      - "${CONTENT_PORT:-8010}:8000"
+    volumes:
+      - ./data:/data
+      - ./playground/input:/input:ro
+      # Delivered files land here, browsable on the host (HomeTube-style library).
+      # Host path is configurable (CONTENT_DELIVERY_DIR_HOST) so you point it at
+      # your own media library; its sub-folders become the UI's destinations.
+      - ${CONTENT_DELIVERY_DIR_HOST:-./playground/output}:/output
+      # Mount cookie files for authenticated downloads, e.g.:
+      #   - ./secrets/youtube_cookies.txt:/config/youtube_cookies.txt:ro
+      # then set CONTENT_CREDENTIALS=youtube=/config/youtube_cookies.txt
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/api/v1/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 5
+
+  hometube:
+    build:
+      # Repo-root context so the shared content-sdk package is available.
+      context: .
+      dockerfile: apps/web-hometube/Dockerfile
+    container_name: content-hometube
+    environment:
+      - TZ=${TZ:-Europe/Paris}
+      # Internal URL (compose network) for the front-end's own requests.
+      - CONTENT_API_URL=http://content:8000
+      # Public URL (host) for the browser's artifact download links.
+      - CONTENT_PUBLIC_API_URL=http://localhost:${CONTENT_PORT:-8010}
+    ports:
+      - "${FRONTEND_PORT:-8501}:8501"
+    depends_on:
+      content:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # General-purpose UI (Content Studio) — full contract. Opt-in:
+  #   docker compose --profile studio up -d
+  studio:
+    profiles: ["studio", "all"]
+    build:
+      context: .
+      dockerfile: apps/web-studio/Dockerfile
+    container_name: content-studio
+    environment:
+      - TZ=${TZ:-Europe/Paris}
+      - CONTENT_API_URL=http://content:8000
+      - CONTENT_PUBLIC_API_URL=http://localhost:${CONTENT_PORT:-8010}
+    ports:
+      - "${FRONTEND_GENERAL_PORT:-8502}:8501"
+    depends_on:
+      content:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Operations console — observe & pilot the backend. Opt-in:
+  #   docker compose --profile admin up -d
+  console:
+    profiles: ["admin", "all"]
+    build:
+      context: .
+      dockerfile: apps/web-admin/Dockerfile
+    container_name: content-console
+    environment:
+      - TZ=${TZ:-Europe/Paris}
+      - CONTENT_API_URL=http://content:8000
+      - CONTENT_PUBLIC_API_URL=http://localhost:${CONTENT_PORT:-8010}
+    ports:
+      - "${WEB_ADMIN_PORT:-8503}:8501"
+    depends_on:
+      content:
+        condition: service_healthy
+    restart: unless-stopped

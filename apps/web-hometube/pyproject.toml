@@ -1,0 +1,21 @@
+[project]
+name = "content-frontend"
+version = "0.1.0"
+description = "Content — Streamlit front-end (pure API client of the back-end)"
+license = "AGPL-3.0-or-later"
+authors = [{ name = "Yann Orieult" }]
+requires-python = ">=3.11"
+dependencies = [
+    "streamlit>=1.40",
+    "requests>=2.32",
+]
+
+# Not a package — run directly: `streamlit run app.py`. This file declares the
+# runtime dependencies (installed explicitly in the Dockerfile).
+
+[tool.ruff]
+line-length = 88
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]

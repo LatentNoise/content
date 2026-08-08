@@ -1,0 +1,19 @@
+{
+  "schema_version": "1.0",
+  "sources": [
+    {
+      "id": "s0",
+      "type": "url",
+      "uri": "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "audio_main",
+      "type": "audio",
+      "delivery": {
+        "filename": "A Podcast Episode"
+      }
+    }
+  ]
+}

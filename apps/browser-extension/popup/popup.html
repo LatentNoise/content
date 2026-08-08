@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Send to Content</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <header>
+      <span class="brand">Content</span>
+      <a id="open-options" href="#" title="Settings">⚙︎</a>
+    </header>
+
+    <!-- Exactly one of these is visible at a time. -->
+    <section id="view-loading" class="view">
+      <p class="muted">Asking the engine what this page can become…</p>
+    </section>
+
+    <section id="view-blocked" class="view hidden">
+      <p id="blocked-message"></p>
+      <button id="blocked-action" class="primary hidden"></button>
+    </section>
+
+    <section id="view-form" class="view hidden">
+      <p id="source-title" class="title"></p>
+      <p id="source-kind" class="muted"></p>
+
+      <fieldset>
+        <legend>What to produce</legend>
+        <!-- Filled from the server's resolved capabilities. Nothing here is
+             hardcoded: an output type the engine gains appears on its own. -->
+        <div id="outputs"></div>
+      </fieldset>
+
+      <fieldset id="video-options">
+        <legend>Quality</legend>
+        <label>
+          Container
+          <select id="container">
+            <option value="">as the source provides</option>
+            <option value="mkv">mkv — plays anywhere</option>
+            <option value="mp4">mp4 — most compatible</option>
+          </select>
+        </label>
+        <label>
+          Up to
+          <select id="max-height">
+            <option value="">no limit</option>
+            <option value="480">480p</option>
+            <option value="720">720p</option>
+            <option value="1080">1080p</option>
+            <option value="1440">1440p</option>
+            <option value="2160">2160p</option>
+          </select>
+        </label>
+      </fieldset>
+
+      <fieldset id="subtitle-options" class="hidden">
+        <legend>Subtitle languages</legend>
+        <div id="subtitle-langs"></div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Destination</legend>
+        <label>
+          File name
+          <input id="filename" type="text" spellcheck="false" />
+        </label>
+        <select id="folder"></select>
+        <input
+          id="new-folder"
+          class="hidden"
+          type="text"
+          spellcheck="false"
+          placeholder="new folder, e.g. talks/2026"
+        />
+        <label id="credential-row" class="hidden">
+          Credential
+          <select id="credential"></select>
+        </label>
+      </fieldset>
+
+      <p id="form-error" class="error hidden"></p>
+      <button id="submit" class="primary">Send to Content</button>
+    </section>
+
+    <section id="view-job" class="view hidden">
+      <p id="job-status" class="title"></p>
+      <ul id="job-steps"></ul>
+      <p id="job-error" class="error hidden"></p>
+      <div id="job-artifacts"></div>
+      <button id="job-again" class="secondary hidden">Send another</button>
+    </section>
+
+    <script type="module" src="popup.js"></script>
+  </body>
+</html>

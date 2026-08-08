@@ -1,0 +1,42 @@
+# All four images (backend + the three Streamlit UIs) build with the repo root
+# as their context — the backend so LICENSE/NOTICE ship inside it (AGPL §4), the
+# UIs so the shared content-sdk package is reachable. Docker reads the context
+# root's .dockerignore, so this file is the *only* one in effect. A
+# .dockerignore sitting in apps/<app>/ is never consulted — Docker would read
+# apps/<app>/Dockerfile.dockerignore, which is not how they were named — so the
+# four per-app copies were removed rather than left looking authoritative.
+# Everything they covered is folded in below.
+#
+# Every Dockerfile COPYs explicit paths, never `COPY .`. The exclusions below
+# keep the context lean and make a future `COPY .` non-catastrophic.
+.git
+
+# Local secrets must never reach a build context, even though no Dockerfile
+# COPYs them today — the next `COPY .` would be the mistake.
+.env
+.env.*
+!.env.example
+.claude/
+secrets/
+
+# Virtualenvs, bytecode, tool caches and editable-install metadata. Anchored
+# with **/ because these exist per-app, not only at the root.
+**/.venv
+**/__pycache__
+**/*.pyc
+**/.ruff_cache
+**/.pytest_cache
+**/*.egg-info
+
+# Runtime state: the SQLite database, artifacts and the analysis cache. Both the
+# root store and the backend's own live under a `data/` folder.
+**/data/
+
+# Test suites: no image COPYs them, and apps/backend/tests alone is 2.4 MB.
+**/tests/
+
+# Local-only or non-shipped material.
+playground/
+work/
+docs/
+hometube/

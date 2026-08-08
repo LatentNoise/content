@@ -1,0 +1,17 @@
+# Bug reports and ideas are welcome. Code contributions are not: pull requests
+# are disabled in the repository's settings — see CONTRIBUTING.md. Blank issues
+# are off so every report has the context needed to act on it.
+blank_issues_enabled: false
+contact_links:
+  - name: 🔒 Security vulnerability
+    url: https://github.com/LatentNoise/content/blob/main/SECURITY.md
+    about: Report privately — never in a public issue.
+  - name: 💼 Commercial licence
+    url: https://github.com/LatentNoise/content/blob/main/COMMERCIAL.md
+    about: For uses the AGPL does not cover. Enquiries by email.
+  - name: 🔀 Want to change the code?
+    url: https://github.com/LatentNoise/content/blob/main/CONTRIBUTING.md
+    about: Pull requests are disabled. Forking is the intended path.
+  - name: 📚 Documentation
+    url: https://github.com/LatentNoise/content/tree/main/docs
+    about: The contract, the architecture, and the deployment guide.

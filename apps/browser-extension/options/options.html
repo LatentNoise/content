@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Content — extension settings</title>
+    <link rel="stylesheet" href="../popup/popup.css" />
+    <link rel="stylesheet" href="options.css" />
+  </head>
+  <body>
+    <header><span class="brand">Content — extension settings</span></header>
+
+    <fieldset>
+      <legend>Engine</legend>
+      <label>
+        Backend URL
+        <input id="backend-url" type="url" placeholder="http://localhost:8010" />
+      </label>
+      <p class="muted">
+        Where your Content engine answers. With <code>docker compose up</code>
+        that is <code>http://localhost:8010</code>. A different host needs your
+        permission, which is requested when you save.
+      </p>
+      <button id="test" class="secondary">Test connection</button>
+      <p id="test-result" class="muted"></p>
+    </fieldset>
+
+    <fieldset>
+      <legend>Defaults</legend>
+      <label>
+        Preselected output
+        <select id="default-preset">
+          <option value="video">video</option>
+          <option value="audio">audio</option>
+          <option value="subtitles">subtitles</option>
+        </select>
+      </label>
+      <label>
+        Quality ceiling
+        <select id="max-height">
+          <option value="">no limit</option>
+          <option value="480">480p</option>
+          <option value="720">720p</option>
+          <option value="1080">1080p</option>
+          <option value="1440">1440p</option>
+          <option value="2160">2160p</option>
+        </select>
+      </label>
+      <label>
+        Destination folder
+        <input id="default-folder" type="text" placeholder="— library root —" />
+      </label>
+    </fieldset>
+
+    <p id="saved" class="muted"></p>
+    <button id="save" class="primary">Save</button>
+
+    <script type="module" src="options.js"></script>
+  </body>
+</html>

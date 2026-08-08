@@ -1,0 +1,115 @@
+# The gate, run on a machine that is not the maintainer's.
+#
+# Triggers on pushes and tags, never on pull requests: contributions are not
+# accepted (GOVERNANCE.md), so a PR-driven workflow would simply never fire.
+#
+# No secret is required. Every job here runs on a fork, on a clone, and on a
+# first push, with nothing configured.
+#
+# Actions are pinned to a commit SHA rather than a moving tag: a public
+# repository's CI is a supply-chain surface, and `@v4` is mutable.
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # One supported version, done properly — not a matrix. uv fetches it, so the
+  # runner's own Python is never what decides.
+  UV_PYTHON: "3.13"
+  FORCE_COLOR: "1"
+
+jobs:
+  validate:
+    name: make validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          enable-cache: true
+
+      # The documented install path, exactly as a newcomer would run it. It has
+      # never run anywhere but the maintainer's laptop; this is the proof.
+      - name: make install
+        run: make install
+
+      # The official gate: format --check + lint + the hermetic suite across the
+      # backend, the CLI, the MCP server, the SDK and the layering guard-rails.
+      #
+      # Deliberately no apt packages beforehand. The runner has no ffmpeg,
+      # yt-dlp, Typst, poppler or Ollama, which is the point: "hermetic" has to
+      # mean it runs on a bare machine. The handful of checks that need one of
+      # those skip themselves rather than fail; which ones, and why that is
+      # accepted, is written down in docs/development/validation.md.
+      - name: make validate
+        run: make validate
+
+  test-ui:
+    name: make test-ui
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          enable-cache: true
+
+      # Its own throwaway Streamlit venv, so it needs no `make install` first.
+      # Hermetic all the same: a fake client stands in for the backend.
+      - name: make test-ui
+        run: make test-ui
+
+  image:
+    name: Backend image (amd64 + arm64)
+    # Only on tags. Multi-arch under QEMU is slow, and nothing about a branch
+    # push needs it.
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [validate, test-ui]
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4.2.0
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+
+      # Building is in scope; publishing is not (that decision belongs with the
+      # release work). `push: false` with `type=cacheonly` means both
+      # architectures are really compiled — the arm64 half is what breaks, since
+      # it needs musl wheels — and nothing leaves the runner. No registry
+      # credentials, so this still passes on a fork.
+      - name: Build both architectures
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          file: apps/backend/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: false
+          outputs: type=cacheonly
+          provenance: false
+          sbom: false
+          # No build cache on purpose: tags are rare enough that a GitHub
+          # Actions cache would be evicted between them, so it would buy a cold
+          # build anyway while adding one more thing that can fail.

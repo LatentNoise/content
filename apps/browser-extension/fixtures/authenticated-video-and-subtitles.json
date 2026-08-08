@@ -1,0 +1,42 @@
+{
+  "schema_version": "1.0",
+  "sources": [
+    {
+      "id": "s0",
+      "type": "url",
+      "uri": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+      "auth": {
+        "credential_id": "youtube"
+      }
+    }
+  ],
+  "outputs": [
+    {
+      "id": "video_main",
+      "type": "video",
+      "delivery": {
+        "folder": "HomeTube",
+        "filename": "A Members Only Video"
+      },
+      "options": {
+        "selection": {
+          "max_height": 2160
+        },
+        "container": "mp4"
+      }
+    },
+    {
+      "id": "subtitles_main",
+      "type": "subtitles",
+      "delivery": {
+        "folder": "HomeTube",
+        "filename": "A Members Only Video"
+      },
+      "options": {
+        "languages": [
+          "en"
+        ]
+      }
+    }
+  ]
+}

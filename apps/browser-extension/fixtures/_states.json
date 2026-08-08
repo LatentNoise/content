@@ -1,0 +1,52 @@
+{
+  "video-1080-mkv-into-folder": {
+    "uri": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+    "outputs": ["video"],
+    "maxHeight": 1080,
+    "container": "mkv",
+    "subtitleLangs": [],
+    "folder": "Tech",
+    "filename": "Artist - Song - Official Video",
+    "credentialId": ""
+  },
+  "audio-into-library-root": {
+    "uri": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+    "outputs": ["audio"],
+    "maxHeight": null,
+    "container": "",
+    "subtitleLangs": [],
+    "folder": "",
+    "filename": "A Podcast Episode",
+    "credentialId": ""
+  },
+  "subtitles-two-languages": {
+    "uri": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+    "outputs": ["subtitles"],
+    "maxHeight": null,
+    "container": "",
+    "subtitleLangs": ["fr", "en"],
+    "folder": "Clips",
+    "filename": "A Talk",
+    "credentialId": ""
+  },
+  "authenticated-video-and-subtitles": {
+    "uri": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+    "outputs": ["video", "subtitles"],
+    "maxHeight": 2160,
+    "container": "mp4",
+    "subtitleLangs": ["en"],
+    "folder": "HomeTube",
+    "filename": "A Members Only Video",
+    "credentialId": "youtube"
+  },
+  "video-with-server-defaults": {
+    "uri": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+    "outputs": ["video"],
+    "maxHeight": null,
+    "container": "",
+    "subtitleLangs": [],
+    "folder": "",
+    "filename": "",
+    "credentialId": ""
+  }
+}

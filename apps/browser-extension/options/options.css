@@ -1,0 +1,29 @@
+/* The options page reuses the popup's palette; only the width differs. */
+body {
+  width: auto;
+  max-width: 560px;
+  padding: 0 20px 24px;
+}
+
+input[type="url"],
+input[type="text"] {
+  width: 100%;
+  margin-top: 3px;
+  padding: 5px;
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  font: inherit;
+}
+
+code {
+  background: rgba(127, 127, 127, 0.15);
+  padding: 0 3px;
+  border-radius: 3px;
+}
+
+button {
+  width: auto;
+  padding: 7px 16px;
+}

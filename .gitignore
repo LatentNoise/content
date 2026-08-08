@@ -1,0 +1,91 @@
+# Ignore everything by default.
+*
+
+# Keep traversing folders so allowlist rules below can match nested files.
+!*/
+
+# Only track the note/text and script formats wanted for now.
+!.gitignore
+!*.ad
+!*.md
+!*.csv
+!*.sh
+!*.py
+# Typst sources: the PDF templates the engine ships and compiles at runtime.
+# Without this the allowlist silently dropped them from every clone, so a
+# stranger's checkout had no template to render with.
+!*.typ
+# Web formats: the browser extension (apps/browser-extension) is plain ES
+# modules a browser loads directly — no bundler, no build step — so its source
+# *is* these files. Scoped to that app rather than allowed repo-wide, so a stray
+# minified bundle or a downloaded asset elsewhere still stays out.
+!apps/browser-extension/**/*.js
+!apps/browser-extension/**/*.json
+!apps/browser-extension/**/*.html
+!apps/browser-extension/**/*.css
+!apps/browser-extension/**/*.svg
+!apps/browser-extension/**/*.png
+!pyproject.toml
+!Dockerfile
+!docker-compose.yml
+!.dockerignore
+!Makefile
+# Licence and governance: extensionless by convention, so allowlisted by name.
+!LICENSE
+!NOTICE
+!.github/CODEOWNERS
+!.github/ISSUE_TEMPLATE/*.yml
+!.github/workflows/*.yml
+
+!apps/web-hometube/.streamlit/config.toml
+!apps/web-studio/.streamlit/config.toml
+!apps/web-admin/.streamlit/config.toml
+
+# Keep local credentials and Syncthing configuration out of Git.
+.env
+.env.*
+# …but track the documented example (no secrets) so the knobs aren't lost.
+!.env.example
+syncthing*.txt
+
+# Playground: everything in input/ and output/ is supplied or produced by a
+# local run (media, cookies, job folders, summaries…). The allowlist above would
+# otherwise let a generated *.md / *.csv / *.py slip in — pgverify's `sum.md`
+# did. Only the two folder READMEs are tracked; the example scripts and the
+# verify pipelines live in playground/ itself and stay allowlisted.
+playground/input/*
+!playground/input/README.md
+playground/output/*
+!playground/output/README.md
+
+# Written by .github/scripts/ytdlp_base_check.py when an update is pending —
+# the issue body, not a document. The *.md allowlist would otherwise commit it
+# the first time a maintainer runs the check by hand.
+issue-body.md
+
+# Work
+work/
+
+# Example folder, not tracked for now.
+hometube/
+
+# Python tooling and runtime state (keeps the *.py allowlist out of venvs).
+.venv/
+__pycache__/
+.pytest_cache/
+*.egg-info/
+data/
+# Packaging output. `build/lib/` is a verbatim copy of the package, so without
+# this the *.py allowlist would cheerfully commit the whole source tree twice
+# the moment anyone builds a wheel.
+build/
+dist/
+
+# Local editor/agent state stays local: the tracked instruction file is
+# AGENTS.md (the vendor-neutral convention); tool-specific pointers and
+# configuration directories are never committed.
+CLAUDE.md
+AGENTS.md
+.claude/
+.cursor/
+.vscode/

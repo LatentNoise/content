@@ -1,0 +1,69 @@
+[project]
+name = "content-backend"
+version = "0.1.0"
+description = "Content — declarative resource-to-artifact generation engine"
+license = "AGPL-3.0-or-later"
+authors = [{ name = "Yann Orieult" }]
+requires-python = ">=3.11"
+
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn>=0.30",
+    "pydantic>=2.7",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest>=8.4",
+    "pytest-asyncio>=1.0",
+    "httpx>=0.27",
+]
+dev = [
+    "ruff>=0.8",
+]
+# Optional speech-to-text runner (audio.transcribe): installing it activates
+# the transcript.from_audio / summary.from_audio capability variants.
+stt = [
+    "faster-whisper>=1.0",
+]
+# Optional document renderer (pdf.render): installing it activates the
+# `pdf` output type. reportlab is BSD-licensed — deliberately not the lighter
+# fpdf2, whose LGPL terms would attach obligations to a commercial licence.
+pdf = [
+    "reportlab>=4.0",
+]
+
+[build-system]
+requires = ["setuptools>=80"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["content*"]
+
+# The Typst templates are located at runtime relative to __file__
+# (`typst_backend.TEMPLATE_DIR`), so they must be installed beside the module.
+# Without this a wheel builds cleanly and then fails at the first PDF render
+# with "unknown template" — the package is pure-Python everywhere else, which is
+# exactly why the omission is easy to miss.
+[tool.setuptools.package-data]
+"content.processors.pdf" = ["templates/*.typ"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = ["--strict-markers", "--tb=short"]
+markers = [
+    "external: requires external tools (yt-dlp, ffmpeg) and may touch the network",
+    "release: end-to-end release validation through the public API (make validate-release)",
+]
+
+[tool.ruff]
+line-length = 88
+target-version = "py311"
+
+[tool.ruff.lint]
+# Conservative baseline: real errors, pyflakes, warnings, import order.
+# Deliberately excludes opinionated rewrites (UP, RUF) that would churn the
+# public contract (Union[...], datetime) without a concrete need — see
+# docs/development/validation.md.
+select = ["E", "F", "W", "I"]

@@ -1,0 +1,74 @@
+# Dependency-update *observability* for the one dependency that rots on its own.
+#
+# The backend's base image (jauderho/yt-dlp) is pinned by version and digest in
+# apps/backend/Dockerfile. This job notices when upstream moves and says so. It
+# never edits the Dockerfile, never opens a pull request (they are disabled —
+# CONTRIBUTING.md), never builds and never publishes anything. The decision to
+# bump, and the validation that must precede it, stay with the maintainer:
+# docs/operations/ytdlp-base-image.md.
+#
+# One open issue at a time, updated in place rather than reopened weekly, so a
+# pending bump is a single thread instead of a monthly pile.
+#
+# No secret is required: GITHUB_TOKEN with issues:write is enough, so this runs
+# on a fresh clone of the repository with nothing configured.
+name: yt-dlp base image check
+
+on:
+  schedule:
+    # Mondays, 06:17 UTC. Off the hour on purpose — GitHub drops scheduled runs
+    # when the whole platform stampedes at :00.
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: ytdlp-base-check
+  cancel-in-progress: false
+
+jobs:
+  check:
+    name: Compare pinned base against upstream
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Resolve pinned and upstream versions
+        id: check
+        run: python3 .github/scripts/ytdlp_base_check.py
+        env:
+          DOCKERFILE: apps/backend/Dockerfile
+
+      - name: Open or update the tracking issue
+        if: steps.check.outputs.update_available == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TITLE: ${{ steps.check.outputs.issue_title }}
+        run: |
+          set -euo pipefail
+          LABEL="ytdlp-base-update"
+
+          # The label is the dedupe key. Create it once, ignore "already exists".
+          gh label create "$LABEL" \
+            --description "A newer jauderho/yt-dlp base image is available" \
+            --color FBCA04 2>/dev/null || true
+
+          EXISTING=$(gh issue list --state open --label "$LABEL" \
+            --json number --jq '.[0].number // empty')
+
+          if [ -n "$EXISTING" ]; then
+            echo "Updating existing issue #$EXISTING"
+            gh issue edit "$EXISTING" --title "$TITLE" --body-file issue-body.md
+          else
+            echo "Opening a new issue"
+            gh issue create --title "$TITLE" --body-file issue-body.md --label "$LABEL"
+          fi
+
+      - name: Nothing to do
+        if: steps.check.outputs.update_available != 'true'
+        run: echo "Pinned base is current — no issue filed."

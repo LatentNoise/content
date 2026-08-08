@@ -1,0 +1,97 @@
+# HomeTube for Content — browser extension
+
+Send the page you are watching to your Content engine, without opening a UI.
+
+A **client of `/api/v1`**, like every other application here: it builds a
+`GenerationRequest`, posts it, and follows the job. It never downloads anything
+itself and never talks to yt-dlp — the engine does that.
+
+## Install (unpacked)
+
+There is no build step. What the browser loads is what is in this directory.
+
+1. Start the engine — `docker compose up` publishes it on
+   <http://localhost:8010>.
+2. Open `chrome://extensions`, turn on **Developer mode**.
+3. **Load unpacked** → select `apps/browser-extension/`.
+4. Open a video, click the extension.
+
+For a backend somewhere else (a NAS, another port), open the extension's
+settings and change the address. Chrome will ask for permission for that host:
+the manifest grants only `http://localhost:8010` up front, so any other origin
+is an explicit, revocable grant rather than blanket access shipped to everybody.
+
+## What it does
+
+- Reads the tab's address and normalises it (`youtu.be`, Shorts and embeds
+  become the canonical watch URL; a `list=` on a watch URL means *that video*,
+  not the playlist).
+- Asks the engine what that source can produce, and offers **only that**.
+  Anything unavailable stays visible with the server's reason, so you learn why
+  rather than wonder where it went. Nothing about output types is hardcoded
+  here — a capability the engine gains shows up on its own.
+- Prefills the file name with the **naming engine's own proposal**
+  (`suggested_filename` from the capabilities call, ADR 0017) — edit it or
+  leave it; untouched, nothing is sent and the server names the artifacts
+  itself. The destination offers the library's existing folders **plus
+  "new folder…"** to type one that does not exist yet (created path-safe,
+  server-side).
+- Submits, then polls the job, links the artifacts and shows where each file
+  landed in your library (`delivered_path`).
+
+## Design notes
+
+**Every network call is in the service worker.** Not a style choice: the engine
+sends no CORS headers by default and answers a preflight `OPTIONS` with 405, so
+a page-context `fetch` is blocked outright. A service worker holding
+`host_permissions` is exempt from CORS, which is what lets this work against a
+stock engine with nothing to configure. See
+[ADR 0016](../../docs/architecture-decisions/0016-first-non-python-client.md).
+
+**Polling, not SSE.** A Manifest V3 service worker is evicted when idle, and
+resuming an `EventSource` across eviction is real complexity for no gain on a
+job you are watching.
+
+**No reserved fields are ever sent.** `execution`, `preferences` and
+`constraints` are omitted entirely, so the engine applies its own defaults;
+sending `mode`, `priority` or `retention` would be refused
+(`option_not_supported`, `docs/contract.md` §9).
+
+## Verification status — read this
+
+Honest about what has actually been run, because the rest of this project has
+spent several rounds removing claims that had not been:
+
+| Path | State |
+| --- | --- |
+| Request bodies validate against the real `GenerationRequest` | **Verified** — `tests/test_browser_extension.py`, in `make validate` |
+| `lib/url.js` normalisation (11 cases: Shorts, `youtu.be`, embeds, `list=`, tracking params, non-YouTube, `chrome://`) | **Verified by executing the JavaScript** — node-backed, skips cleanly without node |
+| `lib/request.js` emits exactly the reviewed fixtures, and refuses subtitles with no language | **Verified by executing the JavaScript** |
+| Manifest shape, permission minimality, icons are real PNGs | **Verified** — same suite |
+| Every file is visible to git despite the allowlist `.gitignore` | **Verified** — same suite |
+| The engine sends no CORS headers; preflight answers 405 | **Verified** against a running instance |
+| JavaScript parses (`node --check`, every module) | **Verified** |
+| Loading unpacked in Chrome: popup renders, capabilities listed, submit creates a real job, artifact produced | **Verified by the maintainer**, 2026-08-02 — on a YouTube video, end to end |
+| Delivery into the media library, with a real filename | **Verified** (2026-08-02, pre-ADR 0018) — a request built by `lib/request.js` delivered `Example_Domain_-_Test_Page.md` into the library root |
+| The ADR 0017/0018 flow (prefilled name proposal from `suggested_filename`, untouched → nothing sent and the server names; "new folder…"; popup shows the library path) | **NOT verified in a browser yet** — covered by `tests/test_browser_extension.py` and the backend suites |
+| Chrome's `host_permissions` exemption for a **non-default** backend (the grant flow) | **NOT verified** — only the default `localhost:8010` path has been exercised |
+| Playlists, authenticated sources, `subtitles`-only runs | **NOT verified** in a browser |
+
+The first real download exposed two bugs — choosing the library root sent no
+`delivery` block, and a missing `filename` produced `video_main.webm`. Both
+classes are now solved **server-side**: the engine names every artifact after
+the video itself (ADR 0017) and delivers by default when the policy is on
+(ADR 0018), so the extension sends *intent only*: the filename field is an
+optional override, the client-side title sanitizer (`lib/filename.js`) is
+gone (D-51 — the server sanitizes, never rejects), and the popup shows where
+the file landed in the library.
+
+## Limits
+
+- Chrome/Chromium only. Firefox's MV3 differs (`browser.*` namespace, event
+  pages); porting is not attempted here.
+- The icons are flat colour placeholders generated with ffmpeg. They are the
+  right sizes and real PNGs; they are not a design.
+- No authentication, because the API has none in V1. Cookie credentials are
+  selected by id and resolved server-side — no cookie ever passes through the
+  extension.

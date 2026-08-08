@@ -1,0 +1,241 @@
+/* The HomeTube look, in plain CSS: same dark palette as the HomeTube UI
+   (.streamlit/config.toml — violet primary on a deep dark background), card
+   sections, and no framework — nothing to build, nothing to keep up to date.
+   Deliberately always dark, like HomeTube itself. */
+
+:root {
+  --bg: #0e1117;
+  --card: #171a23;
+  --fg: #e6e9ef;
+  --muted: #9aa3b2;
+  --line: #262b36;
+  --accent: #7c5cff;
+  --accent-strong: #8f73ff;
+  --error: #ff4b4b;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  width: 360px;
+  margin: 0;
+  padding: 0 14px 14px;
+  background: var(--bg);
+  color: var(--fg);
+  font: 13px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 12px;
+}
+
+.brand {
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+/* The violet dot HomeTube's header carries — a brand mark, not decoration. */
+.brand::before {
+  content: "";
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+header a {
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 15px;
+}
+
+header a:hover {
+  color: var(--fg);
+}
+
+.hidden {
+  display: none !important;
+}
+
+.muted {
+  color: var(--muted);
+  margin: 4px 0;
+}
+
+.title {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 2px 0 6px;
+  overflow-wrap: anywhere;
+}
+
+.error {
+  color: var(--error);
+  margin: 8px 0 0;
+  overflow-wrap: anywhere;
+}
+
+/* Sections as cards, the way HomeTube groups its blocks. */
+fieldset {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  margin: 0 0 10px;
+  padding: 10px 12px 12px;
+}
+
+legend {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 0 6px;
+}
+
+label {
+  display: block;
+  margin: 4px 0;
+}
+
+input[type="text"],
+input[type="url"],
+select {
+  width: 100%;
+  margin-top: 4px;
+  padding: 6px 8px;
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font: inherit;
+}
+
+input[type="text"]:focus-visible,
+input[type="url"]:focus-visible,
+select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+
+input::placeholder {
+  color: var(--muted);
+}
+
+input[type="checkbox"] {
+  accent-color: var(--accent);
+}
+
+#max-height {
+  width: auto;
+}
+
+#folder {
+  margin-top: 6px;
+}
+
+.option {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  padding: 2px 0;
+}
+
+/* An unavailable output stays visible with the server's reason, rather than
+   vanishing — the user learns why, instead of wondering where it went. */
+.option.blocked label {
+  color: var(--muted);
+}
+
+.reason {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+button {
+  width: 100%;
+  padding: 9px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+
+button.primary {
+  background: var(--accent);
+  color: #fff;
+}
+
+button.primary:hover:not(:disabled) {
+  background: var(--accent-strong);
+}
+
+button.secondary {
+  background: transparent;
+  color: var(--fg);
+  border-color: var(--line);
+}
+
+button.secondary:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+#job-steps {
+  list-style: none;
+  margin: 6px 0;
+  padding: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+#job-steps li {
+  padding: 1px 0;
+}
+
+#job-artifacts {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  margin: 8px 0;
+  padding: 2px 12px;
+}
+
+#job-artifacts:empty {
+  display: none;
+}
+
+.artifact {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  padding: 7px 0;
+  overflow-wrap: anywhere;
+}
+
+.artifact + .artifact {
+  border-top: 1px solid var(--line);
+}
+
+.artifact a {
+  color: var(--accent-strong);
+  white-space: nowrap;
+}

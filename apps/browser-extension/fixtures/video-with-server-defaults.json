@@ -1,0 +1,16 @@
+{
+  "schema_version": "1.0",
+  "sources": [
+    {
+      "id": "s0",
+      "type": "url",
+      "uri": "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "video_main",
+      "type": "video"
+    }
+  ]
+}

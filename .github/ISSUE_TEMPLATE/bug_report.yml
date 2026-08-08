@@ -1,0 +1,53 @@
+name: 🐛 Bug report
+description: Something is broken. These are read and welcome.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time. Bug reports are genuinely useful and are
+        read. Content follows a single-maintainer model and does not accept code
+        contributions, so a clear report is the most helpful thing you can send —
+        see CONTRIBUTING.md.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you did, what happened, and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: How to reproduce
+      description: The smallest sequence that shows the problem.
+      placeholder: |
+        1. Submit a job with …
+        2. …
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Content version
+      description: From `GET /api/v1/health`, or the image tag you built.
+    validations:
+      required: true
+  - type: dropdown
+    id: deployment
+    attributes:
+      label: How is it deployed
+      options:
+        - Docker Compose
+        - Local (uvicorn)
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: >
+        Job events or step logs, if any. Redact cookies, tokens and API keys —
+        never paste real credentials.
+      render: text
