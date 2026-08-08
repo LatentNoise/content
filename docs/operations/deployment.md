@@ -65,7 +65,7 @@ docker compose up --build content         # the backend alone
 | `CONTENT_RELEASE_CHECK_URL` | — | Release API polled for a newer version (empty = the banner is off) |
 | `CONTENT_RELEASE_PAGE_URL` | — | Page the release notification links to |
 | `CONTENT_RELEASE_CHECK_TTL_HOURS` | `6` | How long a release lookup is cached |
-| `CONTENT_YTDLP_MAX_AGE_DAYS` | `30` | Age at which yt-dlp is flagged stale (0 = off) |
+| `CONTENT_YTDLP_MAX_AGE_DAYS` | `0` (off) | Opt-in: age at which yt-dlp is flagged stale in the UIs |
 | `CONTENT_UI_STATE_DIR` | *(temp dir)* | Where a UI remembers dismissed notifications |
 
 ## Delivery (the destination folder)
@@ -175,11 +175,17 @@ The two things the backend can say:
   notify; a patch bump stays silent so the banner keeps its meaning. The lookup
   is cached for `CONTENT_RELEASE_CHECK_TTL_HOURS`, so rendering a page never
   turns into an HTTP call.
-- **yt-dlp is out of date.** On by default at 30 days
-  (`CONTENT_YTDLP_MAX_AGE_DAYS=0` disables it). YouTube breaks old builds
+- **yt-dlp is out of date.** Opt-in: set `CONTENT_YTDLP_MAX_AGE_DAYS` to a
+  number of days (0, the default, keeps it silent). YouTube breaks old builds
   quickly and the symptom is an opaque `analysis_failed` / "No video formats
-  found" — naming the cause up front turns a confusing failure into a known one.
-  The fix is the usual `docker compose build content` (see *yt-dlp freshness*).
+  found" — but age alone cannot tell "stale" from "newest available": the
+  image pins the latest upstream release, which may itself be weeks old, so a
+  default-on check would greet every fresh install with an unactionable
+  warning. Upstream freshness is tracked on the maintainer's side (a weekly
+  check files an issue — see
+  [ytdlp-base-image.md](ytdlp-base-image.md)); users hear about it through
+  Content releases. Enable the age check if you rebuild rarely and want the
+  local reminder (see *yt-dlp freshness*).
 
 The check is **failure-silent by contract**: an unreachable, slow, rate-limited
 or malformed release endpoint produces no notification and no error — the page

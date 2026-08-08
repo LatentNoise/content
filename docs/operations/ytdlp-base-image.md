@@ -64,8 +64,10 @@ docker compose build content --build-arg YTDLP_SELF_UPDATE=true
 ```
 
 A pinned build does age, and that is handled by noticing rather than drifting —
-the weekly check below, plus `CONTENT_YTDLP_MAX_AGE_DAYS`, which makes a running
-instance warn in its UI when the installed yt-dlp gets old.
+the weekly check below is the maintainer's loop. (`CONTENT_YTDLP_MAX_AGE_DAYS`
+can additionally make a running instance warn in its UI about an ageing yt-dlp;
+it is off by default, because age alone cannot distinguish "stale" from "the
+newest release, which happens to be weeks old".)
 
 ## How an update is detected
 
