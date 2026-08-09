@@ -113,6 +113,7 @@ def _sponsorblock_params(options) -> dict:
         "sponsorblock": {
             "remove": list(options.remove),
             "mark": list(options.mark),
+            "cut_mode": options.cut_mode,
         }
     }
 

@@ -233,8 +233,17 @@ def classify_failure(stderr_text: str) -> str:
 def sponsorblock_args(params: dict) -> list[str]:
     """yt-dlp SponsorBlock flags from step params (empty when disabled).
 
-    ``remove`` deletes segments (``--no-force-keyframes-at-cuts`` keeps the cut
-    fast, no re-encode — HomeTube behavior); ``mark`` only records chapters.
+    ``remove`` deletes segments, ``mark`` only records chapters.
+
+    The keyframe flag is what decides whether the result is watchable.
+    ``--no-force-keyframes-at-cuts`` stream-copies: fast, but yt-dlp can only
+    cut on keyframes, so the frames it was told to discard are spliced back in
+    with timestamps that run backwards. Measured on a real 93 s download whose
+    sponsor segment sat at the end: 2506 video frames where 2331 fit, 173 of
+    them non-monotonic, all crammed into the last 3.2 seconds — the video
+    stutters there while the audio, which cuts anywhere, plays on.
+    ``--force-keyframes-at-cuts`` re-encodes and produces a clean stream, so
+    it is the default (``cut_mode: precise``).
     """
     sb = params.get("sponsorblock")
     if not sb:
@@ -243,11 +252,12 @@ def sponsorblock_args(params: dict) -> list[str]:
     remove = sb.get("remove") or []
     mark = sb.get("mark") or []
     if remove:
-        args += [
-            "--sponsorblock-remove",
-            ",".join(remove),
-            "--no-force-keyframes-at-cuts",
-        ]
+        keyframes = (
+            "--no-force-keyframes-at-cuts"
+            if sb.get("cut_mode") == "keyframes"
+            else "--force-keyframes-at-cuts"
+        )
+        args += ["--sponsorblock-remove", ",".join(remove), keyframes]
     if mark:
         args += ["--sponsorblock-mark", ",".join(mark)]
     return args

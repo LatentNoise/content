@@ -716,6 +716,7 @@ elif subs_wanted and analysis and not sub_options:
 # --- 📊 Advertising and Sponsors (video / audio) -------------------------------
 
 sb_preset = "default"
+sb_cut_mode = "precise"
 if video_on or audio_on:
     with st.expander("📊 Advertising and Sponsors"):
         sb_preset = st.selectbox(
@@ -724,6 +725,21 @@ if video_on or audio_on:
             index=1,  # "default" — sponsors removed out of the box
             help="Remove or mark sponsored segments (SponsorBlock community data).",
         )
+        # The same trade-off the Cutting section names, for the cuts
+        # SponsorBlock makes. Fast is genuinely faster and genuinely produces a
+        # stuttering tail, so it is offered, second, and labelled.
+        if (SB_PRESETS.get(sb_preset) or {}).get("remove"):
+            sb_cut_mode = st.radio(
+                "Cut quality",
+                ["precise", "keyframes"],
+                horizontal=True,
+                key=f"sbcut-{wk}",
+                help="precise: forces keyframes at each cut — a re-encode, "
+                "slower, and the only way the end of the video plays cleanly. "
+                "keyframes: stream copy, much faster, but the removed frames "
+                "are spliced back in and the tail stutters while the audio "
+                "continues.",
+            )
 
 
 # --- ✂️ Cutting (single video only) --------------------------------------------
@@ -890,6 +906,8 @@ except ValueError:
 
 def build_request() -> dict:
     sb = SB_PRESETS[sb_preset]
+    if sb and sb.get("remove"):
+        sb = {**sb, "cut_mode": sb_cut_mode}
     delivery = {}
     if folder:
         delivery["folder"] = folder

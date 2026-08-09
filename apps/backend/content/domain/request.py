@@ -321,10 +321,26 @@ SponsorBlockCategory = Literal[
 class SponsorBlockOptions(StrictModel):
     """SponsorBlock segment handling (yt-dlp). Explicit and typed: `remove`
     deletes matching segments from the media, `mark` only records chapters.
-    Empty = disabled. Client presets (UI) expand into these lists."""
+    Empty = disabled. Client presets (UI) expand into these lists.
+
+    `cut_mode` is the same trade-off `VideoCut.mode` already names, applied to
+    the cuts SponsorBlock makes — and it is the difference between a playable
+    file and a broken one:
+
+    * `precise` (default) forces keyframes at the cuts, which costs a
+      re-encode but produces a clean stream;
+    * `keyframes` stream-copies instead: fast, but the cut lands on the
+      nearest keyframe and the discarded frames are spliced back in with
+      colliding timestamps — the tail stutters while the audio, cut exactly,
+      plays on.
+
+    Correctness is the default because a fast file nobody can watch to the end
+    is not a saving.
+    """
 
     remove: list[SponsorBlockCategory] = Field(default_factory=list)
     mark: list[SponsorBlockCategory] = Field(default_factory=list)
+    cut_mode: Literal["keyframes", "precise"] = "precise"
 
 
 def _parse_timestamp(value: str) -> float:
