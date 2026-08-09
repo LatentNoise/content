@@ -722,7 +722,7 @@ elif subs_wanted and analysis and not sub_options:
 # --- 📊 Advertising and Sponsors (video / audio) -------------------------------
 
 sb_preset = "default"
-sb_cut_mode = "precise"
+sb_cut_mode = "keyframes"
 if video_on or audio_on:
     with st.expander("📊 Advertising and Sponsors"):
         sb_preset = st.selectbox(
@@ -732,30 +732,30 @@ if video_on or audio_on:
             help="Remove or mark sponsored segments (SponsorBlock community data).",
         )
         # The same trade-off the Cutting section names, for the cuts
-        # SponsorBlock makes. Fast is genuinely faster and genuinely produces a
-        # stuttering tail, so it is offered, second, and labelled.
+        # SponsorBlock makes — and the same default, stream copy.
         if (SB_PRESETS.get(sb_preset) or {}).get("remove"):
-            # Never show the bare contract values here. "keyframes" reads like
-            # the fix — yt-dlp's flag for the *good* behaviour is literally
-            # --force-keyframes-at-cuts — while in the contract it means the
-            # opposite: cut on the keyframes that already exist, stream copy,
-            # artifacts. The labels say what happens; the flag is named in the
-            # help so there is nothing left to infer.
+            # Never show the bare contract values here: neither word says what
+            # it costs. What the reader has to understand before choosing is
+            # that one option cuts the file and the other re-encodes all of
+            # it, so the labels lead with that and the help gives the measured
+            # price.
             sb_cut_mode = st.radio(
                 "Cut quality",
-                ["precise", "keyframes"],
+                ["keyframes", "precise"],
                 format_func=lambda mode: {
-                    "precise": "✅ Clean cut — forces keyframes (recommended)",
-                    "keyframes": "⚡ Fast cut — may glitch at the end",
+                    "keyframes": "⚡ Fast cut — keeps the original video (recommended)",
+                    "precise": "🐢 Exact cut — re-encodes it all (minutes per video)",
                 }[mode],
                 key=f"sbcut-{wk}",
-                help="Clean cut sends --force-keyframes-at-cuts: yt-dlp puts a "
-                "keyframe at each removed segment and re-encodes, which is "
-                "slower and is what makes the end of the video play properly. "
-                "Fast cut sends --no-force-keyframes-at-cuts: a stream copy, "
-                "much quicker, but the discarded frames come back with "
-                "backwards timestamps and the tail stutters while the audio "
-                "keeps going.",
+                help="Fast cut removes the segments with a stream copy along "
+                "existing keyframes: it finishes at download speed, keeps the "
+                "codecs you asked for, and the end of the video stays clean. "
+                "A boundary may shift to the nearest keyframe (usually under "
+                "a second). Exact cut asks yt-dlp for frame-exact boundaries "
+                "(--force-keyframes-at-cuts), which re-encodes the whole file "
+                "at ffmpeg's default codecs: on a 2 min 4K clip that measured "
+                "17 s of download against 8 min of CPU, and turned AV1/Opus "
+                "into a larger H.264/Vorbis file.",
             )
 
 
@@ -1062,6 +1062,21 @@ def render_job() -> None:
     steps = job.get("steps", [])
     done = sum(1 for s in steps if s["status"] == "succeeded")
 
+    # One events fetch per refresh feeds both the live percentages and the
+    # (filtered) events expander below. Presentation only: the engine already
+    # emits a real percentage per step; the UI just stopped discarding it.
+    try:
+        events = client.events(job_id)
+    except Exception:  # noqa: BLE001
+        events = []
+    percent: dict[str, float] = {}
+    for e in events:
+        if e["type"] == "step.progress":
+            data = e.get("data") or {}
+            progress = data.get("progress") or {}
+            if progress.get("current") is not None:
+                percent[data.get("step_id", "")] = progress["current"]
+
     st.divider()
     st.markdown(
         f"### {icon} <span style='color:{color}'>{status}</span> "
@@ -1072,10 +1087,20 @@ def render_job() -> None:
         st.progress(done / len(steps), text=f"{done}/{len(steps)} steps")
         for s in steps:
             si = display(s["status"])[0]
+            # A collection member announces itself as "3/6 · Title" (the API
+            # joins that context onto the step); other steps keep their id.
+            if s.get("item_title"):
+                ordinal = f"{s.get('member_index')}/{s.get('member_total')}"
+                name = f"{ordinal} · {s['item_title']}"
+            else:
+                name = s["step_id"]
+            detail = s["status"]
+            if s["status"] == "running" and s["step_id"] in percent:
+                detail = f"downloading · {percent[s['step_id']]:.0f}%"
             err = f" · {s['error']}" if s["error"] else ""
             st.markdown(
-                f"<div class='step'>{si} {s['step_id']} "
-                f"<span style='color:#5b6472'>{s['status']}{err}</span></div>",
+                f"<div class='step'>{si} {name} "
+                f"<span style='color:#5b6472'>{detail}{err}</span></div>",
                 unsafe_allow_html=True,
             )
     if job.get("error"):
@@ -1112,17 +1137,33 @@ def render_job() -> None:
         st.rerun(scope="app")
 
     with st.expander("Events"):
+        # step.progress fires every few seconds per step; dumping each one
+        # buries the eight events that matter. They are summarized to a count —
+        # the live percentage is already on the step lines above.
+        shown = [e for e in events if e["type"] != "step.progress"]
+        skipped = len(events) - len(shown)
+        lines = [
+            f"{e['sequence']:>3} {e['type']} {e['data'] if e['data'] else ''}"
+            for e in shown
+        ]
+        if skipped:
+            lines.append(f"    … {skipped} step.progress events (shown live above)")
+        st.code("\n".join(lines) or "—")
+
+    with st.expander("Logs (yt-dlp / ffmpeg output, per step)"):
         try:
-            events = client.events(job_id)
+            logs = client.logs(job_id).get("logs", {})
         except Exception:  # noqa: BLE001
-            events = []
-        st.code(
-            "\n".join(
-                f"{e['sequence']:>3} {e['type']} {e['data'] if e['data'] else ''}"
-                for e in events
-            )
-            or "—"
-        )
+            logs = {}
+        if not logs:
+            st.caption("no logs yet")
+        for step_id, streams in logs.items():
+            st.markdown(f"**{step_id}**")
+            for stream_name in ("stdout", "stderr"):
+                text = (streams.get(stream_name) or "").strip()
+                if text:
+                    tail = "\n".join(text.splitlines()[-12:])
+                    st.code(tail, language=None)
 
 
 render_job()

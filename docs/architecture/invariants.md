@@ -145,6 +145,29 @@ check that a member's derived plan has the same operations and parameters as
 submitting that item alone, and the heterogeneous case where one incapable
 member fails alone.
 
+**INV-019 — Preserve streams by default; transcoding is explicit.**
+An operation that stream copy or remux can fulfil must not re-encode. Content
+delivers the encoded streams it acquired — same codecs, same quality — unless
+the requested operation *genuinely requires* a transcode (a format conversion,
+a frame-accurate `precise` cut) or the caller opted into one by name.
+*Rationale:* re-encoding is not a slower version of the same result, it is a
+different and worse result at a large price. Measured on a 2 min 19 s 2160p
+AV1/Opus download whose SponsorBlock cut was routed through
+`--force-keyframes-at-cuts`: 17 s of network, then 8 min 33 s of CPU, and the
+file came back H.264/Vorbis — ffmpeg's container defaults — 46% larger for
+visibly less quality. Nobody asks for that in exchange for a tidier cut
+boundary.
+*Corollaries:* segment removal (SponsorBlock) stream-copies at existing
+keyframes by default and owns the honest cost of that choice — a boundary may
+move to the nearest keyframe and a mid-video seam may double a couple of
+reordered frames (~66 ms); it never re-encodes to hide either. The `precise`
+opt-ins (`sponsorblock.cut_mode`, `cut.mode`) are the only doors to a
+transcode, and their labels state the price.
+*Guaranteed by:* `providers/segments.py` + `sponsorblock_args` (yt-dlp marks,
+Content cuts) and `providers/ffmpeg.py` (`processing.mode` never silently
+becomes `transcode`). *Verified by:* `test_segments` (including the external
+end-to-end proof that codecs survive a fast cut) and `test_sponsorblock`.
+
 ---
 
 ## Invariants **targeted but not yet guaranteed** (debt, see discoveries)

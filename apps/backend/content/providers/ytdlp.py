@@ -38,6 +38,12 @@ from content.providers.base import (
     StepExecutionError,
 )
 from content.providers.codecs import normalize_audio_codec, normalize_video_codec
+from content.providers.segments import (
+    SegmentCutPlan,
+    plan_segment_cut,
+    render_concat,
+    render_ffmetadata,
+)
 
 # Proven progress regexes (HomeTube app/constants.py).
 DOWNLOAD_PROGRESS_PATTERN = re.compile(
@@ -230,20 +236,30 @@ def classify_failure(stderr_text: str) -> str:
     return "provider_error"
 
 
+# Marker prefixing the one --print line that smuggles the SponsorBlock
+# segment list out of the download run (parsed back by the fast cut).
+SBCUT_PRINT_PREFIX = "SBCUT:"
+
+
 def sponsorblock_args(params: dict) -> list[str]:
     """yt-dlp SponsorBlock flags from step params (empty when disabled).
 
     ``remove`` deletes segments, ``mark`` only records chapters.
 
-    The keyframe flag is what decides whether the result is watchable.
-    ``--no-force-keyframes-at-cuts`` stream-copies: fast, but yt-dlp can only
-    cut on keyframes, so the frames it was told to discard are spliced back in
-    with timestamps that run backwards. Measured on a real 93 s download whose
-    sponsor segment sat at the end: 2506 video frames where 2331 fit, 173 of
-    them non-monotonic, all crammed into the last 3.2 seconds — the video
-    stutters there while the audio, which cuts anywhere, plays on.
-    ``--force-keyframes-at-cuts`` re-encodes and produces a clean stream, so
-    it is the default (``cut_mode: precise``).
+    Fast mode (``cut_mode: keyframes``, the default) never lets yt-dlp cut:
+    its stream-copy remover leaves a phantom keep-chunk on end-reaching
+    segments (the "stuttering tail" defect — see ``segments.py``), and its
+    ``--force-keyframes-at-cuts`` alternative re-encodes the whole file at
+    ffmpeg's default codecs (measured: 17 s of network, 8 min 33 s of CPU,
+    AV1/Opus returned as H.264/Vorbis). Instead yt-dlp only *marks* the
+    segments — the union of the mark and remove sets, so the remove set's
+    boundaries are known — and one ``--print`` line reports the fetched
+    segments; Content then removes them itself with a keyframe-snapped
+    stream-copy concat (INV-019). ``--no-quiet`` keeps the progress lines
+    that ``--print`` would otherwise silence.
+
+    ``precise`` is the explicit opt-in to yt-dlp's native remover with
+    ``--force-keyframes-at-cuts``: exact bounds, at transcoding prices.
     """
     sb = params.get("sponsorblock")
     if not sb:
@@ -251,15 +267,23 @@ def sponsorblock_args(params: dict) -> list[str]:
     args: list[str] = []
     remove = sb.get("remove") or []
     mark = sb.get("mark") or []
+    if sb.get("cut_mode") == "precise":
+        if remove:
+            args += ["--sponsorblock-remove", ",".join(remove)]
+            args += ["--force-keyframes-at-cuts"]
+        if mark:
+            args += ["--sponsorblock-mark", ",".join(mark)]
+        return args
+    marked = _dedup([*mark, *remove])
+    if marked:
+        args += ["--sponsorblock-mark", ",".join(marked)]
     if remove:
-        keyframes = (
-            "--no-force-keyframes-at-cuts"
-            if sb.get("cut_mode") == "keyframes"
-            else "--force-keyframes-at-cuts"
-        )
-        args += ["--sponsorblock-remove", ",".join(remove), keyframes]
-    if mark:
-        args += ["--sponsorblock-mark", ",".join(mark)]
+        args += [
+            "--print",
+            f"after_move:{SBCUT_PRINT_PREFIX}%(sponsorblock_chapters)j",
+            "--no-simulate",
+            "--no-quiet",
+        ]
     return args
 
 
@@ -654,6 +678,151 @@ class YtDlpProvider:
                 f"{self.binary} exited with code {result.returncode}.",
             )
 
+    # --- fast SponsorBlock cut (INV-019) --------------------------------------
+    #
+    # In fast mode yt-dlp only *marks* segments; the removal is ours: a
+    # keyframe-snapped, stream-copied ffmpeg concat. See segments.py for why
+    # yt-dlp's own remover cannot be used (phantom keep-chunk on end-reaching
+    # segments; broken --remove-chapters ranges). ffmpeg/ffprobe are already
+    # runtime companions of yt-dlp here (its merger drives them), so this adds
+    # no new dependency.
+
+    def _sponsorblock_segments(self, step: PlanStep, ctx: ExecutionContext) -> list:
+        """The segments the finished run fetched, from its SBCUT print line."""
+        sb = step.params.get("sponsorblock") or {}
+        remove = set(sb.get("remove") or [])
+        if not remove or sb.get("cut_mode") == "precise":
+            return []
+        if not ctx.stdout_log.exists():
+            return []
+        line = next(
+            (
+                candidate.removeprefix(SBCUT_PRINT_PREFIX)
+                for candidate in reversed(ctx.stdout_log.read_text().splitlines())
+                if candidate.startswith(SBCUT_PRINT_PREFIX)
+            ),
+            None,
+        )
+        if line is None:
+            return []
+        try:
+            chapters = json.loads(line)
+        except json.JSONDecodeError:
+            return []
+        if not isinstance(chapters, list):
+            return []  # "null" — SponsorBlock had no data / was unreachable
+        return [
+            (float(chapter["start_time"]), float(chapter["end_time"]))
+            for chapter in chapters
+            if chapter.get("category") in remove
+        ]
+
+    def _probe_json(self, path: Path, ctx: ExecutionContext, *args: str) -> dict:
+        scratch = ctx.workdir / f"{path.stem}.probe.log"
+        result = run_process(
+            ["ffprobe", "-v", "error", "-print_format", "json", *args, str(path)],
+            cwd=ctx.workdir,
+            timeout_seconds=ctx.timeout_seconds,
+            stdout_log=scratch,
+            stderr_log=ctx.stderr_log,
+            cancel_check=ctx.cancel_check,
+        )
+        if result.returncode != 0:
+            raise StepExecutionError(
+                "provider_error", f"ffprobe exited with code {result.returncode}."
+            )
+        try:
+            return json.loads(scratch.read_text())
+        except (OSError, json.JSONDecodeError) as exc:
+            raise StepExecutionError(
+                "provider_error", "ffprobe produced unreadable output."
+            ) from exc
+
+    def _apply_fast_sponsorblock_cut(
+        self, step: PlanStep, ctx: ExecutionContext, produced: Path
+    ) -> dict | None:
+        """Remove the fetched segments from *produced*, stream copy only.
+
+        Returns provenance attributes, or ``None`` when there was nothing to
+        cut (no removal requested, precise mode, no segments on this video, or
+        SponsorBlock unreachable — the same no-op yt-dlp's remover answers)."""
+        segments = self._sponsorblock_segments(step, ctx)
+        if not segments:
+            return None
+
+        header = self._probe_json(produced, ctx, "-show_format", "-show_chapters")
+        duration = float((header.get("format") or {}).get("duration") or 0)
+        if duration <= 0:
+            return None
+        chapters = [
+            {
+                "start": float(chapter.get("start_time") or 0),
+                "end": float(chapter.get("end_time") or 0),
+                "title": (chapter.get("tags") or {}).get("title", ""),
+            }
+            for chapter in header.get("chapters") or []
+        ]
+        packets = self._probe_json(
+            produced,
+            ctx,
+            "-select_streams",
+            "v:0",
+            "-show_packets",
+            "-show_entries",
+            "packet=pts_time,flags",
+        )
+        keyframes = sorted(
+            float(packet["pts_time"])
+            for packet in packets.get("packets") or []
+            if "K" in (packet.get("flags") or "") and packet.get("pts_time")
+        )
+
+        plan = plan_segment_cut(segments, duration, keyframes, chapters)
+        if plan is None:
+            return None
+        return self._run_segment_cut(plan, ctx, produced)
+
+    def _run_segment_cut(
+        self, plan: SegmentCutPlan, ctx: ExecutionContext, produced: Path
+    ) -> dict:
+        spec = ctx.workdir / f"{produced.stem}.concat"
+        spec.write_text(render_concat(str(produced), plan.chunks))
+        target = ctx.workdir / f"{produced.stem}.cut{produced.suffix}"
+        # Mirrors the concat invocation yt-dlp itself runs, plus the remapped
+        # chapters as an ffmetadata input (the file's own chapter atom still
+        # holds pre-cut times).
+        args = ["ffmpeg", "-y", "-hide_banner", "-nostdin"]
+        args += ["-f", "concat", "-safe", "0", "-i", str(spec)]
+        metadata = ctx.workdir / f"{produced.stem}.ffmeta"
+        metadata.write_text(render_ffmetadata(plan.chapters))
+        args += ["-f", "ffmetadata", "-i", str(metadata)]
+        args += ["-map", "0", "-dn", "-ignore_unknown", "-c", "copy"]
+        args += ["-map_chapters", "1", "-movflags", "+faststart", str(target)]
+        result = run_process(
+            args,
+            cwd=ctx.workdir,
+            timeout_seconds=ctx.timeout_seconds,
+            stdout_log=ctx.stdout_log,
+            stderr_log=ctx.stderr_log,
+            cancel_check=ctx.cancel_check,
+        )
+        if result.cancelled:
+            raise StepExecutionError("cancelled", "Step cancelled.")
+        if result.timed_out:
+            raise StepExecutionError("timeout", "Step timed out.")
+        if result.returncode != 0 or not target.is_file():
+            raise StepExecutionError(
+                "provider_error",
+                "the SponsorBlock segment cut failed "
+                f"(ffmpeg exited with code {result.returncode}).",
+            )
+        target.replace(produced)
+        return {
+            "sponsorblock_cut": "fast",
+            "removed_segments": plan.removed_count,
+            "removed_seconds": round(plan.removed_seconds, 3),
+        }
+
     def _acquire_video(
         self, step: PlanStep, ctx: ExecutionContext
     ) -> list[ProducedFile]:
@@ -722,6 +891,9 @@ class YtDlpProvider:
                 }
                 if profile_index > 0 or client:
                     attributes["selection"] = "fallback"
+                cut = self._apply_fast_sponsorblock_cut(step, ctx, produced)
+                if cut:
+                    attributes.update(cut)
                 return [
                     ProducedFile(
                         path=produced,
@@ -768,7 +940,14 @@ class YtDlpProvider:
             raise StepExecutionError(
                 "no_output", "Audio acquisition succeeded but produced no audio file."
             )
-        return [ProducedFile(path=produced, media_type=media_type_for(produced))]
+        attributes = self._apply_fast_sponsorblock_cut(step, ctx, produced) or {}
+        return [
+            ProducedFile(
+                path=produced,
+                media_type=media_type_for(produced),
+                attributes=attributes,
+            )
+        ]
 
     def _acquire_thumbnail(
         self, step: PlanStep, ctx: ExecutionContext

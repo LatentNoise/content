@@ -364,6 +364,10 @@ def _plan_each_item(
             # The label ties this step to its naming entry (see the naming
             # engine's item_bases), and carries the ordinal for the filename.
             "item_label": item_slug(entry.title or entry.id, position),
+            # The member's own title, for progress display ("3/6 · Title") —
+            # presentation data the clients would otherwise have to re-derive
+            # by parsing slugs.
+            "item_title": entry.title or entry.id,
         }
         if credential_id:
             params["credential_id"] = credential_id

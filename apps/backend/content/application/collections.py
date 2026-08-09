@@ -140,8 +140,16 @@ class CollectionMemberRunner:
                 },
             ) from exc
 
-        # 3. Canonical execution of the member's own steps.
-        produced = self._run_member_plan(member_plan, ctx)
+        # 3. Canonical execution of the member's own steps — in a workdir of
+        #    the member's own. Members of one collection produce identically
+        #    named files (the member plan's step ids repeat per member), so a
+        #    shared directory only works while members run strictly one after
+        #    another; the outer step id is unique per member and stable across
+        #    retries, which makes it the isolation key that keeps concurrent
+        #    members from overwriting each other mid-flight.
+        member_workdir = ctx.workdir / step.id
+        member_workdir.mkdir(parents=True, exist_ok=True)
+        produced = self._run_member_plan(member_plan, ctx, member_workdir)
         if not produced:
             raise StepExecutionError(
                 "member_produced_nothing",
@@ -164,7 +172,7 @@ class CollectionMemberRunner:
         return produced
 
     def _run_member_plan(
-        self, plan: ExecutionPlan, ctx: ExecutionContext
+        self, plan: ExecutionPlan, ctx: ExecutionContext, workdir: Path
     ) -> list[ProducedFile]:
         """Execute the member's plan in dependency order and return the files
         its *bound* steps produced.
@@ -193,7 +201,7 @@ class CollectionMemberRunner:
                 member_step,
                 ExecutionContext(
                     settings=ctx.settings,
-                    workdir=ctx.workdir,
+                    workdir=workdir,
                     stdout_log=ctx.stdout_log,
                     stderr_log=ctx.stderr_log,
                     timeout_seconds=ctx.timeout_seconds,

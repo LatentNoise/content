@@ -607,6 +607,31 @@ def create_app(
             views.append(view)
         return views
 
+    def _step_labels(job_id: str) -> dict[str, dict]:
+        """Human context per step, from the plan snapshot.
+
+        A collection step's params carry the member's title and ordinal
+        ("3/6 · Trapped by plates…"); the step table deliberately stores only
+        execution state, so the presentation join happens here — once, for
+        every client — instead of each UI re-deriving titles from slugs.
+        """
+        path = JobStorage.from_settings(settings, job_id).snapshots / "plan.json"
+        try:
+            plan = json.loads(path.read_text())
+        except (OSError, json.JSONDecodeError):
+            return {}
+        labels: dict[str, dict] = {}
+        for step in plan.get("steps") or []:
+            params = step.get("params") or {}
+            context = {
+                key: params[key]
+                for key in ("item_title", "member_index", "member_total")
+                if params.get(key) is not None
+            }
+            if context:
+                labels[step.get("id", "")] = context
+        return labels
+
     @app.get("/api/v1/jobs/{job_id}", tags=["jobs"])
     def get_job(job_id: str) -> dict:
         row = store.get_job(job_id)
@@ -614,7 +639,11 @@ def create_app(
             raise HTTPException(status_code=404, detail="job not found")
         view = _job_view(row)
         view.update(store.artifact_labels([job_id]).get(job_id, {}))
-        view["steps"] = store.list_steps(job_id)
+        steps = store.list_steps(job_id)
+        labels = _step_labels(job_id)
+        for step in steps:
+            step.update(labels.get(step["step_id"], {}))
+        view["steps"] = steps
         return view
 
     @app.post("/api/v1/jobs/{job_id}/cancel", tags=["jobs"])

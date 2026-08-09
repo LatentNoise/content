@@ -43,42 +43,51 @@ def test_invalid_category_rejected():
 # --- yt-dlp argument builder (pure) --------------------------------------------
 
 
-def test_sponsorblock_args_remove():
-    """Precise is the default: cuts get forced keyframes, so the result plays.
+def test_sponsorblock_args_remove_never_lets_ytdlp_cut_by_default():
+    """Fast mode: yt-dlp marks, Content cuts (INV-019).
 
-    Stream-copying instead (the old unconditional behaviour) makes yt-dlp cut
-    on the nearest keyframe and splice the discarded frames back in with
-    backwards timestamps — a real download measured 2506 video frames where
-    2331 fit, 173 non-monotonic, all in the last 3.2 seconds. That is the
-    "the end of the video stutters while the audio keeps going" bug.
+    Neither of yt-dlp's own removal modes is acceptable as a default: its
+    stream copy leaves a phantom keep-chunk on end-reaching segments (the
+    "stuttering tail" defect — 141 frames replayed with colliding PTS on a
+    measured file), and ``--force-keyframes-at-cuts`` re-encodes the whole
+    file at ffmpeg's default codecs (measured: 17 s of network, 8 min 33 s of
+    CPU, AV1/Opus returned as H.264/Vorbis, 46% larger). So the download call
+    must only mark the segments — remove set included, so their bounds are
+    known — and print them for the keyframe-snapped stream-copy cut that
+    Content runs itself.
     """
     args = sponsorblock_args({"sponsorblock": {"remove": ["sponsor", "intro"]}})
     assert args == [
-        "--sponsorblock-remove",
+        "--sponsorblock-mark",
         "sponsor,intro",
-        "--force-keyframes-at-cuts",
+        "--print",
+        "after_move:SBCUT:%(sponsorblock_chapters)j",
+        "--no-simulate",
+        "--no-quiet",
     ]
+    assert "--sponsorblock-remove" not in args
+    assert "--force-keyframes-at-cuts" not in args
 
 
-def test_sponsorblock_args_remove_fast_mode_is_opt_in():
-    """The fast path stays reachable for anyone who prefers speed over a clean
-    tail — but it has to be asked for by name."""
+def test_sponsorblock_args_remove_precise_mode_is_opt_in():
+    """The re-encoding path stays reachable for anyone who wants the cut to
+    land exactly where they asked — but it has to be asked for by name."""
     args = sponsorblock_args(
-        {"sponsorblock": {"remove": ["sponsor"], "cut_mode": "keyframes"}}
+        {"sponsorblock": {"remove": ["sponsor"], "cut_mode": "precise"}}
     )
     assert args == [
         "--sponsorblock-remove",
         "sponsor",
-        "--no-force-keyframes-at-cuts",
+        "--force-keyframes-at-cuts",
     ]
 
 
-def test_sponsorblock_cut_mode_defaults_to_precise_in_the_contract():
+def test_sponsorblock_cut_mode_defaults_to_keyframes_in_the_contract():
     """The default lives in the contract, not only in the argument builder."""
     from content.domain.request import SponsorBlockOptions
 
-    assert SponsorBlockOptions().cut_mode == "precise"
-    assert SponsorBlockOptions(cut_mode="keyframes").cut_mode == "keyframes"
+    assert SponsorBlockOptions().cut_mode == "keyframes"
+    assert SponsorBlockOptions(cut_mode="precise").cut_mode == "precise"
 
 
 def test_sponsorblock_args_mark():
@@ -87,10 +96,15 @@ def test_sponsorblock_args_mark():
 
 
 def test_sponsorblock_args_remove_and_mark():
+    """Fast mode marks the union (mark set first), so the cut's boundaries are
+    in the file's own chapters until Content removes them."""
     args = sponsorblock_args(
         {"sponsorblock": {"remove": ["sponsor"], "mark": ["intro"]}}
     )
-    assert "--sponsorblock-remove" in args and "--sponsorblock-mark" in args
+    marked = args[args.index("--sponsorblock-mark") + 1]
+    assert marked == "intro,sponsor"
+    assert "--sponsorblock-remove" not in args
+    assert "--print" in args
 
 
 def test_sponsorblock_args_empty():
@@ -130,7 +144,7 @@ def test_video_sponsorblock_threaded_into_step(plan):
         "remove": ["sponsor"],
         "mark": [],
         # Threaded through to the provider: it decides the keyframe flag.
-        "cut_mode": "precise",
+        "cut_mode": "keyframes",
     }
 
 
@@ -150,7 +164,7 @@ def test_audio_sponsorblock_threaded_into_step(plan):
     assert step.params["sponsorblock"] == {
         "remove": [],
         "mark": ["intro"],
-        "cut_mode": "precise",
+        "cut_mode": "keyframes",
     }
 
 
