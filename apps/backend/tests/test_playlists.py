@@ -300,6 +300,54 @@ def test_member_artifacts_are_attributable_without_parsing_the_filename(
         assert attributes["member_resource_key"], "the member's own resource identity"
 
 
+def test_job_steps_expose_member_context_for_progress(pipeline, client):
+    """A collection job's steps carry the member's title and ordinal, so a
+    client can render "1/2 · First — 73%" instead of a step-id hash. The step
+    table stores execution state only; the API joins the presentation context
+    from the plan snapshot for every client at once."""
+    job_id = pipeline(_each_item_video_payload())
+    steps = client.get(f"/api/v1/jobs/{job_id}").json()["steps"]
+    by_title = {step.get("item_title"): step for step in steps}
+    assert set(by_title) == {"First", "Second"}
+    assert by_title["First"]["member_index"] == 1
+    assert by_title["First"]["member_total"] == 2
+    assert by_title["Second"]["member_index"] == 2
+
+
+def test_members_get_isolated_workdirs(pipeline, store, monkeypatch):
+    """No two members may share a working directory.
+
+    A member plan's step ids repeat identically for every member, so its files
+    (``video-acquire_video_….mkv``) collide by name. Sequential execution only
+    masks that; the moment members run concurrently a shared directory makes
+    them overwrite each other mid-flight. The outer collection step id is
+    unique per member and must key the isolation.
+    """
+    from tests.conftest import FakeProvider
+
+    original = FakeProvider.execute
+    seen: dict[str, object] = {}
+
+    def record_workdir(self, step, ctx):
+        seen[step.params.get("uri", "")] = ctx.workdir
+        return original(self, step, ctx)
+
+    monkeypatch.setattr(FakeProvider, "execute", record_workdir)
+
+    job_id = pipeline(_each_item_video_payload())
+    assert store.get_job(job_id)["status"] == "succeeded"
+
+    workdirs = list(seen.values())
+    assert len(workdirs) == 2
+    assert len(set(workdirs)) == 2, "two members wrote to the same directory"
+    # Isolation nests inside the job workdir under the member's own step id,
+    # so the layout stays attributable per member.
+    names = sorted(path.name for path in workdirs)
+    assert all(name.startswith("member_vid_") for name in names), names
+    parents = {path.parent for path in workdirs}
+    assert len(parents) == 1, "member workdirs must share the job workdir"
+
+
 def test_one_incapable_member_does_not_spoil_the_others(pipeline, store, monkeypatch):
     """A heterogeneous playlist: one member cannot satisfy the requested
     output. It gets the ordinary structured failure for that member, and the

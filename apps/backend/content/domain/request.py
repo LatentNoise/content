@@ -324,23 +324,31 @@ class SponsorBlockOptions(StrictModel):
     Empty = disabled. Client presets (UI) expand into these lists.
 
     `cut_mode` is the same trade-off `VideoCut.mode` already names, applied to
-    the cuts SponsorBlock makes — and it is the difference between a playable
-    file and a broken one:
+    the cuts SponsorBlock makes:
 
-    * `precise` (default) forces keyframes at the cuts, which costs a
-      re-encode but produces a clean stream;
-    * `keyframes` stream-copies instead: fast, but the cut lands on the
-      nearest keyframe and the discarded frames are spliced back in with
-      colliding timestamps — the tail stutters while the audio, cut exactly,
-      plays on.
+    * `keyframes` (default) stream-copies: yt-dlp cuts on the keyframes the
+      stream already has, so the file is written at I/O speed and keeps the
+      codecs that were downloaded;
+    * `precise` forces a keyframe at each cut, which yt-dlp can only honour by
+      **re-encoding the whole file** (its `[ModifyChapters] Re-encoding …`
+      pass) — not just the segment around the cut.
 
-    Correctness is the default because a fast file nobody can watch to the end
-    is not a saving.
+    Stream copy is the default because the alternative is not a slightly
+    slower cut, it is a full transcode. Measured on a 2 min 19 s 2160p
+    download: 17 s to fetch, then 8 min 33 s of CPU, and the result came back
+    H.264/Vorbis — ffmpeg's container defaults — in place of the AV1/Opus that
+    was actually downloaded: 46% larger for visibly less quality. Nobody asks
+    for that in exchange for a tidier cut boundary.
+
+    The stream copy has a known artifact of its own: because the cut lands on
+    the nearest existing keyframe, frames just before it can be spliced back
+    in with colliding timestamps and the tail stutters. That is a real defect
+    and it is not fixed by re-encoding the entire video to hide it.
     """
 
     remove: list[SponsorBlockCategory] = Field(default_factory=list)
     mark: list[SponsorBlockCategory] = Field(default_factory=list)
-    cut_mode: Literal["keyframes", "precise"] = "precise"
+    cut_mode: Literal["keyframes", "precise"] = "keyframes"
 
 
 def _parse_timestamp(value: str) -> float:
