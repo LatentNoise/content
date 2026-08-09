@@ -140,9 +140,9 @@ st.markdown(
       header[data-testid="stHeader"] { display: none; }
       div[data-testid="stDecoration"] { display: none; }
       #MainMenu, footer { visibility: hidden; }
-      .block-container { padding-top: 2.6rem; padding-bottom: 3rem;
+      .block-container { padding-top: 4rem; padding-bottom: 3rem;
         max-width: 820px; }
-      .ht-brand { text-align:center; padding:.2rem 0 .3rem 0; }
+      .ht-brand { text-align:center; padding:.2rem 0 0 0; margin-bottom:1.5rem; }
       .ht-brand img { width:54px; vertical-align:middle; border-radius:13px;
         box-shadow:0 4px 18px rgba(139,92,246,.35); }
       .ht-brand .name { font-size:2.5rem; font-weight:800; vertical-align:middle;
@@ -279,7 +279,6 @@ st.markdown(
     <div class="ht-brand">
       <img src="{_LOGO_URI}" alt="HomeTube"/>
       <span class="name">HomeTube</span>
-      <div class="sub">Download YouTube videos — powered by Content</div>
     </div>
     """,
     unsafe_allow_html=True,
