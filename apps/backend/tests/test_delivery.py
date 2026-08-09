@@ -80,9 +80,16 @@ def test_delivery_store_copies_and_lists(tmp_path):
     assert delivered == root.resolve() / "talks" / "2026" / "My Keynote.mp4"
     assert delivered.read_bytes() == b"payload"
 
-    # a second file with the same name gets a collision-free sibling
+    # Re-delivering the very same bytes resolves to the file already there:
+    # a library must not accumulate clones when a download is re-run.
     again = store.deliver(src, "talks/2026", "My Keynote.mp4")
-    assert again.name == "My Keynote-1.mp4"
+    assert again == delivered
+
+    # A *different* file under a name already taken still gets a sibling.
+    other = tmp_path / "other.mp4"
+    other.write_bytes(b"a different payload")
+    sibling = store.deliver(other, "talks/2026", "My Keynote.mp4")
+    assert sibling.name == "My Keynote-1.mp4"
 
     assert store.list_folders() == ["talks", "talks/2026"]
 
@@ -254,13 +261,22 @@ def test_mode_none_with_destination_is_contradictory_intent():
         Delivery(mode="none", folder="somewhere")
 
 
-def test_delivering_twice_records_the_collision_sibling(policy_on, store):
+def test_running_the_same_job_twice_delivers_one_file(policy_on, store):
+    """The same request run twice points at the same library file.
+
+    It used to record `Fake conference-1.m4a` for the second run — the counter
+    fired on the name without ever asking whether the bytes differed, so a
+    re-submitted playlist cloned the library. Identical content now resolves to
+    the file already delivered, and both jobs report that same path.
+    """
     pipeline, settings = policy_on
     first = pipeline(minimal_payload())
     second = pipeline(minimal_payload())
     assert store.list_artifacts(first)[0]["delivered_path"] == "Fake conference.m4a"
-    assert store.list_artifacts(second)[0]["delivered_path"] == "Fake conference-1.m4a"
-    assert (_delivery_root(settings) / "Fake conference-1.m4a").is_file()
+    assert store.list_artifacts(second)[0]["delivered_path"] == "Fake conference.m4a"
+    root = _delivery_root(settings)
+    assert (root / "Fake conference.m4a").is_file()
+    assert not (root / "Fake conference-1.m4a").exists()
 
 
 def test_resolved_delivery_is_visible_in_the_plan_snapshot(policy_on, store):
@@ -320,3 +336,68 @@ def test_the_three_paths_are_distinct_concepts(policy_on, store, settings):
     assert delivered.is_file()
     assert delivered.read_bytes() == internal.read_bytes()
     assert delivered != internal
+
+
+# --- re-delivering the same content ---------------------------------------------
+
+
+def test_delivering_identical_content_twice_keeps_one_file(tmp_path):
+    """The library must not fill up with clones of the same bytes.
+
+    Re-running a playlist re-delivers artifacts whose names already exist. The
+    counter used to fire blindly, so a second run produced `Video-1.mkv`, a
+    third `Video-2.mkv` — same video every time. Identical content now resolves
+    to the file already there.
+    """
+    from content.storage.layout import DeliveryStore
+
+    root = tmp_path / "library"
+    store = DeliveryStore(root)
+    source = tmp_path / "produced.mkv"
+    source.write_bytes(b"the same video bytes")
+
+    first = store.deliver(source, "", "My Video.mkv")
+    second = store.deliver(source, "", "My Video.mkv")
+
+    assert first == second
+    assert first.name == "My Video.mkv"  # no "-1"
+    assert [p.name for p in root.iterdir()] == ["My Video.mkv"]
+
+
+def test_a_different_video_with_the_same_name_still_gets_a_counter(tmp_path):
+    """The counter exists for a real case — two different videos sharing a
+    title — and that case must keep working."""
+    from content.storage.layout import DeliveryStore
+
+    root = tmp_path / "library"
+    store = DeliveryStore(root)
+    first_source = tmp_path / "a.mkv"
+    first_source.write_bytes(b"one video")
+    other_source = tmp_path / "b.mkv"
+    other_source.write_bytes(b"a different video entirely")
+
+    first = store.deliver(first_source, "", "Same Title.mkv")
+    second = store.deliver(other_source, "", "Same Title.mkv")
+
+    assert first.name == "Same Title.mkv"
+    assert second.name == "Same Title-1.mkv"
+    assert sorted(p.name for p in root.iterdir()) == [
+        "Same Title-1.mkv",
+        "Same Title.mkv",
+    ]
+
+
+def test_same_size_different_bytes_is_not_treated_as_identical(tmp_path):
+    """Size is only the cheap pre-filter; the checksum is what decides."""
+    from content.storage.layout import DeliveryStore
+
+    root = tmp_path / "library"
+    store = DeliveryStore(root)
+    first_source = tmp_path / "a.mkv"
+    first_source.write_bytes(b"AAAAAAAAAA")
+    other_source = tmp_path / "b.mkv"
+    other_source.write_bytes(b"BBBBBBBBBB")  # same length, different content
+
+    store.deliver(first_source, "", "Clash.mkv")
+    second = store.deliver(other_source, "", "Clash.mkv")
+    assert second.name == "Clash-1.mkv"
