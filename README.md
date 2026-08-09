@@ -94,18 +94,17 @@ Data persists in `./data`. Finished artifacts are delivered by default to
 media library instead — its sub-folders become the destination choices offered
 in the web apps.
 
-To also launch Content Studio and Content Console:
-
-```bash
-docker compose --profile all up --build
-```
-
 | Service | Default URL | Purpose |
 | --- | --- | --- |
 | HomeTube | <http://localhost:8501> | Focused YouTube workflow |
 | Content Studio | <http://localhost:8502> | General-purpose request builder |
 | Content Console | <http://localhost:8503> | Operations and job control; does not create downloads |
 | Content API | <http://localhost:8010/docs> | REST API, OpenAPI, and embedded worker |
+
+All four start by default. The engine and Content Console always run; the
+`COMPOSE_PROFILES` line in `.env` chooses the download UIs — keep the default
+`hometube,studio`, or set it to just `hometube` or just `studio` to run a
+single one.
 
 ## What Content can produce
 

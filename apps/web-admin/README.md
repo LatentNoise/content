@@ -32,7 +32,7 @@ the same dark cards and pills) so the suite reads as one product.
 ## Run
 
 ```bash
-docker compose --profile admin up -d --build web-admin   # port 8503
+docker compose up -d --build console   # port 8503 — always on, no profile
 # or locally:
 CONTENT_API_URL=http://localhost:8010 streamlit run app.py --server.port 8503
 ```

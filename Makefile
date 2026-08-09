@@ -148,9 +148,10 @@ version-tag:  ## Create the annotated tag v<version> (clean tree + agreeing vers
 
 # --- docker ----------------------------------------------------------------------
 
-docker-up:  ## Build and start the compose stack (engine + HomeTube)
+docker-up:  ## Build and start the compose stack (UIs per COMPOSE_PROFILES in .env)
 	docker compose up --build -d
-	@echo "engine http://localhost:8010 — HomeTube http://localhost:8501"
+	@echo "engine http://localhost:8010 — console http://localhost:8503"
+	@echo "UIs per COMPOSE_PROFILES: HomeTube http://localhost:8501 — Studio http://localhost:8502"
 
 docker-down:  ## Stop and remove the compose stack
 	docker compose down
