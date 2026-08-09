@@ -18,6 +18,8 @@ together.
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 #: A capability the source can yield. `unknown` is included on purpose: the
 #: engine could not decide before execution, and the honest answer is to let the
 #: attempt happen rather than hide the option.
@@ -88,3 +90,28 @@ def display(status: str) -> tuple[str, str]:
 def capability_display(status: str) -> tuple[str, str]:
     """`(icon, colour)` for a capability status, never raising."""
     return CAPABILITY_STATUS_DISPLAY.get(status, UNKNOWN_STATUS_DISPLAY)
+
+
+def ago(iso: str | None) -> str:
+    """``"2026-08-07T10:00:00+00:00"`` → ``"2.1d ago"``; ``None`` → ``"—"``.
+
+    The one relative-time renderer for the UIs (the console's job list, the
+    credential freshness captions) — shared here for the same reason as the
+    status tables: three apps, one definition.
+    """
+    if not iso:
+        return "—"
+    try:
+        ts = datetime.fromisoformat(iso.replace("Z", "+00:00"))
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=timezone.utc)
+        delta = (datetime.now(timezone.utc) - ts).total_seconds()
+    except ValueError:
+        return iso
+    if delta < 60:
+        return f"{delta:.0f}s ago"
+    if delta < 3600:
+        return f"{delta / 60:.0f}m ago"
+    if delta < 86400:
+        return f"{delta / 3600:.1f}h ago"
+    return f"{delta / 86400:.1f}d ago"

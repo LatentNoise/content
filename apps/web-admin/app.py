@@ -13,11 +13,11 @@ Replaces the old, incoherent `/ui` page that used to offer a download form.
 
 import json
 import os
-from datetime import datetime, timezone
 
 import streamlit as st
 from content_sdk import legal, notifications
 from content_sdk.compat import ApiError, ContentClient
+from content_sdk.status import ago as _ago
 from content_sdk.status import capability_display, display
 
 API_URL = os.getenv("CONTENT_API_URL", "http://localhost:8000")
@@ -54,25 +54,6 @@ def _human_bytes(n: int) -> str:
             return f"{size:.0f} {unit}" if unit == "B" else f"{size:.1f} {unit}"
         size /= 1024
     return f"{size:.1f} TiB"
-
-
-def _ago(iso: str | None) -> str:
-    if not iso:
-        return "—"
-    try:
-        ts = datetime.fromisoformat(iso.replace("Z", "+00:00"))
-        if ts.tzinfo is None:
-            ts = ts.replace(tzinfo=timezone.utc)
-        delta = (datetime.now(timezone.utc) - ts).total_seconds()
-    except ValueError:
-        return iso
-    if delta < 60:
-        return f"{delta:.0f}s ago"
-    if delta < 3600:
-        return f"{delta / 60:.0f}m ago"
-    if delta < 86400:
-        return f"{delta / 3600:.1f}h ago"
-    return f"{delta / 86400:.1f}d ago"
 
 
 def _short_source(source: dict) -> str:
@@ -388,9 +369,29 @@ with tab_over:
                 f"primary subs <code>{lang['primary_include_subtitles']}</code></div>",
                 unsafe_allow_html=True,
             )
+            # Ids + file metadata (path, presence, freshness) — the answer to
+            # "are my cookies actually wired, and when did I last refresh
+            # them". The contents never leave the server (INV-009).
+            cred_rows = ""
+            infos = system.get("credentials_info") or [
+                {"id": cid} for cid in system.get("credentials", [])
+            ]
+            for cred in infos:
+                if cred.get("exists"):
+                    state = (
+                        f"✅ <code>{cred['path']}</code> · "
+                        f"updated {_ago(cred.get('updated_at'))}"
+                    )
+                elif "path" in cred:
+                    state = (
+                        f"🚫 <code>{cred['path']}</code> · "
+                        "file not found — drop it there (config/README.md)"
+                    )
+                else:
+                    state = ""
+                cred_rows += f"<span class='pill'>{cred['id']}</span> {state}<br>"
             st.markdown(
-                "<div class='ca-card'><h4>🔑 Credentials (ids only)</h4>"
-                f"<code>{', '.join(system['credentials']) or '—'}</code></div>",
+                f"<div class='ca-card'><h4>🔑 Credentials</h4>{cred_rows or '—'}</div>",
                 unsafe_allow_html=True,
             )
         with cols[1]:

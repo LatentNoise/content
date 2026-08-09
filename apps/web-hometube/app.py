@@ -18,7 +18,7 @@ import shlex
 import streamlit as st
 from content_sdk import legal, notifications
 from content_sdk.compat import ApiError, ContentClient
-from content_sdk.status import better_status, display, is_producible
+from content_sdk.status import ago, better_status, display, is_producible
 
 API_URL = os.getenv("CONTENT_API_URL", "http://localhost:8000")
 PUBLIC_API_URL = os.getenv("CONTENT_PUBLIC_API_URL", API_URL).rstrip("/")
@@ -180,6 +180,7 @@ st.session_state.setdefault("job_id", None)
 backend_ok = False
 version = "?"
 credentials: list[str] = []
+credential_files: dict[str, dict] = {}
 lang_prefs: dict = {}
 try:
     health = client.health()
@@ -187,6 +188,9 @@ try:
     version = health.get("version", "?")
     config = client.config()
     credentials = config.get("credentials", [])
+    credential_files = {
+        c["id"]: c for c in config.get("credentials_info", []) if "id" in c
+    }
     lang_prefs = config.get("language", {}) or {}
 except Exception as exc:  # noqa: BLE001
     st.error(f"⚠️ Back-end unreachable at {API_URL} — {exc}")
@@ -761,8 +765,27 @@ with st.expander("🍪 Cookie Management"):
         help="Server-side cookie credentials (CONTENT_CREDENTIALS). "
         "Needed for age-restricted or private videos.",
     )
+    # Kill the classic doubt — "are my cookies actually in use?" — with the
+    # file's own facts: which path, whether it is there, when it was last
+    # refreshed (the metadata the server reports; contents never leave it).
+    if credential != "none":
+        meta = credential_files.get(credential)
+        if meta and meta.get("exists"):
+            st.caption(
+                f"✅ Will be used for this download: `{meta['path']}` · "
+                f"updated {ago(meta.get('updated_at'))}"
+            )
+        elif meta:
+            st.caption(
+                f"🚫 Declared, but the file is missing: `{meta['path']}` — "
+                "drop your export there (see config/README.md), then "
+                "`make docker-update`."
+            )
     if not credentials:
-        st.caption("No credentials configured on the server.")
+        st.caption(
+            "No credentials configured on the server — to add YouTube "
+            "cookies, see config/README.md (two steps)."
+        )
 
 
 # --- ⚙️ Advanced (yt-dlp) ------------------------------------------------------

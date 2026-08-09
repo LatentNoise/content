@@ -175,3 +175,74 @@ def test_console_says_what_a_job_was_about(run_app, monkeypatch):
     assert "audio + video" in text  # the outputs, from the request
     assert "youtube.com/watch?v=jNQXAC9IVRw" in text  # the source, scheme stripped
     assert "Me at the zoo" in text  # the artifact as the human title
+
+
+def test_hometube_shows_which_cookie_file_is_in_use(run_app, monkeypatch):
+    """ "Are my cookies actually used?" — the expander answers with the file's
+    own facts: path, presence, freshness. Server metadata only; contents never
+    travel."""
+    from conftest import FakeContentClient
+
+    base_config = FakeContentClient.config
+
+    def with_credentials(self):
+        payload = dict(base_config(self))
+        payload["credentials"] = ["youtube"]
+        payload["credentials_info"] = [
+            {
+                "id": "youtube",
+                "path": "/config/youtube_cookies.txt",
+                "exists": True,
+                "size_bytes": 1234,
+                "updated_at": "2026-08-07T10:00:00+00:00",
+            }
+        ]
+        return payload
+
+    monkeypatch.setattr(FakeContentClient, "config", with_credentials)
+    at = run_app("hometube")
+    assert not at.exception, at.exception
+    # Select the credential in the Cookie Management expander and rerun.
+    auth_boxes = [s for s in at.selectbox if "none" in (s.options or [])]
+    box = next(s for s in auth_boxes if "youtube" in s.options)
+    box.select("youtube").run()
+    text = _all_text(at)
+    assert "/config/youtube_cookies.txt" in text
+    assert "updated" in text
+
+
+def test_console_reports_credential_files_and_freshness(run_app, monkeypatch):
+    """The credentials card shows each id with its file's path and state —
+    including the dangling case (declared in .env, file never dropped)."""
+    from conftest import FakeContentClient
+
+    base_system = FakeContentClient.system
+
+    def with_credentials(self):
+        payload = dict(base_system(self))
+        payload["credentials"] = ["vimeo", "youtube"]
+        payload["credentials_info"] = [
+            {
+                "id": "vimeo",
+                "path": "/config/vimeo_cookies.txt",
+                "exists": False,
+                "size_bytes": None,
+                "updated_at": None,
+            },
+            {
+                "id": "youtube",
+                "path": "/config/youtube_cookies.txt",
+                "exists": True,
+                "size_bytes": 1234,
+                "updated_at": "2026-08-07T10:00:00+00:00",
+            },
+        ]
+        return payload
+
+    monkeypatch.setattr(FakeContentClient, "system", with_credentials)
+    at = run_app("console")
+    assert not at.exception, at.exception
+    text = _all_text(at)
+    assert "/config/youtube_cookies.txt" in text
+    assert "updated" in text
+    assert "file not found" in text  # the dangling declaration is visible
