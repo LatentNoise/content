@@ -55,6 +55,14 @@ syncthing*.txt
 config/*
 !config/README.md
 
+# The visuals workbench: screenshots, GIFs, recordings and brand assets are
+# produced here and published as RELEASE ATTACHMENTS, never committed — the
+# repository stays light and the release is their durable home. Only the
+# explaining README is tracked (same closes-the-*.md-allowlist-hole rule as
+# config/).
+media/*
+!media/README.md
+
 # Playground: everything in input/ and output/ is supplied or produced by a
 # local run (media, cookies, job folders, summaries…). The allowlist above would
 # otherwise let a generated *.md / *.csv / *.py slip in — pgverify's `sum.md`

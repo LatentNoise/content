@@ -38,8 +38,10 @@ config/
 # Test suites: no image COPYs them, and apps/backend/tests alone is 2.4 MB.
 **/tests/
 
-# Local-only or non-shipped material.
+# Local-only or non-shipped material. media/ matters most: a demo GIF or a
+# raw screen recording would otherwise ride into every image build context.
 playground/
 work/
 docs/
 hometube/
+media/

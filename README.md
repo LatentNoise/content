@@ -37,7 +37,8 @@ preserving the provenance of every artifact.
 
 <!-- Demo GIF and screenshots will be attached to a release, not tracked in
 the repository, and embedded here as
-https://github.com/LatentNoise/content/releases/download/<tag>/<asset> -->
+https://github.com/LatentNoise/content/releases/download/<tag>/<asset>
+They are produced in media/ (untracked; see media/README.md). -->
 
 ## Why Content?
 
