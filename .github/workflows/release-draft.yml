@@ -39,19 +39,27 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Create draft release for the tag
+      # The installable artifact: a zip of the tracked extension files, so a
+      # user downloads one file instead of cloning the repository. Built here
+      # rather than by hand, so it can never be a stale copy of the source.
+      - name: Package the browser extension
+        run: make extension-zip
+
+      - name: Create draft release for the tag, with the extension attached
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ inputs.tag || github.ref_name }}
         run: |
           set -euo pipefail
           if gh release view "$TAG" --json isDraft >/dev/null 2>&1; then
-            echo "A release already exists for $TAG — leaving it untouched."
+            echo "A release already exists for $TAG — refreshing the extension asset only."
+            gh release upload "$TAG" dist/*.zip --clobber
             exit 0
           fi
           gh release create "$TAG" \
             --draft \
             --verify-tag \
             --title "Content $TAG" \
-            --generate-notes
+            --generate-notes \
+            dist/*.zip
           echo "Draft created for $TAG — edit and publish it deliberately."

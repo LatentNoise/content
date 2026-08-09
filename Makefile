@@ -15,6 +15,7 @@ SRC  := apps/backend/content apps/backend/tests apps/web-hometube apps/web-studi
 VERSION_PYPROJECTS := apps/backend/pyproject.toml apps/cli/pyproject.toml \
                       apps/mcp/pyproject.toml packages/python-sdk/pyproject.toml \
                       apps/web-hometube/pyproject.toml
+EXT_DIR            := apps/browser-extension
 VERSION_MODULES    := apps/backend/content/__init__.py \
                       packages/python-sdk/content_sdk/__init__.py \
                       apps/web-hometube/app.py apps/web-studio/app.py \
@@ -23,7 +24,7 @@ VERSION_MODULES    := apps/backend/content/__init__.py \
 .DEFAULT_GOAL := validate
 .PHONY: help install format lint test test-all ui-venv test-ui test-ui-live \
         validate validate-all validate-release clean run \
-        version version-update version-tag docker-up docker-update docker-down \
+        version version-update version-tag extension-zip docker-up docker-update docker-down \
         docker-logs
 
 help:  ## List the available targets
@@ -102,7 +103,8 @@ version:  ## Show every version declaration and fail if they disagree
 	  grep -h '^version = ' $(VERSION_PYPROJECTS) | sed 's/.*"\(.*\)"/\1/'; \
 	  grep -h '^__version__ = ' $(VERSION_MODULES) | sed 's/.*"\(.*\)"/\1/'; \
 	  grep -o 'version="[0-9][^"]*"' apps/mcp/content_mcp/server.py | sed 's/.*"\(.*\)"/\1/'; \
-	  grep -o 'org.opencontainers.image.version="[^"]*"' apps/backend/Dockerfile | sed 's/.*"\(.*\)"/\1/' \
+	  grep -o 'org.opencontainers.image.version="[^"]*"' apps/backend/Dockerfile | sed 's/.*"\(.*\)"/\1/'; \
+	  grep -m1 '"version"' $(EXT_DIR)/manifest.json | sed 's/.*"\([0-9][^"]*\)".*/\1/' \
 	); \
 	distinct=$$(echo "$$versions" | sort -u); \
 	count=$$(echo "$$distinct" | wc -l | tr -d ' '); \
@@ -115,6 +117,7 @@ version:  ## Show every version declaration and fail if they disagree
 	  grep -n '^__version__ = ' $(VERSION_MODULES); \
 	  grep -n 'version="[0-9][^"]*"' apps/mcp/content_mcp/server.py; \
 	  grep -n 'org.opencontainers.image.version=' apps/backend/Dockerfile; \
+	  grep -n '"version"' $(EXT_DIR)/manifest.json | head -1; \
 	  exit 1; \
 	fi
 
@@ -134,6 +137,8 @@ version-update:  ## Set the version everywhere: make version-update VERSION=x.y.
 	done
 	@sed -i.bak 's/version="[0-9][^"]*"/version="$(VERSION)"/' \
 	  apps/mcp/content_mcp/server.py && rm apps/mcp/content_mcp/server.py.bak
+	@sed -i.bak '0,/"version"/s/"version": "[^"]*"/"version": "$(VERSION)"/' \
+	  $(EXT_DIR)/manifest.json && rm $(EXT_DIR)/manifest.json.bak
 	@sed -i.bak 's/org.opencontainers.image.version="[^"]*"/org.opencontainers.image.version="$(VERSION)"/' \
 	  apps/backend/Dockerfile && rm apps/backend/Dockerfile.bak
 	@$(MAKE) --no-print-directory version
@@ -146,6 +151,20 @@ version-tag:  ## Create the annotated tag v<version> (clean tree + agreeing vers
 	@v=$$(grep '^version = ' apps/backend/pyproject.toml | sed 's/.*"\(.*\)"/\1/'); \
 	git tag -a "v$$v" -m "Content v$$v"; \
 	echo "tag v$$v created — push it deliberately with: git push origin v$$v"
+
+# --- browser extension -----------------------------------------------------------
+
+# The file list comes from `git ls-files`, not from the directory: only tracked
+# files are packaged, so no .DS_Store, no editor backup and no local
+# experiment can ride along into something people download and load into
+# their browser.
+extension-zip:  ## Package the Chromium extension for manual install (dist/)
+	@version=$$(grep -m1 '"version"' $(EXT_DIR)/manifest.json | sed 's/.*"\([0-9][^"]*\)".*/\1/'); \
+	archive="$(CURDIR)/dist/hometube-for-content-$$version.zip"; \
+	mkdir -p dist; rm -f "$$archive"; \
+	cd $(EXT_DIR) && git ls-files -z | xargs -0 zip -q -X "$$archive"; \
+	echo "packaged $$archive"; \
+	cd $(CURDIR) && unzip -Z1 "$$archive" | sed 's/^/  /'
 
 # --- docker ----------------------------------------------------------------------
 

@@ -57,6 +57,8 @@ One engine, one official SDK, thin clients — each documents itself:
   fonts, glyph policy
 - [operations/ytdlp-base-image.md](operations/ytdlp-base-image.md) — how the
   yt-dlp base image is pinned, how updates are noticed, how a bump is validated
+- [operations/browser-extension-distribution.md](operations/browser-extension-distribution.md)
+  — the release zip, and what publishing on the Chrome Web Store would involve
 - [operations/release-readiness.md](operations/release-readiness.md) — what
   "releasable" means · [operations/github-settings.md](operations/github-settings.md)
   — the hosting settings the governance model assumes

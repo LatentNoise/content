@@ -4,6 +4,7 @@
   "version": "0.1.0",
   "description": "Send the page you are watching to your Content engine, in one click.",
   "homepage_url": "https://github.com/LatentNoise/content",
+  "minimum_chrome_version": "102",
   "permissions": ["storage", "activeTab"],
   "host_permissions": ["http://localhost:8010/*"],
   "optional_host_permissions": ["http://*/*", "https://*/*"],
