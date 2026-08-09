@@ -79,8 +79,9 @@ make test-ui       # Streamlit AppTests for the 3 UIs (disposable venv, fake cli
 make validate-all  # validate + test-ui + the external suite (-m external)
 ```
 
-Docker: `docker compose up -d --build` (backend + HomeTube);
-`--profile all` for Studio (:8502) and the Console (:8503). The web images embed
+Docker: `docker compose up -d --build` — the engine (:8010) and the Console
+(:8503) always run; `COMPOSE_PROFILES` in `.env` selects the download UIs
+(HomeTube :8501, Studio :8502 — both by default). The web images embed
 `packages/python-sdk` (repo-root context).
 
 ## Three documents proposed and deliberately not created

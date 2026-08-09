@@ -1,16 +1,17 @@
 # Deployment
 
-The accepted state of the deployment. Single-host, Docker Compose, four services
-(two by default + two opt-in through profiles).
+The accepted state of the deployment. Single-host, Docker Compose, four
+services: the engine and the console always run, the download UIs are selected
+by `COMPOSE_PROFILES` in `.env` (both by default).
 
 ## Topology
 
-| Service | Role | Host port | Profile | Base |
+| Service | Role | Host port | Runs | Base |
 | --- | --- | --- | --- | --- |
-| `content` | The `/api/v1` API + the embedded worker (ADR 0007) | `${CONTENT_PORT:-8010}` → 8000 | default | `jauderho/yt-dlp` (yt-dlp + ffmpeg, + deno for the YouTube challenge) |
-| `hometube` | HomeTube — the YouTube UI (a pure API client) | `${FRONTEND_PORT:-8501}` → 8501 | default | `python:3.12-slim` + `content-sdk` |
-| `studio` | Content Studio — the general UI | `${FRONTEND_GENERAL_PORT:-8502}` → 8501 | `studio` / `all` | same |
-| `console` | Content Console — the operations console | `${WEB_ADMIN_PORT:-8503}` → 8501 | `admin` / `all` | same |
+| `content` | The `/api/v1` API + the embedded worker (ADR 0007) | `${CONTENT_PORT:-8010}` → 8000 | always | `jauderho/yt-dlp` (yt-dlp + ffmpeg, + deno for the YouTube challenge) |
+| `hometube` | HomeTube — the YouTube UI (a pure API client) | `${HOMETUBE_PORT:-8501}` → 8501 | `hometube` in `COMPOSE_PROFILES` | `python:3.12-slim` + `content-sdk` |
+| `studio` | Content Studio — the general UI | `${STUDIO_PORT:-8502}` → 8501 | `studio` in `COMPOSE_PROFILES` | same |
+| `console` | Content Console — the operations console | `${CONSOLE_PORT:-8503}` → 8501 | always | same |
 
 The UIs reach the backend over the compose network (`http://content:8000`,
 `CONTENT_API_URL`) through the SDK (`content_sdk`); the artifacts' **download
@@ -19,17 +20,23 @@ links** point at the host port
 browser that follows them. Each UI waits for `content` to be *healthy*.
 
 ```bash
-docker compose up --build                 # backend + HomeTube
-docker compose --profile all up --build   # + Studio + Console
-docker compose up --build content         # the backend alone
+docker compose up -d --build              # everything in COMPOSE_PROFILES (.env):
+                                          # engine + console + both UIs by default
+docker compose up -d --build content      # the backend alone
 ```
+
+Which download UIs start is **one line in `.env`**, no compose flags to learn:
+`COMPOSE_PROFILES=hometube,studio` (the `.env.example` default),
+`COMPOSE_PROFILES=hometube`, or `COMPOSE_PROFILES=studio`. The engine and the
+console are not listed there because they always run.
 
 ## Configuration (a root `.env`, not versioned)
 
 | Variable | Default | Role |
 | --- | --- | --- |
-| **🔌 Ports & worker** | | |
-| `CONTENT_PORT` / `FRONTEND_PORT` | 8010 / 8501 | Host ports |
+| **🔌 Services & ports** | | |
+| `COMPOSE_PROFILES` | `hometube,studio` | Which download UIs start (`hometube`, `studio`, or both); the engine and the console always run |
+| `CONTENT_PORT` / `HOMETUBE_PORT` / `STUDIO_PORT` / `CONSOLE_PORT` | 8010 / 8501 / 8502 / 8503 | Host ports |
 | `CONTENT_MAX_CONCURRENT_JOBS` | 2 | Worker concurrency |
 | `CONTENT_STEP_TIMEOUT_SECONDS` | 3600 | Per-step timeout |
 | **🌐 Network & access** | | |

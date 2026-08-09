@@ -19,10 +19,11 @@ Locally:
 CONTENT_API_URL=http://localhost:8010 streamlit run app.py --server.port 8502
 ```
 
-With Docker Compose (opt-in profile, port 8502):
+With Docker Compose (port 8502) — Studio starts whenever `studio` is in the
+`COMPOSE_PROFILES` line of `.env` (it is, by default):
 
 ```bash
-docker compose --profile studio up -d --build studio
+docker compose up -d --build
 ```
 
 ## Environment
