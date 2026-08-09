@@ -25,6 +25,30 @@ docker compose up -d --build              # everything in COMPOSE_PROFILES (.env
 docker compose up -d --build content      # the backend alone
 ```
 
+### Image sizes, and why they are what they are
+
+| Image | Size | What dominates it |
+| --- | --- | --- |
+| `content` (engine) | ~640 MB | the `jauderho/yt-dlp` base (yt-dlp, ffmpeg, deno and their Python deps: `curl_cffi` 36 MB, Pillow 20 MB, `Cryptodome` 7 MB) plus Typst at 46 MB. Content's own additions — FastAPI, uvicorn, pydantic, ReportLab — are about 12 MB. |
+| the three UIs | ~700 MB each | Streamlit's dependency tree: **pyarrow 140 MB, pandas 75 MB, numpy 66 MB, pydeck 23 MB**. The app itself is one file. |
+
+The counter-intuitive part is real: a thin Streamlit client is *bigger* than the
+engine that carries yt-dlp, ffmpeg and a typesetter.
+
+What is deliberately not done: pyarrow, pandas and numpy are **hard
+dependencies of Streamlit**, not choices. HomeTube and Studio never touch a
+dataframe and could in principle run without them, but Content Console does
+(`st.dataframe`), Streamlit imports pandas on paths beyond the dataframe API,
+and uninstalling a framework's own dependencies to save space is the kind of
+cleverness that fails at runtime rather than at build time. The ~215 MB stays.
+
+What is done, because it is free: the UI images install with `--no-compile` and
+set `PYTHONDONTWRITEBYTECODE`, which keeps ~98 MB of `.pyc` out of the layers we
+own (the interpreter compiles on first import instead — once, in a server that
+runs for days). The backend image already did this. Note that deleting files
+that come from a *base* layer — pip, for instance — reclaims nothing, because
+the base layer still carries them.
+
 ### Prebuilt images, or a local build
 
 Every version tag publishes four multi-arch images (amd64 + arm64) to GHCR:

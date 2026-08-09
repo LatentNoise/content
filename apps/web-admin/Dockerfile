@@ -11,12 +11,18 @@ LABEL org.opencontainers.image.title="Content Admin" \
 
 WORKDIR /app
 
-RUN pip install --no-cache-dir "streamlit>=1.40"
+# --no-compile: pip writes ~76 MB of .pyc into site-packages otherwise,
+# and this layer is ours, so skipping them really shrinks the image (the
+# stdlib's own bytecode lives in the base layer and cannot be reclaimed).
+# The cost is compiling on first import, once, in a long-running server.
+# Same choice the backend image already makes.
+RUN pip install --no-cache-dir --no-compile "streamlit>=1.40"
 
 # The official SDK — the single client for the /api/v1 contract (its deps bring
 # httpx + pydantic). The UI uses its dict-compat surface (content_sdk.compat).
 COPY packages/python-sdk/ /tmp/content-sdk/
-RUN pip install --no-cache-dir /tmp/content-sdk
+RUN pip install --no-cache-dir --no-compile /tmp/content-sdk \
+    && rm -rf /tmp/content-sdk
 
 # AGPL §4: the licence travels with the program we distribute.
 COPY LICENSE NOTICE ./
@@ -26,7 +32,8 @@ COPY apps/web-admin/.streamlit/ ./.streamlit/
 RUN adduser --disabled-password --gecos "" appuser && chown -R appuser /app
 USER appuser
 
-ENV STREAMLIT_SERVER_HEADLESS=true \
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    STREAMLIT_SERVER_HEADLESS=true \
     STREAMLIT_BROWSER_GATHER_USAGE_STATS=false \
     CONTENT_API_URL=http://content:8000
 
