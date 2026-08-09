@@ -350,3 +350,37 @@ def test_storage_endpoint_reports_families(client):
     body = client.get("/api/v1/storage").json()
     assert set(body) == {"jobs", "delivery", "tmp", "cache"}
     assert "bytes" in body["jobs"] and "count" in body["jobs"]
+
+
+def test_identical_playlist_reuses_every_entry(pipeline):
+    """Re-submitting the same playlist must re-download nothing.
+
+    Single-video reuse was covered; the playlist path (scope each_item) was
+    not, and it is the one people re-run — a subscription feed re-submitted to
+    pick up new videos would otherwise fetch every old one again. Each entry is
+    its own step with its own content-addressed signature, so each is reused
+    independently.
+    """
+    playlist = minimal_payload(
+        sources=[
+            {"id": "main", "type": "url", "uri": "https://example.com/playlist?list=X"}
+        ],
+        outputs=[{"id": "vid", "type": "video", "scope": "each_item"}],
+    )
+    first = pipeline(playlist)
+    after_first = list(pipeline.fake.executed_operations)
+    assert len(after_first) == 2, "one acquisition per entry on the first run"
+
+    second = pipeline(playlist)
+    assert pipeline.fake.executed_operations == after_first, (
+        "the provider ran again for a playlist already downloaded"
+    )
+
+    store = pipeline.store
+    assert store.get_job(second)["status"] == "succeeded"
+    original_ids = {a["id"] for a in store.list_artifacts(first)}
+    reused = store.list_artifacts(second)
+    assert len(reused) == 2
+    for artifact in reused:
+        attributes = artifact["provenance"]["attributes"]
+        assert attributes["reused_from_artifact_id"] in original_ids

@@ -131,6 +131,19 @@ def safe_relative_folder(folder: str) -> Path:
     return Path(*parts) if parts else Path()
 
 
+def _same_content(left: Path, right: Path) -> bool:
+    """Are these two files byte-identical? Size first — it settles almost every
+    comparison without reading a gigabyte off the disk — then sha256. An
+    unreadable file answers "not identical", so delivery falls back to the
+    counter rather than raising."""
+    try:
+        if left.stat().st_size != right.stat().st_size:
+            return False
+        return checksum_sha256(left) == checksum_sha256(right)
+    except OSError:
+        return False
+
+
 class DeliveryStore:
     """Delivers a copy of finished artifacts into a server-side library tree
     (``<root>/<folder>/<filename>``). The job artifact store stays the source
@@ -142,9 +155,20 @@ class DeliveryStore:
         self.root = Path(root).resolve()
 
     def deliver(self, source: Path, folder: str, filename: str) -> Path:
-        """Copy ``source`` under ``<root>/<folder>/<filename>``; on collision a
-        deterministic ``-1``, ``-2``… counter (title-based names recur — the
-        same video delivered twice). Returns the actual target."""
+        """Copy ``source`` under ``<root>/<folder>/<filename>``. Returns the
+        actual target.
+
+        A name that is already taken is resolved in one of two ways, and the
+        difference matters to anyone who re-runs a playlist:
+
+        * **the file there is already this exact content** — same size, same
+          sha256 — so nothing is copied and the existing path is returned. Re-
+          submitting a download the library already holds must not litter it
+          with ``…-1``, ``…-2`` clones of the same bytes.
+        * **the name collides but the content differs** — two different videos
+          that share a title — so the deterministic ``-1``, ``-2``… counter
+          keeps both, which is the reason the counter exists.
+        """
         target_dir = (self.root / safe_relative_folder(folder)).resolve()
         if self.root != target_dir and self.root not in target_dir.parents:
             raise ValueError("delivery target escapes the delivery root")
@@ -154,6 +178,8 @@ class DeliveryStore:
         target = target_dir / f"{stem}{suffix}"
         counter = 1
         while target.exists():
+            if _same_content(source, target):
+                return target
             target = target_dir / f"{stem}-{counter}{suffix}"
             counter += 1
         shutil.copy2(str(source), str(target))

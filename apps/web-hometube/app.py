@@ -657,9 +657,15 @@ elif (video_on or audio_on) and is_collection:
             "probed beforehand, so this is a preference: a video keeps the "
             "tracks it has, and falls back to its best audio otherwise.",
         )
-        policy = _language_policy_caption()
-        if policy:
-            st.caption(policy)
+        # Not `_language_policy_caption()`: that one starts with "VO", and VO
+        # is exactly what a playlist cannot ask for — "original" is a fact
+        # about one video, not a language code. Printing it here would promise
+        # an ordering the request does not carry.
+        st.caption(
+            "🌐 From your server preference, minus VO: a playlist is not "
+            "probed, so each video keeps the tracks it has (and its best "
+            "audio if it has none of these)."
+        )
 
 
 # --- subtitles to embed --------------------------------------------------------
