@@ -469,11 +469,24 @@ def store(settings) -> Store:
 
 
 @pytest.fixture
-def providers() -> ProviderRegistry:
-    return ProviderRegistry(
+def providers(store, settings) -> ProviderRegistry:
+    """The installed runners for a test engine.
+
+    The collection orchestrator is attached the same way the API attaches it
+    (ADR 0019): it needs the analysis service and the registry it joins, so a
+    collection behaves in tests exactly as it does in the running engine.
+    """
+    from content.analysis.service import AnalysisService
+    from content.application.collections import attach_collection_runner
+
+    registry = ProviderRegistry(
         [FakeProvider()],
         processors=[TranscriptProcessor(), FakeSummarizer()],
     )
+    attach_collection_runner(
+        registry, AnalysisService(store, registry, settings), settings
+    )
+    return registry
 
 
 def make_request(payload: dict) -> GenerationRequest:

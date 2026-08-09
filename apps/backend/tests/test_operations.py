@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 
 from content.analysis.service import AnalysisService
 from content.api.app import create_app
+from content.application.collections import attach_collection_runner
 from content.application.submit import submit_generation
 from content.execution.executor import JobExecutor
 from content.persistence.store import Store
@@ -106,6 +107,9 @@ def pipeline(store, settings):
         [fake], processors=[TranscriptProcessor(), FakeSummarizer()]
     )
     service = AnalysisService(store, registry, settings)
+    # Collections orchestrate the canonical pipeline (ADR 0019), so the
+    # orchestrator belongs on any registry a collection job will run through.
+    attach_collection_runner(registry, service, settings)
     executor = JobExecutor(store, settings, registry)
 
     def run(payload: dict, retry_of: str = "") -> str:

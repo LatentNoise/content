@@ -173,13 +173,23 @@ def resolve_naming_plan(request, analysis: ResourceAnalysis | None) -> NamingPla
             if source_analysis is not None:
                 # Mirrors _plan_each_item exactly: same enumeration, same
                 # skip rule, same slug — so labels always match step params.
+                #
+                # The ordinal prefixes the member base and nothing else:
+                # qualifiers and languages are appended afterwards by
+                # `bind_filename`, giving "001 - First Video - subtitles - en".
+                # Padding is fixed for the whole collection (at least 3 digits)
+                # so names sort, and the index is the collection's own — a
+                # skipped member leaves a gap instead of renumbering the rest.
+                # It is also what keeps an explicit client base name distinct
+                # across members.
+                usable = sum(1 for entry in source_analysis.entries if entry.url)
+                width = max(3, len(str(usable)))
                 for position, entry in enumerate(source_analysis.entries, start=1):
                     if not entry.url:
                         continue
                     label = item_slug(entry.title or entry.id, position)
-                    title = display_name(entry.title)
-                    if title:
-                        item_bases[label] = title
+                    title = display_name(entry.title) or base
+                    item_bases[label] = f"{position:0{width}d} - {title}"
 
         entries.append(
             OutputNaming(

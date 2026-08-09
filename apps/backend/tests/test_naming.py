@@ -258,15 +258,16 @@ def test_each_item_uses_the_entry_title():
         bind_filename(
             naming, output_id="video_items", extension=".mp4", item_label=label_1
         )
-        == "First.mp4"
+        == "001 - First.mp4"
     )
-    # An untitled entry falls back to the parent base plus the label.
+    # An untitled member keeps its ordinal and falls back to the collection's
+    # own base, so ordering survives even when a member has no title of its own.
     label_2 = item_slug("v2", 2)
     assert (
         bind_filename(
             naming, output_id="video_items", extension=".mp4", item_label=label_2
         )
-        == f"Fake playlist - {label_2}.mp4"
+        == "002 - Fake playlist.mp4"
     )
 
 

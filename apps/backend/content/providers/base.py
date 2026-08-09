@@ -143,6 +143,18 @@ class ProviderRegistry:
                 raise ValueError(f"duplicate runner name '{processor.name}'")
             self._runners[processor.name] = processor
 
+    def register(self, runner: StepRunner) -> None:
+        """Add a runner after construction.
+
+        For the one runner that cannot exist before the registry does: the
+        collection orchestrator (ADR 0019) drives members through the canonical
+        pipeline, so it needs the very registry it belongs to. Registering it
+        afterwards keeps that knot out of the constructor.
+        """
+        if runner.name in self._runners:
+            raise ValueError(f"duplicate runner name '{runner.name}'")
+        self._runners[runner.name] = runner
+
     def get(self, name: str) -> StepRunner:
         if name not in self._runners:
             raise KeyError(f"unknown provider '{name}'")

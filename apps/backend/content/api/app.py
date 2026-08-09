@@ -31,6 +31,7 @@ from content.analysis.service import (
     AnalysisNotFound,
     AnalysisService,
 )
+from content.application.collections import attach_collection_runner
 from content.application.submit import submit_generation
 from content.capabilities.facts import facts_from_analysis
 from content.capabilities.inventory import describe_architecture
@@ -269,6 +270,10 @@ def create_app(
             ],
         )
     analysis_service = AnalysisService(store, providers, settings)
+    # A collection orchestrates the canonical pipeline for its members
+    # (ADR 0019), so its runner needs the analysis service and the very
+    # registry it joins — hence attached here rather than constructed above.
+    attach_collection_runner(providers, analysis_service, settings)
     capability_resolver = CapabilityResolver(build_registry(providers), providers)
     executor = JobExecutor(store, settings, providers)
     queue = JobQueue(store, executor.execute, settings.max_concurrent_jobs)

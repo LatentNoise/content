@@ -156,16 +156,24 @@ once members resolve capabilities like any source:
 
 | Line | Branch | Fate |
 | --- | --- | --- |
-| 499 | hardcoded Video / Audio radio instead of capability checkboxes | **deleted** — capability-driven, like a single video |
-| 644 | the playlist-only audio-language selector | **deleted** — the real track list is known per member |
-| 700 | the playlist-only subtitle selector | **deleted** — same |
-| 767 | cutting hidden for collections | **deleted** — a member is a video like any other |
-| 983 | `scope: each_item` injection for video/audio only | **simplified** — the scope applies to any output |
-| 996 | sidecar subtitles suppressed for collections | **deleted** |
-| 403, 408, 439, 552, 1020 | detection, labels, the entries expander, the button text | **kept** — presentation of a collection, which stays a real distinction |
+| `scope: each_item` injected for video/audio only | **deleted** — the scope now applies to any output the pipeline supports |
+| sidecar subtitles suppressed for collections | **deleted** — a member takes the ordinary path |
+| cutting hidden for collections | **deleted** — a member is a video like any other |
+| the Video/Audio radio, the two language selectors | **kept** — see below |
+| detection, labels, the entries expander, the button text | **kept** — presentation of a collection, a real distinction |
 
-The net effect is that "is this a collection?" stops being a question the
-*generation* code asks, and remains only a question the *presentation* asks.
+**Correction, found during implementation.** The first draft of this table
+expected the capability radio and the two language selectors to go as well.
+They cannot, and the reason is inherent to lazy per-member resolution: the
+HomeTube *form* is rendered before anything is submitted, so no member has
+been analyzed yet. The collection analysis is still flat by design, so the form
+has no per-member track list or capability set to offer, and those selectors
+must keep expressing **intent** — which the engine now intersects against each
+member's real facts at execution.
+
+The net effect is narrower than first written, and still the point: "is this a
+collection?" disappears from the code that decides *what work to do*, and
+survives only where a form must ask for intent before the facts exist.
 
 ## Consequences
 

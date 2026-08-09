@@ -140,7 +140,21 @@ def _acquire(op: str, out_kind: str) -> TransformationDefinition:
 # The operation catalog is static (Content owns the vocabulary). Implementations
 # are DERIVED from the installed runners so any runner (real or a test fake) that
 # declares a known operation is covered — no independent, drifting declarations.
+COLLECTION_MEMBER = "collection.member"
+
 DEFINITIONS: tuple[TransformationDefinition, ...] = (
+    # Orchestration, not production (ADR 0019): the step takes one member of a
+    # collection through the canonical single-resource pipeline. Its output kind
+    # is unknown here on purpose — it is whatever that member's own plan
+    # produces, which is decided when the member is analyzed. Not cacheable as a
+    # transformation: the member's own steps carry their own signatures, and the
+    # member step is deduplicated by the reuse index like any other bound step.
+    TransformationDefinition(
+        operation=COLLECTION_MEMBER,
+        input_kinds=(SOURCE,),
+        output_kinds=(),
+        macro=True,
+    ),
     _acquire(ACQUIRE_VIDEO, VIDEO),
     _acquire(ACQUIRE_AUDIO, AUDIO),
     _acquire(ACQUIRE_SUBTITLES, SUBTITLES),
