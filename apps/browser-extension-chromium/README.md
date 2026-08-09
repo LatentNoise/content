@@ -1,4 +1,4 @@
-# HomeTube for Content — browser extension
+# HomeTube for Content — Chromium browser extension
 
 Send the page you are watching to your Content engine, without opening a UI.
 
@@ -15,9 +15,11 @@ There is no build step: what the browser loads is exactly these files.
 
 ### From a release (recommended)
 
-1. Download `hometube-for-content-<version>.zip` from the
+1. Download `content-browser-extension-chromium-v<version>.zip` from the
    [latest release](https://github.com/LatentNoise/content/releases/latest)
-   and **unzip it** — Chromium loads a folder, not a zip.
+   and **unzip it** — Chromium loads a folder, not a zip. (To verify the
+   download: `shasum -a 256 -c SHA256SUMS.txt`, with the manifest from the
+   same release.)
 2. Start the engine (`docker compose up -d`) — it publishes on
    <http://localhost:8010>.
 3. Open `chrome://extensions` (`brave://extensions`, `edge://extensions`…),
@@ -32,12 +34,14 @@ folder, and press ↻ on the extension card.
 ### From a clone (for development)
 
 Same, with step 1 replaced by *clone the repository* and step 4 pointing at
-`apps/browser-extension/`. Reloading the popup picks up HTML/CSS/JS edits with
+`apps/browser-extension-chromium/`. Reloading the popup picks up HTML/CSS/JS edits with
 no rebuild; the ↻ button is only needed for `manifest.json` and the icons.
 
-The zip is produced by `make extension-zip` — from `git ls-files`, so only
-tracked files are packaged and no local stray file can ride along — and CI
-attaches it to every version tag automatically.
+The zip is produced by `make extension-zip` — from `git ls-files` restricted
+to the runtime entries (`manifest.json` + the five directories it references),
+so only tracked, needed files are packaged and no local stray file can ride
+along — and CI attaches it to every version tag automatically, beside a
+`SHA256SUMS.txt` covering every asset.
 
 ### Pointing it at another backend
 
@@ -89,7 +93,7 @@ spent several rounds removing claims that had not been:
 
 | Path | State |
 | --- | --- |
-| Request bodies validate against the real `GenerationRequest` | **Verified** — `tests/test_browser_extension.py`, in `make validate` |
+| Request bodies validate against the real `GenerationRequest` | **Verified** — `tests/test_browser_extension_chromium.py`, in `make validate` |
 | `lib/url.js` normalisation (11 cases: Shorts, `youtu.be`, embeds, `list=`, tracking params, non-YouTube, `chrome://`) | **Verified by executing the JavaScript** — node-backed, skips cleanly without node |
 | `lib/request.js` emits exactly the reviewed fixtures, and refuses subtitles with no language | **Verified by executing the JavaScript** |
 | Manifest shape, permission minimality, icons are real PNGs | **Verified** — same suite |
@@ -98,7 +102,7 @@ spent several rounds removing claims that had not been:
 | JavaScript parses (`node --check`, every module) | **Verified** |
 | Loading unpacked in Chrome: popup renders, capabilities listed, submit creates a real job, artifact produced | **Verified by the maintainer**, 2026-08-02 — on a YouTube video, end to end |
 | Delivery into the media library, with a real filename | **Verified** (2026-08-02, pre-ADR 0018) — a request built by `lib/request.js` delivered `Example_Domain_-_Test_Page.md` into the library root |
-| The ADR 0017/0018 flow (prefilled name proposal from `suggested_filename`, untouched → nothing sent and the server names; "new folder…"; popup shows the library path) | **NOT verified in a browser yet** — covered by `tests/test_browser_extension.py` and the backend suites |
+| The ADR 0017/0018 flow (prefilled name proposal from `suggested_filename`, untouched → nothing sent and the server names; "new folder…"; popup shows the library path) | **NOT verified in a browser yet** — covered by `tests/test_browser_extension_chromium.py` and the backend suites |
 | Chrome's `host_permissions` exemption for a **non-default** backend (the grant flow) | **NOT verified** — only the default `localhost:8010` path has been exercised |
 | Playlists, authenticated sources, `subtitles`-only runs | **NOT verified** in a browser |
 

@@ -43,7 +43,7 @@ One engine, one official SDK, thin clients — each documents itself:
   client (sync + async, typed)
 - [apps/cli](../apps/cli/README.md) — the `content` CLI
 - [apps/mcp](../apps/mcp/README.md) — the MCP server for AI agents
-- [apps/browser-extension](../apps/browser-extension/README.md) — send the
+- [apps/browser-extension-chromium](../apps/browser-extension-chromium/README.md) — send the
   current tab to the engine (the only non-SDK client, ADR 0016)
 - [apps/web-hometube](../apps/web-hometube/README.md) — HomeTube, the YouTube
   UI · [apps/web-studio](../apps/web-studio/README.md) — the full-contract UI ·

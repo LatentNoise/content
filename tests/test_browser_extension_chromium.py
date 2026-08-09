@@ -1,4 +1,4 @@
-"""Guard-rails for the browser extension — the first non-Python client (ADR 0016).
+"""Guard-rails for the Chromium browser extension — the first non-Python client (ADR 0016).
 
 The extension cannot use `content_sdk`: it is JavaScript, so it speaks `/api/v1`
 directly. That puts it outside every check the Python consumers get, including
@@ -21,7 +21,7 @@ and `typst`: no Node toolchain is required, and none is added to the repository.
 
 What none of this proves is the extension **running in a browser** — the popup,
 the service worker's CORS exemption, the permission flow. That is stated plainly
-in `apps/browser-extension/README.md` rather than left to be assumed.
+in `apps/browser-extension-chromium/README.md` rather than left to be assumed.
 """
 
 from __future__ import annotations
@@ -35,7 +35,7 @@ import sys
 import pytest
 
 REPO = pathlib.Path(__file__).resolve().parents[1]
-EXTENSION = REPO / "apps" / "browser-extension"
+EXTENSION = REPO / "apps" / "browser-extension-chromium"
 MANIFEST = EXTENSION / "manifest.json"
 
 # The engine's own model, so there is one definition of the contract.
@@ -405,3 +405,79 @@ def test_the_builder_refuses_subtitles_without_a_language():
         "console.log(JSON.stringify({error}));"
     )
     assert "language" in outcome["error"], outcome
+
+
+# --- the release zip (what a fresh user actually downloads) ----------------------
+
+
+def test_packaged_zip_is_a_complete_unpacked_extension(tmp_path):
+    """`make extension-zip`, then act like the user: extract it and check that
+    the folder handed to "Load unpacked" is complete and contains nothing else.
+
+    Complete: `manifest.json` at the root, and every file the manifest or an
+    HTML page references resolves inside the extraction. Nothing else: only
+    the runtime entries — a README or the contract fixtures in a release zip
+    would be dead weight at best and a source of confusion at worst.
+    """
+    import subprocess
+    import zipfile
+
+    subprocess.run(
+        ["make", "extension-zip", f"EXT_ZIP_DIR={tmp_path}"],
+        cwd=REPO,
+        check=True,
+        capture_output=True,
+    )
+    archives = list(tmp_path.glob("content-browser-extension-chromium-v*.zip"))
+    assert len(archives) == 1, f"expected exactly one archive, got {archives}"
+    archive = archives[0]
+
+    manifest_version = _manifest()["version"]
+    assert archive.name == (
+        f"content-browser-extension-chromium-v{manifest_version}.zip"
+    ), "the asset name must carry the manifest's own version"
+
+    unpacked = tmp_path / "unpacked"
+    with zipfile.ZipFile(archive) as bundle:
+        bundle.extractall(unpacked)
+
+    # The root the user selects: manifest.json directly inside, and only the
+    # runtime entries beside it.
+    assert (unpacked / "manifest.json").is_file(), "manifest.json must sit at the root"
+    entries = sorted(path.name for path in unpacked.iterdir())
+    assert entries == sorted(
+        ["manifest.json", "background", "icons", "lib", "options", "popup"]
+    ), f"unexpected zip layout: {entries}"
+
+    # Everything the manifest points at exists in the extraction.
+    manifest = json.loads((unpacked / "manifest.json").read_text(encoding="utf-8"))
+    referenced = [
+        manifest["background"]["service_worker"],
+        manifest["action"]["default_popup"],
+        manifest["options_ui"]["page"],
+        *manifest["icons"].values(),
+        *manifest["action"]["default_icon"].values(),
+    ]
+    missing = [path for path in referenced if not (unpacked / path).is_file()]
+    assert not missing, f"the packaged manifest points at missing files: {missing}"
+
+    # Everything the HTML pages load exists too (scripts, styles, images).
+    for page in ("popup/popup.html", "options/options.html"):
+        html = (unpacked / page).read_text(encoding="utf-8")
+        for target in re.findall(r'(?:src|href)="([^"]+)"', html):
+            if target.startswith(("http:", "https:", "#", "data:")):
+                continue
+            resolved = (unpacked / page).parent / target
+            assert resolved.is_file(), f"{page} references a missing file: {target}"
+
+    # And the ES module graph resolves: every relative static import lands on
+    # a packaged file (the popup and worker share lib/ without a bundler).
+    for module in unpacked.rglob("*.js"):
+        source = module.read_text(encoding="utf-8")
+        for target in re.findall(
+            r'^\s*(?:import|export)\s[^;]*?from\s+["\'](\.[^"\']+)["\']',
+            source,
+            re.MULTILINE,
+        ):
+            resolved = (module.parent / target).resolve()
+            assert resolved.is_file(), f"{module.name} imports a missing {target}"

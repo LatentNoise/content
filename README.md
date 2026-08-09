@@ -167,7 +167,7 @@ inventory.
 - **[CLI](apps/cli/README.md)** — ergonomic commands for analysis, generation,
   job tracking, scripts, and raw requests. Installed from the wheels attached
   to each release (`pipx install ./content_cli-*.whl --pip-args "--find-links ."`).
-- **[Browser extension](apps/browser-extension/README.md)** — send the current
+- **[Browser extension](apps/browser-extension-chromium/README.md)** — send the current
   tab to Content, in one click. Chromium (Chrome, Brave, Edge…); download the
   zip from a release, unzip, *Load unpacked*.
 - **[REST API](docs/contract.md)** — the versioned `/api/v1` contract, with

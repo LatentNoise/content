@@ -12,7 +12,7 @@ helpers (``legal.py``, ``notifications.py``) for exactly this reason.
 
 The browser extension keeps its own copy of the same table, unavoidably: it is
 JavaScript and cannot import this (ADR 0016). That one is a *translation*, not
-a duplicate, and `tests/test_browser_extension.py` is where the two are held
+a duplicate, and `tests/test_browser_extension_chromium.py` is where the two are held
 together.
 """
 

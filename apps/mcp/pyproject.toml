@@ -2,17 +2,49 @@
 name = "content-mcp"
 version = "0.1.0"
 description = "Official MCP server for the Content engine (agentic facade over the SDK)."
+readme = "README.md"
 license = "AGPL-3.0-or-later"
+license-files = ["LICENSE", "NOTICE"]
 authors = [{ name = "Yann Orieult" }]
 requires-python = ">=3.11"
-dependencies = ["content-sdk", "mcp>=1.2"]
+keywords = ["content", "mcp", "model-context-protocol", "self-hosted", "media"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: System Administrators",
+    # No 'License ::' classifier: PEP 639 supersedes it with the SPDX
+    # expression above, and setuptools now refuses both together.
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Multimedia :: Video",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+# Pinned to the exact SDK release, not a floor: the monorepo ships one version
+# for everything (`make version`), and an MCP server resolving to a different
+# SDK than the one it was tested against is precisely the drift that pin buys
+# away. The `mcp` framework is an external dependency and keeps a floor.
+dependencies = ["content-sdk==0.1.0", "mcp>=1.2"]
 
 [project.scripts]
 content-mcp = "content_mcp.server:main"
 
-[build-system]
-requires = ["setuptools>=68"]
-build-backend = "setuptools.build_meta"
+[project.urls]
+Homepage = "https://github.com/LatentNoise/content"
+Source = "https://github.com/LatentNoise/content"
+Issues = "https://github.com/LatentNoise/content/issues"
+Documentation = "https://github.com/LatentNoise/content/blob/main/apps/mcp/README.md"
 
-[tool.setuptools]
+# hatchling, like the SDK and the CLI: one build backend across the published
+# packages, and an explicit file list so the sdist carries exactly the package,
+# its docs and its licence — no tests/, no egg-info residue.
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
 packages = ["content_mcp"]
+
+[tool.hatch.build.targets.sdist]
+only-include = ["content_mcp", "README.md", "LICENSE", "NOTICE", "pyproject.toml"]

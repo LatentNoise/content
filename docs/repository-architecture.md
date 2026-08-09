@@ -16,7 +16,7 @@ content/
 │   ├── web-tests/      hermetic AppTests for the 3 UIs (fake client, make test-ui)
 │   ├── cli/            the `content` command (thin argparse on top of the SDK)
 │   ├── mcp/            the `content-mcp` server (MCP stdio on top of the SDK)
-│   └── browser-extension/  Chrome MV3, plain ES modules — no bundler (ADR 0016)
+│   └── browser-extension-chromium/  Chromium MV3, plain ES modules — no bundler (ADR 0016)
 ├── packages/
 │   └── python-sdk/     content_sdk — THE official client (sync + async, typed)
 ├── tests/              architecture guard rails (e.g. no HTTP outside the SDK)
@@ -38,7 +38,7 @@ content/
 | `apps/web-admin` (Content Console) | operator / dev | **Observe & pilot** the backend: jobs/steps/events/logs, storage & cache, capabilities, environment. Does not create downloads. |
 | `apps/cli` (`content`) | terminal / scripts | Analysis, `video`/`audio` shortcuts, `submit`, job tracking, download. |
 | `apps/mcp` (`content-mcp`) | AI agents | Intent-level Tools (`analyze_source`, `generate`, …) + `content://` Resources over stdio. |
-| `apps/browser-extension` | anyone watching a video | Chrome MV3: send the current tab to the engine, capability-driven. The **only client that does not use the SDK** — it is JavaScript, so it speaks `/api/v1` directly (ADR 0016). |
+| `apps/browser-extension-chromium` | anyone watching a video | Chromium MV3: send the current tab to the engine, capability-driven. The **only client that does not use the SDK** — it is JavaScript, so it speaks `/api/v1` directly (ADR 0016). |
 | `packages/python-sdk` (`content_sdk`) | Python developers | The official client: `analyze → get_capabilities(id) → generate(id) → job.wait()`. |
 | `apps/backend` | — | The only business logic; exposes the public API + OpenAPI. |
 
@@ -51,7 +51,7 @@ Content Backend (REST /api/v1)   ← the only business logic
     │        │        │
    cli      mcp    web-*         ← thin consumers of the SDK
 
-   browser-extension             ← JavaScript: speaks /api/v1 directly (ADR 0016)
+   browser-extension-chromium    ← JavaScript: speaks /api/v1 directly (ADR 0016)
 ```
 
 - The backend **never** knows about MCP; the SDK **never** depends on MCP.
@@ -62,7 +62,7 @@ Content Backend (REST /api/v1)   ← the only business logic
   JavaScript, so a Python SDK is not available to it; it depends on the
   *contract* and its stability policy instead (ADR 0016). The layering test
   scans `.py` only, so it would have waved this through in silence — which is
-  why the decision is written down and `tests/test_browser_extension.py` checks
+  why the decision is written down and `tests/test_browser_extension_chromium.py` checks
   what Python can check.
 - Applications **do not import each other** and **do not import** the backend's
   Python code.

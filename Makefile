@@ -15,7 +15,7 @@ SRC  := apps/backend/content apps/backend/tests apps/web-hometube apps/web-studi
 VERSION_PYPROJECTS := apps/backend/pyproject.toml apps/cli/pyproject.toml \
                       apps/mcp/pyproject.toml packages/python-sdk/pyproject.toml \
                       apps/web-hometube/pyproject.toml
-EXT_DIR            := apps/browser-extension
+EXT_DIR            := apps/browser-extension-chromium
 VERSION_MODULES    := apps/backend/content/__init__.py \
                       packages/python-sdk/content_sdk/__init__.py \
                       apps/web-hometube/app.py apps/web-studio/app.py \
@@ -154,30 +154,40 @@ version-tag:  ## Create the annotated tag v<version> (clean tree + agreeing vers
 
 # --- python distributions ---------------------------------------------------------
 
-# Wheels for the two packages a user installs to get the `content` command.
-# They are attached to each release rather than published to PyPI: the CLI
-# depends on content-sdk, and neither name is claimed on PyPI, so `pip install
-# content-cli` would resolve to nothing (or worse, to somebody else's package).
-# A wheel pair is self-contained and needs no index — see apps/cli/README.md.
-wheels:  ## Build the SDK + CLI wheels for a release (dist/)
-	@rm -f dist/content_sdk-*.whl dist/content_cli-*.whl \
-	       dist/content_sdk-*.tar.gz dist/content_cli-*.tar.gz
+# Wheels for the published packages: the SDK, the `content` CLI and the
+# `content-mcp` server. They are attached to each release and, once the names
+# are claimed, published to PyPI by .github/workflows/publish-pypi.yml. Until
+# then `pip install content-cli` would resolve to nothing (or worse, to
+# somebody else's package) — the release assets are the index; see
+# apps/cli/README.md and apps/mcp/README.md.
+wheels:  ## Build the SDK + CLI + MCP wheels for a release (dist/)
+	@rm -f dist/content_sdk-*.whl dist/content_cli-*.whl dist/content_mcp-*.whl \
+	       dist/content_sdk-*.tar.gz dist/content_cli-*.tar.gz dist/content_mcp-*.tar.gz
 	uv build --out-dir dist packages/python-sdk
 	uv build --out-dir dist apps/cli
-	@ls -1 dist/content_sdk-* dist/content_cli-*
+	uv build --out-dir dist apps/mcp
+	@ls -1 dist/content_sdk-* dist/content_cli-* dist/content_mcp-*
 
 # --- browser extension -----------------------------------------------------------
 
 # The file list comes from `git ls-files`, not from the directory: only tracked
 # files are packaged, so no .DS_Store, no editor backup and no local
 # experiment can ride along into something people download and load into
-# their browser.
+# their browser. Restricted further to the runtime entries: what the browser
+# loads is manifest.json + the five directories it references — never the
+# README or the test fixtures. `zip -X` + git's sorted file order keep the
+# archive reproducible from the same tree (file mtimes are the one part zip
+# records that a fresh clone changes).
+EXT_RUNTIME := manifest.json background icons lib options popup
+EXT_ZIP_DIR ?= $(CURDIR)/dist
+
 extension-zip:  ## Package the Chromium extension for manual install (dist/)
 	@version=$$(grep -m1 '"version"' $(EXT_DIR)/manifest.json | sed 's/.*"\([0-9][^"]*\)".*/\1/'); \
-	archive="$(CURDIR)/dist/hometube-for-content-$$version.zip"; \
-	mkdir -p dist; rm -f "$$archive"; \
-	cd $(EXT_DIR) && git ls-files -z | xargs -0 zip -q -X "$$archive"; \
+	archive="$(EXT_ZIP_DIR)/content-browser-extension-chromium-v$$version.zip"; \
+	mkdir -p "$(EXT_ZIP_DIR)"; rm -f "$$archive"; \
+	cd $(EXT_DIR) && git ls-files -z -- $(EXT_RUNTIME) | xargs -0 zip -q -X "$$archive"; \
 	echo "packaged $$archive"; \
+	shasum -a 256 "$$archive" | sed 's/^/  sha256  /'; \
 	cd $(CURDIR) && unzip -Z1 "$$archive" | sed 's/^/  /'
 
 # --- docker ----------------------------------------------------------------------

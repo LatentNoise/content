@@ -6,16 +6,29 @@ Chrome Web Store would actually involve, and whether CI can do it.
 ## Today: a zip on every release
 
 `make extension-zip` packages the extension into
-`dist/hometube-for-content-<version>.zip`, and
+`dist/content-browser-extension-chromium-v<version>.zip`, and
 [`release-draft.yml`](../../.github/workflows/release-draft.yml) attaches it to
 the draft release created by every version tag. A user downloads one file,
-unzips it, and loads it unpacked (`apps/browser-extension/README.md` has the
+unzips it, and loads it unpacked (`apps/browser-extension-chromium/README.md` has the
 five steps).
 
-The file list comes from `git ls-files`, not from the directory, so the archive
-contains exactly the tracked source — no `.DS_Store`, no editor backup, no
-local experiment. And because CI builds it from the tag, it can never be a
-stale hand-made copy.
+The file list comes from `git ls-files` restricted to the runtime entries
+(`manifest.json`, `background/`, `icons/`, `lib/`, `options/`, `popup/`), so
+the archive contains exactly the tracked files the browser loads — no
+`.DS_Store`, no editor backup, no local experiment, and also no README or test
+fixtures. Because CI builds it from the tag after `make validate`, it can
+never be a stale hand-made copy, and a `SHA256SUMS.txt` attached beside the
+assets lets a download be verified with `shasum -a 256 -c SHA256SUMS.txt`.
+
+### Version mapping
+
+The manifest version is the Content version, verbatim. Chrome's format is
+1–4 dot-separated integers (no suffixes, no leading zeros), and Content's
+`x.y.z` fits it as long as no pre-release suffix ever reaches the manifest —
+which `make version-update` enforces by refusing anything that is not plain
+`x.y.z`. `make version` holds the manifest and every other declaration to the
+same value, so the zip name, the manifest and the release tag cannot drift
+apart silently.
 
 **What this costs the user:** Developer mode stays on, and Chromium shows a
 "disable developer mode extensions" nag on some startups. Updates are manual —
