@@ -11,6 +11,7 @@ import asyncio
 import json
 import os
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 
 from fastapi import FastAPI, HTTPException, Query, Request, Response
 from fastapi.exceptions import RequestValidationError
@@ -385,6 +386,7 @@ def create_app(
             "analysis_ttl_hours": settings.analysis_ttl_hours,
             "max_concurrent_jobs": settings.max_concurrent_jobs,
             "credentials": sorted(settings.credentials),
+            "credentials_info": _credentials_info(settings),
             "language": {
                 "primary": settings.language_primary,
                 "secondaries": list(settings.languages_secondaries),
@@ -447,10 +449,13 @@ def create_app(
 
     @app.get("/api/v1/config", tags=["system"])
     def get_config() -> dict:
-        """Client-facing configuration. Exposes credential **ids** only — never
-        the file paths nor the secret content (INV-009)."""
+        """Client-facing configuration. Credentials are reported as ids plus
+        file *metadata* (path, presence, last-modified) so a user can see that
+        their cookies are wired and fresh — the secret **content** never leaves
+        the server (INV-009)."""
         return {
             "credentials": sorted(settings.credentials),
+            "credentials_info": _credentials_info(settings),
             "language": {
                 "primary": settings.language_primary,
                 "secondaries": list(settings.languages_secondaries),
@@ -766,6 +771,37 @@ def create_app(
         )
 
     return app
+
+
+def _credentials_info(settings) -> list[dict]:
+    """Credential *metadata* for the UIs: is the cookie file there, and when
+    was it last refreshed. Paths and mtimes are operator-facing facts (the
+    console shows every other deployment path already); the file's content is
+    the secret and never leaves the server (INV-009). Stat failures degrade to
+    ``exists: false`` — a dangling declaration is precisely what this makes
+    visible."""
+    infos = []
+    for cred_id, path in sorted(settings.credentials.items()):
+        entry = {
+            "id": cred_id,
+            "path": str(path),
+            "exists": False,
+            "size_bytes": None,
+            "updated_at": None,
+        }
+        try:
+            stat = os.stat(str(path))
+            entry.update(
+                exists=True,
+                size_bytes=stat.st_size,
+                updated_at=datetime.fromtimestamp(
+                    stat.st_mtime, tz=timezone.utc
+                ).isoformat(),
+            )
+        except OSError:
+            pass
+        infos.append(entry)
+    return infos
 
 
 def _job_view(row: dict) -> dict:

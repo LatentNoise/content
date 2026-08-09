@@ -185,8 +185,15 @@ def test_analysis_rejects_session_id(store, providers, settings):
 # --- /config endpoint -----------------------------------------------------------
 
 
-def test_config_exposes_credential_ids_only(settings):
-    s = with_credentials(settings, youtube="/secret/path/yt.txt", vimeo="/secret/v.txt")
+def test_config_exposes_credential_metadata_never_content(settings, tmp_path):
+    """Deliberate contract: ids + file *metadata* (path, presence, mtime) are
+    operator-facing facts the UIs render ("are my cookies wired and fresh?");
+    the cookie file's CONTENT is the secret and must never appear (INV-009).
+    A declared-but-missing file reports exists=false instead of hiding — that
+    dangling state is exactly what the metadata exists to make visible."""
+    jar = tmp_path / "yt_cookies.txt"
+    jar.write_text("SENTINEL-COOKIE-VALUE-NEVER-SERVED")
+    s = with_credentials(settings, youtube=str(jar), vimeo="/missing/v.txt")
     app = create_app(
         s,
         providers=ProviderRegistry(
@@ -196,8 +203,24 @@ def test_config_exposes_credential_ids_only(settings):
     )
     with TestClient(app) as client:
         body = client.get("/api/v1/config").json()
-    assert body["credentials"] == ["vimeo", "youtube"]  # sorted ids
-    assert "/secret" not in str(body)  # never leak paths
+        system = client.get("/api/v1/system").json()
+    assert body["credentials"] == ["vimeo", "youtube"]  # sorted ids, unchanged
+    infos = {c["id"]: c for c in body["credentials_info"]}
+    assert infos["youtube"]["exists"] is True
+    assert infos["youtube"]["path"] == str(jar)
+    assert infos["youtube"]["updated_at"]  # refresh signal for the UIs
+    assert infos["youtube"]["size_bytes"] == jar.stat().st_size
+    assert infos["vimeo"] == {
+        "id": "vimeo",
+        "path": "/missing/v.txt",
+        "exists": False,
+        "size_bytes": None,
+        "updated_at": None,
+    }
+    # The secret itself never leaves the server, on any endpoint.
+    assert "SENTINEL-COOKIE-VALUE-NEVER-SERVED" not in str(body) + str(system)
+    # /system carries the same metadata for the console.
+    assert {c["id"] for c in system["credentials_info"]} == {"youtube", "vimeo"}
     # ADR 0018: clients can see whether default delivery is on before submit.
     assert body["delivery"] == {"by_default": False}
 

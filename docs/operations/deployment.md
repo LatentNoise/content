@@ -123,9 +123,12 @@ The whole recipe for YouTube:
    `config/youtube_cookies.txt`.
 2. In `.env`, uncomment `CONTENT_CREDENTIALS=youtube=/config/youtube_cookies.txt`
    and run `make docker-update`.
-3. HomeTube's "🍪 Cookie Management" now offers `youtube`; API clients pass
-   `auth.credential_id`. `GET /api/v1/config` lists the ids (never the paths
-   or the content). Several credentials: comma-separated `id=path` pairs.
+3. HomeTube's "🍪 Cookie Management" now offers `youtube` — and shows which
+   file backs it and when it was last refreshed; the Console's credentials
+   card does the same, including a "file not found" state when a credential
+   is declared but the file was never dropped. `GET /api/v1/config` reports
+   each credential's id, path, presence and last-modified time — never the
+   file's contents. Several credentials: comma-separated `id=path` pairs.
 
 The backend **copies** the cookie file to a writable location before passing it
 to yt-dlp: yt-dlp rewrites the cookie jar on exit, so a `:ro` mount would cause

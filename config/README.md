@@ -7,9 +7,9 @@ cookies or a custom PDF font tomorrow.
 
 Nothing in this folder is ever committed (the repository's `.gitignore` keeps
 everything here local except this README) and nothing here ever enters a
-Docker image (`.dockerignore`). The API never exposes these files either:
-`GET /api/v1/config` lists credential *ids* only — never paths, never
-contents.
+Docker image (`.dockerignore`). The API reports each credential's id, path,
+presence and last-modified time — so the UIs can show that your cookies are
+wired and fresh — but the file *contents* never leave the server.
 
 ## YouTube cookies, step by step
 
