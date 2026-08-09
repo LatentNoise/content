@@ -66,9 +66,12 @@ services:
       - CONTENT_LANGUAGES_SECONDARIES=${CONTENT_LANGUAGES_SECONDARIES:-}
       - CONTENT_VO_FIRST=${CONTENT_VO_FIRST:-true}
       - CONTENT_LANGUAGE_PRIMARY_INCLUDED_IN_SUBTITLES=${CONTENT_LANGUAGE_PRIMARY_INCLUDED_IN_SUBTITLES:-true}
-      # Cookies for authenticated sources: id=path pairs (paths as seen in the
-      # container). Mount the cookie file(s) below and reference by credential_id.
-      - CONTENT_CREDENTIALS=${CONTENT_CREDENTIALS:-}
+      # Cookies for authenticated sources: id=path pairs, container-side paths
+      # (/config is the mounted ./config folder). Declared by default — the
+      # UIs flag the missing file until the export is dropped in ./config.
+      # `${VAR-default}` (no colon): an explicitly EMPTY value in .env turns
+      # the feature off, only an unset variable gets the default.
+      - CONTENT_CREDENTIALS=${CONTENT_CREDENTIALS-youtube=/config/youtube_cookies.txt}
       # Browser cross-origin access (empty = none; curl/SDK never need it).
       - CONTENT_CORS_ORIGINS=${CONTENT_CORS_ORIGINS:-}
     ports:

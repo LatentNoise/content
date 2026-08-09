@@ -117,18 +117,23 @@ today; another site's cookies or a custom PDF font tomorrow). Nothing in it is
 ever committed or baked into an image. Full walkthrough:
 [`config/README.md`](../../config/README.md).
 
-The whole recipe for YouTube:
+The `youtube` credential is **declared by default** (`CONTENT_CREDENTIALS` in
+`.env.example` and the compose fallback): cookies are all but required for
+reliable YouTube in Docker, so instead of hiding the feature, the UIs flag
+the missing file — with instructions — until it exists. The whole recipe:
 
 1. Export a Netscape `cookies.txt` from a signed-in browser and save it as
-   `config/youtube_cookies.txt`.
-2. In `.env`, uncomment `CONTENT_CREDENTIALS=youtube=/config/youtube_cookies.txt`
-   and run `make docker-update`.
-3. HomeTube's "🍪 Cookie Management" now offers `youtube` — and shows which
-   file backs it and when it was last refreshed; the Console's credentials
-   card does the same, including a "file not found" state when a credential
-   is declared but the file was never dropped. `GET /api/v1/config` reports
-   each credential's id, path, presence and last-modified time — never the
-   file's contents. Several credentials: comma-separated `id=path` pairs.
+   `config/youtube_cookies.txt` (the engine reads it at `/config/…`, the
+   container side of the mount).
+2. `make docker-update`.
+
+HomeTube's "🍪 Cookie Management" then shows "✅ ready" with the file's path
+and last-refresh time; the Console's credentials card does the same. A
+declared-but-missing file shows a "file not found" state instead of failing
+silently at job time. `GET /api/v1/config` reports each credential's id,
+path, presence and last-modified time — never the file's contents. Several
+credentials: comma-separated `id=path` pairs; set the variable **empty** to
+turn the feature off (the compose default only applies when it is unset).
 
 The backend **copies** the cookie file to a writable location before passing it
 to yt-dlp: yt-dlp rewrites the cookie jar on exit, so a `:ro` mount would cause
