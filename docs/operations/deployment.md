@@ -25,6 +25,11 @@ docker compose up -d --build              # everything in COMPOSE_PROFILES (.env
 docker compose up -d --build content      # the backend alone
 ```
 
+The same command is also the update path: after changing code or pulling a new
+version, it rebuilds images from the tree and recreates only the containers
+whose image changed (`make docker-update` wraps it, with orphan cleanup, and
+prints what is running). Data in `./data` is a bind mount and survives.
+
 Which download UIs start is **one line in `.env`**, no compose flags to learn:
 `COMPOSE_PROFILES=hometube,studio` (the `.env.example` default),
 `COMPOSE_PROFILES=hometube`, or `COMPOSE_PROFILES=studio`. The engine and the
