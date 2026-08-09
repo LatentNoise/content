@@ -21,8 +21,11 @@ content/
 │   └── python-sdk/     content_sdk — THE official client (sync + async, typed)
 ├── tests/              architecture guard rails (e.g. no HTTP outside the SDK)
 ├── docs/               contract, invariants, ADRs, architecture
-├── work/               working protocol (packages, discoveries)
-├── docker-compose.yml  backend + UIs (`studio` / `admin` / `all` profiles)
+├── playground/         hands-on example scripts against a running instance
+├── config/             external runtime files (cookies, fonts) — mounted at /config, only its README tracked
+├── media/              visuals workbench (screenshots, GIFs → release attachments), only its README tracked
+├── work/               working protocol (packages, discoveries; untracked)
+├── docker-compose.yml  engine + console always on; UIs via COMPOSE_PROFILES in .env
 └── Makefile            the entry point (`make validate` = the official gate)
 ```
 
