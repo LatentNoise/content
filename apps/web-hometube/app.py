@@ -236,6 +236,28 @@ def preferred_langs(
     return out
 
 
+def wanted_langs(*, include_primary: bool = True) -> list[str]:
+    """The server's wanted languages as *intent*, with nothing to intersect.
+
+    `preferred_langs` keeps only what a source actually offers, which needs an
+    analysis. A collection has none: its entries are listed, never probed. So a
+    playlist expresses the same preferences optimistically — exactly what the
+    engine already does with codecs for `each_item` (`_each_item_video_params`)
+    — and each entry keeps whatever it really has: yt-dlp's profile ladder ends
+    in a language-free fallback, and `--sub-langs` simply skips a track a video
+    does not carry. VO is absent on purpose: "original" is a per-video fact,
+    not a language code, so it cannot be requested for a whole playlist.
+    """
+    primary = lang_prefs.get("primary") or ""
+    out: list[str] = []
+    for lang in ([primary] if include_primary else []) + list(
+        lang_prefs.get("secondaries") or []
+    ):
+        if lang and lang not in out:
+            out.append(lang)
+    return out
+
+
 def _language_policy_caption() -> str:
     """Human-readable server language preference, for UI transparency."""
     primary = lang_prefs.get("primary") or ""
@@ -611,6 +633,25 @@ if (video_on or audio_on) and audio_langs_avail:
         st.caption(policy)
     if audio_original:
         st.caption(f"🗣️ Original voice: {audio_original}")
+elif (video_on or audio_on) and is_collection:
+    # A playlist has no probed track list, so this asks for the server's
+    # preferred languages rather than offering the source's. Without it the
+    # request carried no `audio_languages` at all and every downloaded item
+    # silently got a single default track — the bug this branch fixes.
+    choices = wanted_langs()
+    if choices:
+        audio_languages = st.multiselect(
+            "Audio languages",
+            choices,
+            default=choices,
+            key=f"audio-coll-{wk}",
+            help="Applied to every video in the playlist. Items are not "
+            "probed beforehand, so this is a preference: a video keeps the "
+            "tracks it has, and falls back to its best audio otherwise.",
+        )
+        policy = _language_policy_caption()
+        if policy:
+            st.caption(policy)
 
 
 # --- subtitles to embed --------------------------------------------------------
@@ -642,7 +683,22 @@ if subs_wanted and sub_options:
     )
     if sub_auto:
         st.caption("🤖 Auto-generated captions available: " + ", ".join(sub_auto))
-elif subs_wanted and analysis and not sub_options and not is_collection:
+elif subs_wanted and is_collection:
+    # Same reasoning as the audio branch above: intent, not availability. The
+    # playlist's items were never probed, so without this the video output
+    # carried no `embed_subtitles` and every item arrived subtitle-less.
+    include_primary = lang_prefs.get("primary_include_subtitles", True)
+    sub_choices = wanted_langs(include_primary=include_primary)
+    if sub_choices:
+        subs_langs = st.multiselect(
+            "Subtitles",
+            sub_choices,
+            default=sub_choices,
+            key=f"subs-coll-{wk}",
+            help="Embedded into every video of the playlist when it has them "
+            "— a video without a requested language simply keeps none.",
+        )
+elif subs_wanted and analysis and not sub_options:
     st.caption("💬 No subtitle tracks detected for this source.")
 
 
