@@ -6,15 +6,40 @@ A **client of `/api/v1`**, like every other application here: it builds a
 `GenerationRequest`, posts it, and follows the job. It never downloads anything
 itself and never talks to yt-dlp — the engine does that.
 
-## Install (unpacked)
+**Chromium only** (Chrome, Brave, Edge, Vivaldi, Opera, Arc…), Manifest V3,
+Chrome 102 or later. Not Firefox, not Safari — see *Why Chromium only* below.
 
-There is no build step. What the browser loads is what is in this directory.
+## Install
 
-1. Start the engine — `docker compose up` publishes it on
+There is no build step: what the browser loads is exactly these files.
+
+### From a release (recommended)
+
+1. Download `hometube-for-content-<version>.zip` from the
+   [latest release](https://github.com/LatentNoise/content/releases/latest)
+   and **unzip it** — Chromium loads a folder, not a zip.
+2. Start the engine (`docker compose up -d`) — it publishes on
    <http://localhost:8010>.
-2. Open `chrome://extensions`, turn on **Developer mode**.
-3. **Load unpacked** → select `apps/browser-extension/`.
-4. Open a video, click the extension.
+3. Open `chrome://extensions` (`brave://extensions`, `edge://extensions`…),
+   turn on **Developer mode**.
+4. **Load unpacked** → select the unzipped folder.
+5. Open a video, click the extension.
+
+Keep the folder where it is: Chromium loads an unpacked extension from that
+path on every start. To update, download the newer zip, unzip over the same
+folder, and press ↻ on the extension card.
+
+### From a clone (for development)
+
+Same, with step 1 replaced by *clone the repository* and step 4 pointing at
+`apps/browser-extension/`. Reloading the popup picks up HTML/CSS/JS edits with
+no rebuild; the ↻ button is only needed for `manifest.json` and the icons.
+
+The zip is produced by `make extension-zip` — from `git ls-files`, so only
+tracked files are packaged and no local stray file can ride along — and CI
+attaches it to every version tag automatically.
+
+### Pointing it at another backend
 
 For a backend somewhere else (a NAS, another port), open the extension's
 settings and change the address. Chrome will ask for permission for that host:
@@ -86,12 +111,30 @@ optional override, the client-side title sanitizer (`lib/filename.js`) is
 gone (D-51 — the server sanitizes, never rejects), and the popup shows where
 the file landed in the library.
 
+## Why Chromium only
+
+Not a preference — three concrete incompatibilities, none of them worth a
+compatibility layer for a single-maintainer project:
+
+- **The CORS exemption this depends on.** The engine sends no CORS headers, so
+  the extension works only because a service worker holding `host_permissions`
+  is exempt. Firefox grants the equivalent to background scripts, but its MV3
+  uses **event pages**, not service workers, so the one load-bearing mechanism
+  is spelled differently.
+- **`browser.*` vs `chrome.*`.** Firefox exposes a promise-based `browser.*`
+  namespace; this code calls `chrome.*` with callbacks. A polyfill exists, and
+  it is another dependency to vendor and keep current.
+- **Safari** requires a native macOS wrapper app, Xcode, and an Apple developer
+  account to distribute. That is a different product, not a port.
+
+A fork is welcome to do it — the whole client is 6 small files with no build
+step, and everything it knows about the contract lives in `lib/request.js`.
+
 ## Limits
 
-- Chrome/Chromium only. Firefox's MV3 differs (`browser.*` namespace, event
-  pages); porting is not attempted here.
-- The icons are flat colour placeholders generated with ffmpeg. They are the
-  right sizes and real PNGs; they are not a design.
 - No authentication, because the API has none in V1. Cookie credentials are
   selected by id and resolved server-side — no cookie ever passes through the
   extension.
+- Not published on the Chrome Web Store (yet) — see
+  [docs/operations/browser-extension-distribution.md](../../docs/operations/browser-extension-distribution.md)
+  for what that would involve.
