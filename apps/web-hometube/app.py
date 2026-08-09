@@ -735,16 +735,27 @@ if video_on or audio_on:
         # SponsorBlock makes. Fast is genuinely faster and genuinely produces a
         # stuttering tail, so it is offered, second, and labelled.
         if (SB_PRESETS.get(sb_preset) or {}).get("remove"):
+            # Never show the bare contract values here. "keyframes" reads like
+            # the fix — yt-dlp's flag for the *good* behaviour is literally
+            # --force-keyframes-at-cuts — while in the contract it means the
+            # opposite: cut on the keyframes that already exist, stream copy,
+            # artifacts. The labels say what happens; the flag is named in the
+            # help so there is nothing left to infer.
             sb_cut_mode = st.radio(
                 "Cut quality",
                 ["precise", "keyframes"],
-                horizontal=True,
+                format_func=lambda mode: {
+                    "precise": "✅ Clean cut — forces keyframes (recommended)",
+                    "keyframes": "⚡ Fast cut — may glitch at the end",
+                }[mode],
                 key=f"sbcut-{wk}",
-                help="precise: forces keyframes at each cut — a re-encode, "
-                "slower, and the only way the end of the video plays cleanly. "
-                "keyframes: stream copy, much faster, but the removed frames "
-                "are spliced back in and the tail stutters while the audio "
-                "continues.",
+                help="Clean cut sends --force-keyframes-at-cuts: yt-dlp puts a "
+                "keyframe at each removed segment and re-encodes, which is "
+                "slower and is what makes the end of the video play properly. "
+                "Fast cut sends --no-force-keyframes-at-cuts: a stream copy, "
+                "much quicker, but the discarded frames come back with "
+                "backwards timestamps and the tail stutters while the audio "
+                "keeps going.",
             )
 
 
