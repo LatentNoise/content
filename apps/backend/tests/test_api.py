@@ -281,3 +281,54 @@ def test_an_unimplementable_combination_refuses_instead_of_crashing(settings):
     detail = response.json()["detail"]
     assert detail["phase"] == "feasibility"
     assert [e["code"] for e in detail["errors"]] == ["capability_unavailable"]
+
+
+def test_job_rows_carry_a_human_artifact_label(client):
+    """The jobs list and detail name each job by its first artifact's display
+    name (`artifact_name` + `artifact_count`), so a client can label rows
+    without one artifacts fetch per row — the console's job list runs on it."""
+    store = client.app.state.store
+    job_id = store.create_job(
+        {"schema_version": "1.0", "sources": [], "outputs": []},
+        failure_policy="required_only",
+        idempotency_key=None,
+    )
+    for n, (fname, display) in enumerate(
+        [("v_main.mp4", "My Conference.mp4"), ("a_main.opus", "")]
+    ):
+        store.register_artifact(
+            {
+                "id": f"art_label_{n}",
+                "job_id": job_id,
+                "artifact_request_id": "out",
+                "type": "video",
+                "filename": fname,
+                "display_filename": display,
+                "media_type": "video/mp4",
+                "size_bytes": 1,
+                "checksum": "sha256:x",
+                "provenance": {},
+            }
+        )
+
+    rows = client.get("/api/v1/jobs").json()
+    row = next(r for r in rows if r["job_id"] == job_id)
+    # The display name wins over the internal filename, and the count is real.
+    assert row["artifact_name"] == "My Conference.mp4"
+    assert row["artifact_count"] == 2
+
+    detail = client.get(f"/api/v1/jobs/{job_id}").json()
+    assert detail["artifact_name"] == "My Conference.mp4"
+    assert detail["artifact_count"] == 2
+
+    # A job with no artifacts simply has no label fields — clients fall back
+    # to the job id, they never see a null name.
+    empty_id = store.create_job(
+        {"schema_version": "1.0", "sources": [], "outputs": []},
+        failure_policy="required_only",
+        idempotency_key=None,
+    )
+    empty = next(
+        r for r in client.get("/api/v1/jobs").json() if r["job_id"] == empty_id
+    )
+    assert "artifact_name" not in empty

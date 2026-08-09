@@ -213,12 +213,6 @@ def render_job_detail(job_id: str) -> None:
     except Exception as exc:  # noqa: BLE001
         st.error(f"job failed: {exc}")
         return
-    # Fetched once, up front: the first artifact names the job for a human
-    # ("Me at the zoo"), and the Artifacts expander below reuses the list.
-    try:
-        arts = client.artifacts(job_id)
-    except Exception:  # noqa: BLE001
-        arts = []
     icon, color = display(job["status"])
     live = "  🔴 live" if job["status"] not in TERMINAL else ""
     st.markdown(
@@ -226,8 +220,11 @@ def render_job_detail(job_id: str) -> None:
         f"<span style='color:#5b6472;font-size:.7rem'>{live}</span>",
         unsafe_allow_html=True,
     )
+    # What this job was about, for a human: the produced name (display name of
+    # the first artifact, server-provided on the job payload) as the title,
+    # then outputs ← sources from the request it already carries.
     about = _job_about(job.get("request"))
-    title = arts[0]["filename"].rsplit(".", 1)[0].strip() if arts else ""
+    title = str(job.get("artifact_name") or "").rsplit(".", 1)[0].strip()
     if title or about:
         st.markdown(
             (f"**{title}**" if title else "")
@@ -270,10 +267,17 @@ def render_job_detail(job_id: str) -> None:
     with st.expander("Submitted request (GenerationRequest)"):
         st.json(job.get("request") or {})
     with st.expander("Artifacts"):
+        try:
+            arts = client.artifacts(job_id)
+        except Exception:  # noqa: BLE001
+            arts = []
         for art in arts:
             prov = art.get("provenance", {})
+            # The display name is the human one (ADR 0017); the internal
+            # filename only appears when no display name was computed.
+            shown_name = art.get("display_filename") or art["filename"]
             st.markdown(
-                f"`{art['filename']}` · {art['media_type']} · "
+                f"`{shown_name}` · {art['media_type']} · "
                 f"{_human_bytes(art['size_bytes'])}"
             )
             st.caption(
@@ -562,16 +566,17 @@ with tab_jobs:
         shown = [j for j in jobs if j["status"] in flt]
         st.caption(f"{len(shown)}/{len(jobs)} jobs")
         job_ids = [j["job_id"] for j in shown]
+        # Name-first, concise: the human name of what the job produced (the
+        # first artifact's display name, server-provided) beats an opaque id.
+        # The id and the full outputs/source story live in the detail panel.
         labels = {}
         for j in shown:
-            label = (
-                f"{display(j['status'])[0]} {j['job_id'][4:16]} · "
-                f"{j['status']} · {_ago(j.get('created_at'))}"
-            )
-            about = _job_about(j.get("request"))
-            if about:
-                label += f" · {about[:44]}{'…' if len(about) > 44 else ''}"
-            labels[j["job_id"]] = label
+            icon = display(j["status"])[0]
+            name = str(j.get("artifact_name") or "").rsplit(".", 1)[0]
+            count = int(j.get("artifact_count") or 0)
+            main = name or j["job_id"][4:16]
+            more = f" (+{count - 1})" if name and count > 1 else ""
+            labels[j["job_id"]] = f"{icon} {main}{more} · {_ago(j.get('created_at'))}"
         selected = (
             st.radio(
                 "Select a job",

@@ -464,6 +464,32 @@ class Store:
             ).fetchall()
             return [self._artifact_row(r) for r in rows]
 
+    def artifact_labels(self, job_ids: list[str]) -> dict[str, dict]:
+        """First artifact name + artifact count per job, in one query.
+
+        Feeds the jobs list so a client can label rows with a human name
+        ("Me at the zoo") without one artifacts fetch per row. The display
+        name (the engine-computed, human-facing one — ADR 0017) wins over the
+        internal filename.
+        """
+        if not job_ids:
+            return {}
+        marks = ",".join("?" * len(job_ids))
+        with self._conn() as conn:
+            rows = conn.execute(
+                "SELECT job_id, COALESCE(NULLIF(display_filename, ''), filename) "
+                f"AS name FROM artifacts WHERE job_id IN ({marks}) "
+                "ORDER BY created_at, rowid",
+                list(job_ids),
+            ).fetchall()
+        labels: dict[str, dict] = {}
+        for row in rows:
+            entry = labels.setdefault(
+                row["job_id"], {"artifact_name": row["name"], "artifact_count": 0}
+            )
+            entry["artifact_count"] += 1
+        return labels
+
     def get_artifact(self, artifact_id: str) -> dict | None:
         with self._conn() as conn:
             row = conn.execute(

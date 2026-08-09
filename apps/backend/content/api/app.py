@@ -586,7 +586,16 @@ def create_app(
     def list_jobs(
         status: str | None = Query(None), limit: int = Query(200, le=1000)
     ) -> list[dict]:
-        return [_job_view(row) for row in store.list_jobs(status=status, limit=limit)]
+        rows = store.list_jobs(status=status, limit=limit)
+        # Human labels (first artifact's display name + count), one query for
+        # the whole page: rows become recognizable without a per-job fetch.
+        labels = store.artifact_labels([row["id"] for row in rows])
+        views = []
+        for row in rows:
+            view = _job_view(row)
+            view.update(labels.get(row["id"], {}))
+            views.append(view)
+        return views
 
     @app.get("/api/v1/jobs/{job_id}", tags=["jobs"])
     def get_job(job_id: str) -> dict:
@@ -594,6 +603,7 @@ def create_app(
         if row is None:
             raise HTTPException(status_code=404, detail="job not found")
         view = _job_view(row)
+        view.update(store.artifact_labels([job_id]).get(job_id, {}))
         view["steps"] = store.list_steps(job_id)
         return view
 
