@@ -8,13 +8,56 @@ there is no parallel contract.
 
 ## Install
 
+The CLI is **not on PyPI**, and neither is the SDK it depends on — so
+`pip install content-cli` resolves to nothing (or, worse, to somebody else's
+package that happens to hold the name). Every release attaches the two wheels
+instead; each path below installs the same two files.
+
+### From a release (recommended)
+
+Download `content_sdk-<version>-py3-none-any.whl` and
+`content_cli-<version>-py3-none-any.whl` from the
+[latest release](https://github.com/LatentNoise/content/releases/latest), then:
+
 ```bash
-pip install -e packages/python-sdk -e apps/cli    # exposes `content`
-# (make install already does this in the project venv)
+pipx install ./content_cli-<version>-py3-none-any.whl \
+     --pip-args "--find-links ."          # isolated, on your PATH — recommended
 ```
 
-Point it at your instance with `--api-url` or `CONTENT_API_URL`
-(default `http://localhost:8010`).
+or, into a virtualenv you manage:
+
+```bash
+pip install ./content_sdk-<version>-py3-none-any.whl \
+            ./content_cli-<version>-py3-none-any.whl
+```
+
+Both wheels are named explicitly because that is what stands in for the missing
+package index: pip takes `content-sdk` from the file you gave it, and fetches
+only the ordinary third-party dependencies (`httpx`, `pydantic`) from PyPI.
+Python 3.11 or later.
+
+### From a clone
+
+```bash
+pip install ./packages/python-sdk ./apps/cli     # exposes `content`
+```
+
+### For development
+
+```bash
+make install    # editable installs of the engine, SDK, CLI and MCP in one venv
+```
+
+Build the wheels yourself with `make wheels` (they land in `dist/`).
+
+### Point it at your engine
+
+`--api-url URL` or `CONTENT_API_URL` (default `http://localhost:8010`):
+
+```bash
+export CONTENT_API_URL=http://nas.local:8010
+content health
+```
 
 ## Commands
 
