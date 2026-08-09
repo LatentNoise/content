@@ -140,9 +140,9 @@ st.markdown(
       header[data-testid="stHeader"] { display: none; }
       div[data-testid="stDecoration"] { display: none; }
       #MainMenu, footer { visibility: hidden; }
-      .block-container { padding-top: 4rem; padding-bottom: 3rem;
+      .block-container { padding-top: 1.5rem; padding-bottom: 3rem;
         max-width: 820px; }
-      .ht-brand { text-align:center; padding:.2rem 0 0 0; margin-bottom:1.5rem; }
+      .ht-brand { text-align:center; padding:.2rem 0 0 0; margin-bottom:3rem; }
       .ht-brand img { width:54px; vertical-align:middle; border-radius:13px;
         box-shadow:0 4px 18px rgba(139,92,246,.35); }
       .ht-brand .name { font-size:2.5rem; font-weight:800; vertical-align:middle;
