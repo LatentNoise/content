@@ -507,13 +507,21 @@ else:
         "Audio name" if resource.get("resource_type") == "audio" else "Video name"
     )
     name_help = (
-        "Optional override. Left empty, the server names the file(s) after "
-        "the video title itself (and sanitizes either way)."
+        "The name the engine computed for this source (ADR 0017) — edit it or "
+        "leave it as proposed. Untouched, nothing is sent and the server names "
+        "the files itself, arriving at exactly this name."
     )
+# The engine's own proposal (naming engine, ADR 0017), prefilled and editable —
+# the raw title was only ever a *placeholder* here, and it is not what the file
+# would be called: the display profile turns "Artist - Song / Official Video"
+# into "Artist - Song - Official Video". Showing the real answer is the point.
+suggested_filename = (
+    (caps_payload["sources"][0].get("suggested_filename") or "") if caps_payload else ""
+)
 filename = st.text_input(
     name_label,
-    value="",
-    placeholder=resource.get("title", "") if resource else "named by the server",
+    value=suggested_filename,
+    placeholder="named by the server",
     key=f"name-{wk}",
     help=name_help,
 )
@@ -885,8 +893,13 @@ def build_request() -> dict:
     delivery = {}
     if folder:
         delivery["folder"] = folder
-    if filename.strip():
-        delivery["filename"] = filename.strip()
+    # The proposal left untouched is not intent: send nothing and let the
+    # engine name the artifacts, which lands on the same name by construction.
+    # Only a real edit becomes a `delivery.filename` (raw — the server
+    # sanitizes, the client never does: D-51).
+    chosen_name = filename.strip()
+    if chosen_name and chosen_name != suggested_filename:
+        delivery["filename"] = chosen_name
 
     outputs: list[dict] = []
     for name in CUSTOM_OUTPUTS:
