@@ -167,3 +167,79 @@ def client(settings):
     )
     with TestClient(app) as test_client:
         yield test_client
+
+
+def test_each_item_carries_language_intent_to_every_entry(analyze, providers, settings):
+    """Subtitles and audio-track preferences must survive the each_item
+    expansion, for every entry.
+
+    A playlist's items are listed, never probed, so the planner cannot check a
+    language against a track list the way it does for a single video — it
+    passes the intent through optimistically (the same contract its codec
+    preferences already use) and the provider resolves per entry. HomeTube had
+    stopped *sending* these for playlists, which is what made every downloaded
+    item arrive with one audio track and no subtitles.
+    """
+    request = make_request(
+        minimal_payload(
+            sources=_playlist_sources(),
+            outputs=[
+                {
+                    "id": "vid",
+                    "type": "video",
+                    "scope": "each_item",
+                    "options": {
+                        "selection": {"audio_languages": ["fr", "en"]},
+                        "processing": {"embed_subtitles": ["en", "es"]},
+                    },
+                }
+            ],
+        )
+    )
+    plan = build_plan(request, analyze(request), providers, settings)
+    acquire = [s for s in plan.steps if s.operation == "media.acquire_video"]
+    assert len(acquire) == 2  # one per entry, and both carry the intent
+    for step in acquire:
+        assert step.params["selection"]["audio_languages"] == ["fr", "en"]
+        assert step.params["embed_subtitles"] == ["en", "es"]
+
+
+def test_each_item_language_intent_reaches_the_ytdlp_arguments(
+    analyze, providers, settings
+):
+    """The end of the chain: the profile ladder asks for each requested audio
+    language and still ends in a language-free fallback, so an entry that has
+    none of them keeps its best audio instead of failing."""
+    from content.providers.ytdlp import build_video_profiles, embedding_args
+
+    request = make_request(
+        minimal_payload(
+            sources=_playlist_sources(),
+            outputs=[
+                {
+                    "id": "vid",
+                    "type": "video",
+                    "scope": "each_item",
+                    "options": {
+                        "selection": {"audio_languages": ["fr", "en"]},
+                        "processing": {"embed_subtitles": ["en"]},
+                    },
+                }
+            ],
+        )
+    )
+    plan = build_plan(request, analyze(request), providers, settings)
+    step = next(s for s in plan.steps if s.operation == "media.acquire_video")
+
+    selection = step.params["selection"]
+    profiles = build_video_profiles(
+        selection, step.params.get("available_video_codecs")
+    )
+    assert any("[language^=fr]" in p for p in profiles)
+    assert any("[language^=en]" in p for p in profiles)
+    # The safety net: a plain profile with no language filter, last.
+    assert any("language^=" not in p for p in profiles)
+
+    args = embedding_args(step.params)
+    assert "--embed-subs" in args
+    assert args[args.index("--sub-langs") + 1] == "en"

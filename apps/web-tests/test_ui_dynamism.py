@@ -277,3 +277,20 @@ def test_hometube_flags_a_declared_but_missing_cookie_file(run_app, monkeypatch)
     assert "not there yet" in text
     assert "/config/youtube_cookies.txt" in text
     assert "docker-update" in text  # the instruction, not just the alarm
+
+
+def test_hometube_playlist_still_asks_for_languages(run_app):
+    """A playlist's entries are listed, never probed, so there is no track list
+    to offer — the selectors used to vanish and the request went out with no
+    `audio_languages` and no `embed_subtitles` at all: every downloaded item
+    silently lost its subtitles and its extra audio tracks. The preferences now
+    stand in as intent (server prefs: primary fr, secondaries en/es, primary
+    excluded from subtitles)."""
+    at = run_app("hometube", "https://x/playlist?list=1")
+    assert not at.exception, at.exception
+    ms = {m.label: m for m in at.multiselect}
+    assert "Audio languages" in ms, "a playlist must still let you ask for audio"
+    assert ms["Audio languages"].value == ["fr", "en", "es"]
+    assert "Subtitles" in ms, "a playlist must still let you ask for subtitles"
+    # primary_include_subtitles=false → fr excluded, the secondaries remain.
+    assert ms["Subtitles"].value == ["en", "es"]
