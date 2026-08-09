@@ -130,6 +130,10 @@ def test_console_says_what_a_job_was_about(run_app, monkeypatch):
         "retry_of": "",
         "plan_id": "plan_x",
         "request": request,
+        # Server-provided human label (first artifact's display name + count):
+        # the list row shows it instead of the job id, the detail titles on it.
+        "artifact_name": "Me at the zoo.webm",
+        "artifact_count": 2,
     }
     monkeypatch.setattr(
         FakeContentClient, "list_jobs", lambda self, limit=30: [row], raising=False
