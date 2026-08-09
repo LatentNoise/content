@@ -18,6 +18,9 @@
 # Data (SQLite DB, jobs, artifacts, analysis cache) persists in ./data.
 services:
   content:
+    # Published on each version tag; `docker compose pull` fetches it instead
+    # of building. Kept beside `build:` so a clone can still build locally.
+    image: ghcr.io/latentnoise/content:${CONTENT_VERSION:-latest}
     build:
       # Repo-root context so LICENSE/NOTICE ship inside the image (AGPL §4),
       # matching the UI images.
@@ -102,6 +105,7 @@ services:
   # HomeTube — the YouTube UI. Runs when "hometube" is in COMPOSE_PROFILES.
   hometube:
     profiles: ["hometube"]
+    image: ghcr.io/latentnoise/content-hometube:${CONTENT_VERSION:-latest}
     build:
       # Repo-root context so the shared content-sdk package is available.
       context: .
@@ -124,6 +128,7 @@ services:
   # COMPOSE_PROFILES.
   studio:
     profiles: ["studio"]
+    image: ghcr.io/latentnoise/content-studio:${CONTENT_VERSION:-latest}
     build:
       context: .
       dockerfile: apps/web-studio/Dockerfile
@@ -143,6 +148,7 @@ services:
   # download UI is chosen: it is how an operator sees jobs, configuration,
   # storage and logs. It creates no downloads.
   console:
+    image: ghcr.io/latentnoise/content-console:${CONTENT_VERSION:-latest}
     build:
       context: .
       dockerfile: apps/web-admin/Dockerfile

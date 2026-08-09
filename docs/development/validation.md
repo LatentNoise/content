@@ -50,12 +50,14 @@ never on pull requests: code contributions are not accepted
 | --- | --- | --- |
 | `make validate` | `make install` first — the documented install path, on a clean machine — then the official gate | every push, every tag |
 | `make test-ui` | the Streamlit AppTests, in their own throwaway venv | every push, every tag |
-| Backend image | `apps/backend/Dockerfile` for `linux/amd64` **and** `linux/arm64` | tags `v*` only |
+| Images | the backend and the three UIs, each for `linux/amd64` **and** `linux/arm64`, pushed to GHCR | tags `v*` only |
 
-**No secret is required**, and there is no job that needs one: the workflow
-passes on a fork, on a clone, and on a first push with nothing configured. The
-image job builds without publishing (`push: false`) — proving both
-architectures still compile is the goal here; releasing is a separate decision.
+**No stored secret is required**: the gate passes on a fork, on a clone and on a
+first push with nothing configured, and the image job authenticates to GHCR with
+the repository's own `GITHUB_TOKEN`. A branch push can publish nothing — only a
+`v*` tag reaches that job, and pushing a tag is already a deliberate act.
+Building both architectures is half the point (the arm64 half is the one that
+breaks, since it needs musl wheels); publishing them is the other half.
 Actions are pinned to commit SHAs rather than moving tags, because a public
 repository's CI is a supply-chain surface.
 
