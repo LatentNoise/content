@@ -18,10 +18,22 @@
   box-sizing: border-box;
 }
 
+/* Chrome sizes the popup window from the DOCUMENT, not from `body`: anything
+   that overflows widens the whole panel (and body's background propagates to
+   the canvas, so the result reads as one oversized dark rectangle). Pinning
+   `html` too — plus `overflow-x: hidden` — makes 360px the answer whatever a
+   long title or a wide select would otherwise ask for. */
+html {
+  width: 360px;
+  overflow-x: hidden;
+}
+
 body {
   width: 360px;
+  max-width: 360px;
   margin: 0;
-  padding: 0 14px 14px;
+  padding: 0 12px 12px;
+  overflow-x: hidden;
   background: var(--bg);
   color: var(--fg);
   font: 13px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -31,9 +43,9 @@ header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px 0;
+  padding: 9px 0;
   border-bottom: 1px solid var(--line);
-  margin-bottom: 12px;
+  margin-bottom: 10px;
 }
 
 /* The HomeTube brand: the play-mark logo, the gradient name (exactly the web
@@ -41,12 +53,14 @@ header {
 .brand {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 7px;
+  min-width: 0; /* a flex item must be allowed to shrink, or it widens the popup */
 }
 
 .brand svg {
-  width: 22px;
-  height: 22px;
+  width: 20px;
+  height: 20px;
+  flex: none;
   filter: drop-shadow(0 2px 8px rgba(139, 92, 246, 0.35));
 }
 
@@ -82,14 +96,21 @@ header a:hover {
 
 .muted {
   color: var(--muted);
-  margin: 4px 0;
+  margin: 0 0 6px;
+  font-size: 12px;
 }
 
+/* Two lines, then ellipsis: YouTube titles are long, and the popup is not
+   where they need to be read in full (the tooltip carries the whole thing). */
 .title {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 600;
-  margin: 2px 0 6px;
+  margin: 0 0 2px;
   overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .error {
@@ -100,33 +121,35 @@ header a:hover {
 
 /* Sections as cards, the way HomeTube groups its blocks. */
 fieldset {
+  min-width: 0; /* fieldsets refuse to shrink below min-content without this */
   background: var(--card);
   border: 1px solid var(--line);
   border-radius: 10px;
-  margin: 0 0 10px;
-  padding: 10px 12px 12px;
+  margin: 0 0 8px;
+  padding: 7px 10px 9px;
 }
 
 legend {
   color: var(--muted);
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  padding: 0 6px;
+  padding: 0 5px;
 }
 
 label {
   display: block;
-  margin: 4px 0;
+  margin: 3px 0;
 }
 
 input[type="text"],
 input[type="url"],
 select {
   width: 100%;
-  margin-top: 4px;
-  padding: 6px 8px;
+  max-width: 100%;
+  margin-top: 3px;
+  padding: 5px 7px;
   background: var(--bg);
   color: var(--fg);
   border: 1px solid var(--line);
@@ -157,40 +180,51 @@ input[type="checkbox"] {
   margin-top: 6px;
 }
 
-/* Two columns: a dozen short labels in one column left half the card empty.
-   Blocked options span the full width so their reason line has room. */
-#outputs {
+/* Two columns: a dozen short labels in one column left half the card empty. */
+.grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 0 10px;
-}
-
-#outputs .option.blocked {
-  grid-column: 1 / -1;
+  gap: 0 8px;
 }
 
 .option {
   display: flex;
   align-items: baseline;
-  gap: 7px;
-  padding: 2px 0;
+  gap: 6px;
+  padding: 1px 0;
+  min-width: 0;
+}
+
+.option label {
+  margin: 0;
+  overflow-wrap: anywhere;
 }
 
 /* An unavailable output stays visible with the server's reason, rather than
-   vanishing — the user learns why, instead of wondering where it went. */
-.option.blocked label {
-  color: var(--muted);
-}
-
-.reason {
-  display: block;
+   vanishing — the user learns why, instead of wondering where it went. It is
+   a muted chip row rather than one full row per type: the same information
+   (types + reason, grouped by reason) in one line instead of six. */
+.blocked-note {
   color: var(--muted);
   font-size: 11px;
+  line-height: 1.7;
+  margin: 6px 0 0;
+  border-top: 1px solid var(--line);
+  padding-top: 6px;
+}
+
+.chip {
+  display: inline-block;
+  border: 1px solid var(--line);
+  border-radius: 99px;
+  padding: 0 7px;
+  margin-right: 4px;
+  color: var(--muted);
 }
 
 button {
   width: 100%;
-  padding: 9px;
+  padding: 8px;
   border-radius: 8px;
   border: 1px solid transparent;
   font: inherit;
