@@ -12,6 +12,11 @@ The planner decides *what* runs and *who* runs it; provider-specific syntax
 
 from graphlib import TopologicalSorter
 
+from content.application.collections import (
+    MEMBER_OPERATION,
+    RUNNER_NAME,
+    derive_member_request,
+)
 from content.config import ContentSettings
 from content.domain import errors as codes
 from content.domain.analysis import ResourceAnalysis, SourceAnalysis
@@ -281,64 +286,21 @@ def _plan_video_params(
     }
 
 
-# --- collections: scope each_item ----------------------------------------------
-
-_EACH_ITEM_OPERATIONS = {
-    "video": "media.acquire_video",
-    "audio": "media.acquire_audio",
-}
-
-
-def _each_item_video_params(options) -> dict:
-    """Optimistic video params for a playlist entry: no per-entry capability is
-    known, so codec preferences are marked available and the provider's profile
-    fallback resolves what the entry actually offers."""
-    sel = options.selection
-    selection: dict = {
-        "max_height": sel.max_height,
-        "audio_languages": list(sel.audio_languages),
-    }
-    if sel.video_codec:
-        selection["video_codec"] = {
-            "mode": sel.video_codec.mode,
-            "value": sel.video_codec.value,
-            "available": True,
-        }
-    if sel.audio_codec:
-        selection["audio_codec"] = {
-            "mode": sel.audio_codec.mode,
-            "value": sel.audio_codec.value,
-            "available": True,
-        }
-    processing = options.processing
-    params: dict = {
-        "selection": selection,
-        "available_video_codecs": [],
-        "container": None if options.container == "source" else options.container,
-        "processing_mode": processing.mode,
-        "embed_metadata": processing.embed_metadata,
-        "embed_thumbnail": processing.embed_thumbnail,
-        "embed_chapters": processing.embed_chapters,
-        "embed_subtitles": list(processing.embed_subtitles),
-    }
-    params.update(_sponsorblock_params(options.sponsorblock))
-    return params
-
-
-def _each_item_audio_params(options) -> dict:
-    params: dict = {}
-    if options.format != "source":
-        params["audio_format"] = options.format
-    if options.languages:
-        params["audio_languages"] = list(options.languages)
-    params.update(_sponsorblock_params(options.sponsorblock))
-    return params
+# --- collections: orchestration only (ADR 0019) ---------------------------------
+#
+# A collection generates nothing. It emits one member step per member, and that
+# step's runner takes the member through the canonical single-resource pipeline
+# (analyze -> build_plan -> execute). Nothing is invented here, because nothing
+# is known here: --flat-playlist yields references, not facts. What this block
+# used to hold — optimistic video/audio parameter builders and a video/audio-only
+# operation map — was precisely the guessing ADR 0019 removes.
 
 
 def _plan_each_item(
     output,
     index: int,
     builder: PlanBuilder,
+    request: GenerationRequest,
     sources_by_id: dict,
     resolved: dict,
     analysis: ResourceAnalysis,
@@ -347,8 +309,13 @@ def _plan_each_item(
     errors: list[ValidationIssue],
     warnings: list[ValidationIssue],
 ) -> None:
-    """Expand a `each_item` output over a collection source into one acquisition
-    step per member (bound to the output → one artifact per entry)."""
+    """Expand an `each_item` output over a collection source into one member
+    step per member, each bound to the output.
+
+    This decides *which* members and *in what order*. How a member is produced
+    is resolved when it enters execution, by the canonical pipeline — so no
+    output type is privileged here, and none is excluded.
+    """
     path = f"outputs[{index}]"
     source_ids, _ = resolved.get(output.id, ([], []))
     if len(source_ids) != 1:
@@ -375,49 +342,35 @@ def _plan_each_item(
             )
         )
         return
-    if output.type not in _EACH_ITEM_OPERATIONS:
-        errors.append(
-            ValidationIssue(
-                code=codes.OPTION_NOT_SUPPORTED,
-                path=f"{path}.type",
-                message=(
-                    "scope 'each_item' supports 'video' and 'audio' outputs in "
-                    f"V1, not '{output.type}'."
-                ),
-            )
-        )
-        return
-    provider = providers.for_source(source)
-    if provider is None:
-        errors.append(
-            ValidationIssue(
-                code=codes.SOURCE_TYPE_NOT_SUPPORTED,
-                path=path,
-                message=f"No provider supports source type '{source.type}'.",
-            )
-        )
-        return
 
     credential_id = credential_by_source.get(source.id)
-    operation = _EACH_ITEM_OPERATIONS[output.type]
-    base_params = (
-        _each_item_video_params(output.options)
-        if output.type == "video"
-        else _each_item_audio_params(output.options)
-    )
+    usable = [entry for entry in source_analysis.entries if entry.url]
     planned = 0
     for position, entry in enumerate(source_analysis.entries, start=1):
         if not entry.url:
+            # The ordinal is the collection's own index: an unusable member
+            # leaves a numbering gap instead of renumbering the rest.
             continue
-        params: dict = {"uri": entry.url}
+        member_params = {
+            "member_uri": entry.url,
+            "member_output_id": output.id,
+            "member_source_id": source.id,
+        }
+        params: dict = {
+            **member_params,
+            "member_index": position,
+            "member_total": len(usable),
+            "member_request": derive_member_request(request, member_params),
+            # The label ties this step to its naming entry (see the naming
+            # engine's item_bases), and carries the ordinal for the filename.
+            "item_label": item_slug(entry.title or entry.id, position),
+        }
         if credential_id:
             params["credential_id"] = credential_id
-        params.update(base_params)
-        params["item_label"] = item_slug(entry.title or entry.id, position)
         builder.bound_step(
             output.id,
-            operation=operation,
-            provider=provider.name,
+            operation=MEMBER_OPERATION,
+            provider=RUNNER_NAME,
             source_id=source.id,
             params=params,
             resource_key="",
@@ -429,7 +382,7 @@ def _plan_each_item(
             ValidationIssue(
                 code=codes.PARTIAL_OUTPUT,
                 path=path,
-                message="No playlist entry had a resolvable URL; nothing to plan.",
+                message="the collection lists no usable member.",
             )
         )
 
@@ -1991,6 +1944,7 @@ def _build_plan(
                 output,
                 index,
                 builder,
+                request,
                 sources_by_id,
                 resolved,
                 analysis,

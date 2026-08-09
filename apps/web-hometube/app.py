@@ -762,9 +762,10 @@ if video_on or audio_on:
 # --- ✂️ Cutting (single video only) --------------------------------------------
 
 cut: dict | None = None
-# A cut is a video→video transform: only for a single selected video, never for
-# a playlist (each item is its own video) nor an audio-only source.
-if video_on and not is_collection:
+# A cut is a video→video transform, so it needs a selected video — and a
+# playlist member is a video like any other (ADR 0019): the same bounds apply
+# to each member.
+if video_on:
     with st.expander("✂️ Cutting"):
         cut_on = st.checkbox("Keep only a segment", value=False, key=f"cut-{wk}")
         cc1, cc2 = st.columns(2)
@@ -979,8 +980,11 @@ def build_request() -> dict:
             out["options"] = opts
         if name in ("metadata", "thumbnail"):
             out["required"] = False
-        # A playlist is downloaded per item: the same output, one artifact each.
-        if is_collection and name in ("video", "audio"):
+        # A playlist is produced per member: the same output, one artifact
+        # family each. No output type is privileged — a member is planned by
+        # the canonical pipeline, so whatever it can produce, it can produce
+        # here too (ADR 0019).
+        if is_collection:
             out["scope"] = "each_item"
         if delivery:
             out["delivery"] = dict(delivery)
@@ -988,12 +992,10 @@ def build_request() -> dict:
 
     # Subtitles chosen alongside a preset: embedded into the video when possible,
     # otherwise delivered as sidecar files (audio-only, or embedding disabled).
-    # Sidecar subtitles are per-video only (not for a playlist's each_item flow).
+    # A collection member takes the same path as any single video, so this no
+    # longer excludes playlists (ADR 0019).
     sidecar_subs = (
-        subs_langs
-        and "subtitles" not in want
-        and not (video_on and embed_subs)
-        and not is_collection
+        subs_langs and "subtitles" not in want and not (video_on and embed_subs)
     )
     if sidecar_subs:
         sub_out: dict = {
