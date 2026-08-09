@@ -1,0 +1,8 @@
+# This package's own build output.
+#
+# It also shadows the repository root's ignore file for packaging: hatchling
+# puts the nearest .gitignore into the sdist, and the root one describes the
+# monorepo's private layout, which does not exist in a published distribution.
+build/
+dist/
+*.egg-info/
