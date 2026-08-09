@@ -2,12 +2,23 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <title>Send to Content</title>
+    <title>HomeTube for Content</title>
     <link rel="stylesheet" href="popup.css" />
   </head>
   <body>
     <header>
-      <span class="brand">Content</span>
+      <span class="brand">
+        <!-- The HomeTube mark, byte-identical to the web UI's logo. -->
+        <svg viewBox="0 0 100 100" aria-hidden="true">
+          <defs><linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" style="stop-color:#8B5CF6"/>
+          <stop offset="100%" style="stop-color:#D946EF"/></linearGradient></defs>
+          <rect width="100" height="100" rx="20" fill="url(#g)"/>
+          <polygon points="38,25 38,75 75,50" fill="white"/>
+        </svg>
+        <span class="name">HomeTube</span>
+        <span class="for">for Content</span>
+      </span>
       <a id="open-options" href="#" title="Settings">⚙︎</a>
     </header>
 
@@ -30,29 +41,6 @@
         <!-- Filled from the server's resolved capabilities. Nothing here is
              hardcoded: an output type the engine gains appears on its own. -->
         <div id="outputs"></div>
-      </fieldset>
-
-      <fieldset id="video-options">
-        <legend>Quality</legend>
-        <label>
-          Container
-          <select id="container">
-            <option value="">as the source provides</option>
-            <option value="mkv">mkv — plays anywhere</option>
-            <option value="mp4">mp4 — most compatible</option>
-          </select>
-        </label>
-        <label>
-          Up to
-          <select id="max-height">
-            <option value="">no limit</option>
-            <option value="480">480p</option>
-            <option value="720">720p</option>
-            <option value="1080">1080p</option>
-            <option value="1440">1440p</option>
-            <option value="2160">2160p</option>
-          </select>
-        </label>
       </fieldset>
 
       <fieldset id="subtitle-options" class="hidden">
@@ -80,8 +68,33 @@
         </label>
       </fieldset>
 
+      <!-- Last on purpose: quality is the knob touched least often, while
+           outputs and destination are the decisions every send makes. -->
+      <fieldset id="video-options">
+        <legend>Quality</legend>
+        <label>
+          Container
+          <select id="container">
+            <option value="">as the source provides</option>
+            <option value="mkv">mkv — plays anywhere</option>
+            <option value="mp4">mp4 — most compatible</option>
+          </select>
+        </label>
+        <label>
+          Up to
+          <select id="max-height">
+            <option value="">no limit</option>
+            <option value="480">480p</option>
+            <option value="720">720p</option>
+            <option value="1080">1080p</option>
+            <option value="1440">1440p</option>
+            <option value="2160">2160p</option>
+          </select>
+        </label>
+      </fieldset>
+
       <p id="form-error" class="error hidden"></p>
-      <button id="submit" class="primary">Send to Content</button>
+      <button id="submit" class="primary">Generate in Content</button>
     </section>
 
     <section id="view-job" class="view hidden">
