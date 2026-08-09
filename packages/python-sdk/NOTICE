@@ -1,0 +1,65 @@
+Content — declarative resource-to-artifact generation engine
+Copyright (C) 2026 Yann Orieult
+
+SPDX-License-Identifier: AGPL-3.0-or-later
+Source: https://github.com/LatentNoise/content
+
+This program is free software: you can redistribute it and/or modify it under
+the terms of the GNU Affero General Public License as published by the Free
+Software Foundation, either version 3 of the License, or (at your option) any
+later version.
+
+This program is distributed in the hope that it will be useful, but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE. See the GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License along
+with this program. If not, see <https://www.gnu.org/licenses/>.
+
+---
+
+Third-party components
+----------------------
+
+Content depends on third-party software that it does not include: yt-dlp,
+ffmpeg/ffprobe, Ollama, faster-whisper, and its Python dependencies. Each
+remains under its own licence, held by its own authors, and nothing here alters
+those terms. The container images built from this repository bundle some of
+these; consult each component for its licence.
+
+No additional restriction is imposed beyond the licences that apply.
+
+Redistributed in the container images
+-------------------------------------
+
+The official container images built from this repository include the following
+components in binary form. They are named here because redistribution, unlike a
+runtime dependency, carries attribution obligations.
+
+  Typst — https://github.com/typst/typst
+  Copyright (c) The Typst Project Developers
+  Licensed under the Apache License, Version 2.0.
+  A copy of that licence is installed in the image at
+  /usr/local/share/licenses/typst/LICENSE, and is available at
+  <http://www.apache.org/licenses/LICENSE-2.0>.
+  Used as the default PDF renderer; the binary is unmodified.
+  Omit it at build time with --build-arg INSTALL_TYPST=false.
+
+  ReportLab — https://www.reportlab.com/
+  Copyright (c) ReportLab Europe Ltd.
+  Licensed under the BSD 3-Clause License.
+  Installed as a Python wheel; used as the fallback PDF renderer.
+
+  DejaVu fonts — https://dejavu-fonts.github.io/
+  Licensed under the DejaVu Fonts License (a permissive, Bitstream Vera
+  derived licence). Installed via the Alpine `ttf-dejavu` package and used for
+  PDF output outside the Latin-1 repertoire.
+
+Copyright ownership
+-------------------
+
+Copyright in this project is held by its author alone. The project accepts no
+code contributions (see CONTRIBUTING.md), so no third party holds copyright in
+any part of it. That is deliberate: undivided ownership is what allows Content
+to be offered under separate commercial terms alongside the AGPL — see
+COMMERCIAL.md.

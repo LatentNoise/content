@@ -1,0 +1,94 @@
+# Publish content-sdk and content-cli to PyPI.
+#
+# Deliberately NOT triggered by a tag. Tagging already does enough on its own
+# (CI, the GHCR images, the draft release); a push to PyPI is irreversible —
+# a version number can never be reused, even after deletion — so it is the one
+# step that asks a human to press the button. `workflow_dispatch` with an
+# explicit version is that button.
+#
+# Authentication is PyPI Trusted Publishing (OIDC): GitHub mints a short-lived
+# token for this exact repository, workflow and environment. There is no API
+# token stored anywhere, so there is none to leak or rotate.
+name: Publish to PyPI
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to publish (must match the tag and the packages, e.g. 0.1.0)"
+        required: true
+        type: string
+      repository:
+        description: "Which index to publish to"
+        required: true
+        default: testpypi
+        type: choice
+        options: [testpypi, pypi]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build and check the distributions
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout the tag
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Publish what was tagged and validated, never a moving branch.
+          ref: v${{ inputs.version }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+
+      # The tag, the pyproject files and the requested version must agree.
+      # Publishing 0.1.0 from a tree that says 0.2.0 is unfixable afterwards.
+      - name: Check the version agrees everywhere
+        run: |
+          set -euo pipefail
+          make version
+          declared=$(grep -m1 '^version = ' packages/python-sdk/pyproject.toml | sed 's/.*"\(.*\)"/\1/')
+          if [ "$declared" != "${{ inputs.version }}" ]; then
+            echo "::error::the tree declares $declared but publication asked for ${{ inputs.version }}"
+            exit 1
+          fi
+
+      - name: Build the wheels and sdists
+        run: make wheels
+
+      - name: Check the metadata PyPI will accept
+        run: uvx twine check --strict dist/*
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: distributions
+          path: dist/
+
+  publish:
+    name: Publish to ${{ inputs.repository }}
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # The environment is the gate: configure a required reviewer on it in the
+    # repository settings and this job waits for an approval before it runs.
+    environment:
+      name: ${{ inputs.repository }}
+      url: https://${{ inputs.repository == 'pypi' && 'pypi.org' || 'test.pypi.org' }}/p/content-cli
+    permissions:
+      contents: read
+      id-token: write # the OIDC token Trusted Publishing exchanges — no secret
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: distributions
+          path: dist/
+
+      - name: Publish
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
+        with:
+          repository-url: >-
+            ${{ inputs.repository == 'pypi'
+                && 'https://upload.pypi.org/legacy/'
+                || 'https://test.pypi.org/legacy/' }}

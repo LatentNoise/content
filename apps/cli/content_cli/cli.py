@@ -13,6 +13,7 @@ import time
 from content_sdk import ContentClient, ContentError, TransportError
 from content_sdk.resources import TERMINAL_STATUSES
 
+from content_cli import __version__
 from content_cli.builders import audio_request, video_request
 
 
@@ -145,6 +146,15 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="content", description=__doc__)
     parser.add_argument("--api-url", dest="api_url", help="Content API base URL")
     parser.add_argument("--json", action="store_true", help="raw JSON output")
+    # The installed release, from the package's own metadata rather than a
+    # second literal: `content --version` must answer for the wheel a user
+    # actually has, which is the first thing to check in a bug report.
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"content {__version__}",
+        help="show the installed Content CLI version",
+    )
     sub = parser.add_subparsers(dest="command", required=True)
 
     sub.add_parser("health")

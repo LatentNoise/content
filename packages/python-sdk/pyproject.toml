@@ -2,10 +2,32 @@
 name = "content-sdk"
 version = "0.1.0"
 description = "Official Python SDK for the Content engine (the one API client: sync + async)."
+readme = "README.md"
 license = "AGPL-3.0-or-later"
+license-files = ["LICENSE", "NOTICE"]
 authors = [{ name = "Yann Orieult" }]
 requires-python = ">=3.11"
+keywords = ["content", "api-client", "sdk", "yt-dlp", "self-hosted"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: System Administrators",
+    # No 'License ::' classifier: PEP 639 supersedes it with the SPDX
+    # expression above, and setuptools now refuses both together.
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Multimedia :: Video",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
 dependencies = ["httpx>=0.27", "pydantic>=2"]
+
+[project.urls]
+Homepage = "https://github.com/LatentNoise/content"
+Source = "https://github.com/LatentNoise/content"
+Issues = "https://github.com/LatentNoise/content/issues"
+Documentation = "https://github.com/LatentNoise/content/blob/main/docs/README.md"
 
 [build-system]
 requires = ["hatchling"]
@@ -13,3 +35,8 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["content_sdk"]
+
+# The sdist is the Corresponding Source we convey (AGPL §4/§6), so it carries
+# the licence and the notice — and nothing else from the monorepo.
+[tool.hatch.build.targets.sdist]
+only-include = ["content_sdk", "README.md", "LICENSE", "NOTICE", "pyproject.toml"]

@@ -8,33 +8,33 @@ there is no parallel contract.
 
 ## Install
 
-The CLI is **not on PyPI**, and neither is the SDK it depends on — so
-`pip install content-cli` resolves to nothing (or, worse, to somebody else's
-package that happens to hold the name). Every release attaches the two wheels
-instead; each path below installs the same two files.
+Once published, the CLI is an ordinary Python application — nothing to clone:
 
-### From a release (recommended)
+```bash
+uv tool install content-cli     # isolated, on your PATH — recommended
+content --help
+
+# or
+pipx install content-cli
+```
+
+`content-cli` pulls `content-sdk` from PyPI as an ordinary dependency, pinned
+to the matching release.
+
+> **Not published yet.** Until the first publication the packages are attached
+> to each GitHub release as wheels; see *From a release* below. The commands
+> above are what will work afterwards.
+
+### From a release (today)
 
 Download `content_sdk-<version>-py3-none-any.whl` and
 `content_cli-<version>-py3-none-any.whl` from the
 [latest release](https://github.com/LatentNoise/content/releases/latest), then:
 
 ```bash
-pipx install ./content_cli-<version>-py3-none-any.whl \
-     --pip-args "--find-links ."          # isolated, on your PATH — recommended
+uv tool install ./content_cli-<version>-py3-none-any.whl \
+    --find-links .          # --find-links lets it resolve the SDK beside it
 ```
-
-or, into a virtualenv you manage:
-
-```bash
-pip install ./content_sdk-<version>-py3-none-any.whl \
-            ./content_cli-<version>-py3-none-any.whl
-```
-
-Both wheels are named explicitly because that is what stands in for the missing
-package index: pip takes `content-sdk` from the file you gave it, and fetches
-only the ordinary third-party dependencies (`httpx`, `pydantic`) from PyPI.
-Python 3.11 or later.
 
 ### From a clone
 
@@ -48,7 +48,7 @@ pip install ./packages/python-sdk ./apps/cli     # exposes `content`
 make install    # editable installs of the engine, SDK, CLI and MCP in one venv
 ```
 
-Build the wheels yourself with `make wheels` (they land in `dist/`).
+Build the distributions yourself with `make wheels` (they land in `dist/`).
 
 ### Point it at your engine
 

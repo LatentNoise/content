@@ -2,17 +2,49 @@
 name = "content-cli"
 version = "0.1.0"
 description = "Command-line client for the Content engine (talks to /api/v1)."
+readme = "README.md"
 license = "AGPL-3.0-or-later"
+license-files = ["LICENSE", "NOTICE"]
 authors = [{ name = "Yann Orieult" }]
 requires-python = ">=3.11"
-dependencies = ["content-sdk"]
+keywords = ["content", "cli", "yt-dlp", "self-hosted", "media"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: System Administrators",
+    # No 'License ::' classifier: PEP 639 supersedes it with the SPDX
+    # expression above, and setuptools now refuses both together.
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Multimedia :: Video",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+# Pinned to the exact SDK release, not a floor: the monorepo ships one version
+# for everything (`make version`), and a CLI resolving to a different SDK than
+# the one it was tested against is precisely the drift that guarantees buys.
+dependencies = ["content-sdk==0.1.0"]
 
 [project.scripts]
 content = "content_cli.cli:main"
 
-[build-system]
-requires = ["setuptools>=68"]
-build-backend = "setuptools.build_meta"
+[project.urls]
+Homepage = "https://github.com/LatentNoise/content"
+Source = "https://github.com/LatentNoise/content"
+Issues = "https://github.com/LatentNoise/content/issues"
+Documentation = "https://github.com/LatentNoise/content/blob/main/docs/README.md"
 
-[tool.setuptools]
+# hatchling, like the SDK: one build backend across the published packages,
+# and an explicit file list for the sdist. setuptools swept tests/, setup.cfg
+# and egg-info residue into the archive, which is a poor thing to hand a user
+# as "the corresponding source".
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
 packages = ["content_cli"]
+
+[tool.hatch.build.targets.sdist]
+only-include = ["content_cli", "README.md", "LICENSE", "NOTICE", "pyproject.toml"]
