@@ -44,12 +44,41 @@ def test_invalid_category_rejected():
 
 
 def test_sponsorblock_args_remove():
+    """Precise is the default: cuts get forced keyframes, so the result plays.
+
+    Stream-copying instead (the old unconditional behaviour) makes yt-dlp cut
+    on the nearest keyframe and splice the discarded frames back in with
+    backwards timestamps — a real download measured 2506 video frames where
+    2331 fit, 173 non-monotonic, all in the last 3.2 seconds. That is the
+    "the end of the video stutters while the audio keeps going" bug.
+    """
     args = sponsorblock_args({"sponsorblock": {"remove": ["sponsor", "intro"]}})
     assert args == [
         "--sponsorblock-remove",
         "sponsor,intro",
+        "--force-keyframes-at-cuts",
+    ]
+
+
+def test_sponsorblock_args_remove_fast_mode_is_opt_in():
+    """The fast path stays reachable for anyone who prefers speed over a clean
+    tail — but it has to be asked for by name."""
+    args = sponsorblock_args(
+        {"sponsorblock": {"remove": ["sponsor"], "cut_mode": "keyframes"}}
+    )
+    assert args == [
+        "--sponsorblock-remove",
+        "sponsor",
         "--no-force-keyframes-at-cuts",
     ]
+
+
+def test_sponsorblock_cut_mode_defaults_to_precise_in_the_contract():
+    """The default lives in the contract, not only in the argument builder."""
+    from content.domain.request import SponsorBlockOptions
+
+    assert SponsorBlockOptions().cut_mode == "precise"
+    assert SponsorBlockOptions(cut_mode="keyframes").cut_mode == "keyframes"
 
 
 def test_sponsorblock_args_mark():
@@ -97,7 +126,12 @@ def test_video_sponsorblock_threaded_into_step(plan):
         )
     )
     step = next(s for s in result.steps if s.operation == "media.acquire_video")
-    assert step.params["sponsorblock"] == {"remove": ["sponsor"], "mark": []}
+    assert step.params["sponsorblock"] == {
+        "remove": ["sponsor"],
+        "mark": [],
+        # Threaded through to the provider: it decides the keyframe flag.
+        "cut_mode": "precise",
+    }
 
 
 def test_audio_sponsorblock_threaded_into_step(plan):
@@ -113,7 +147,11 @@ def test_audio_sponsorblock_threaded_into_step(plan):
         )
     )
     step = next(s for s in result.steps if s.operation == "media.acquire_audio")
-    assert step.params["sponsorblock"] == {"remove": [], "mark": ["intro"]}
+    assert step.params["sponsorblock"] == {
+        "remove": [],
+        "mark": ["intro"],
+        "cut_mode": "precise",
+    }
 
 
 def test_no_sponsorblock_leaves_params_clean(plan):
