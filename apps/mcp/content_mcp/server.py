@@ -92,7 +92,55 @@ def build_server(client: ContentClient | None = None) -> MCPServer:
     return server
 
 
-def main() -> None:
+_HELP = """\
+content-mcp — the official MCP server for the Content engine (stdio).
+
+Run it from an MCP client, not by hand: the client spawns the process and
+speaks JSON-RPC over stdin/stdout. Configuration is one environment variable:
+
+  CONTENT_API_URL   base URL of your Content engine (default http://localhost:8010)
+
+Example client configuration:
+
+  {
+    "mcpServers": {
+      "content": {
+        "command": "content-mcp",
+        "env": { "CONTENT_API_URL": "http://localhost:8010" }
+      }
+    }
+  }
+
+Options:
+  --help      show this help and exit
+  --version   show the version and exit
+"""
+
+
+def main(argv: list[str] | None = None) -> None:
+    # A stdio MCP server owns stdout for JSON-RPC framing, so the only argv
+    # handling is the pair every tool owes its installer — and both exit
+    # before the transport starts. Anything else is a mistake worth stopping
+    # on (an MCP client passes no arguments).
+    import sys
+
+    args = sys.argv[1:] if argv is None else argv
+    if "--help" in args or "-h" in args:
+        print(_HELP, end="")
+        return
+    if "--version" in args:
+        # The wheel's own metadata, so `make version-update` has a single
+        # declaration to rewrite here (the MCPServer version= literal).
+        from importlib.metadata import PackageNotFoundError, version
+
+        try:
+            print(f"content-mcp {version('content-mcp')}")
+        except PackageNotFoundError:
+            print("content-mcp (uninstalled source tree)")
+        return
+    if args:
+        print(f"content-mcp: unexpected argument {args[0]!r} (try --help)")
+        raise SystemExit(2)
     build_server().run("stdio")
 
 

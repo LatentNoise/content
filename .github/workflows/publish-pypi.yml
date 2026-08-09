@@ -1,4 +1,4 @@
-# Publish content-sdk and content-cli to PyPI.
+# Publish content-sdk, content-cli and content-mcp to PyPI.
 #
 # Deliberately NOT triggered by a tag. Tagging already does enough on its own
 # (CI, the GHCR images, the draft release); a push to PyPI is irreversible —

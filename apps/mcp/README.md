@@ -1,22 +1,62 @@
-# content-mcp
+# `content-mcp` — Content MCP server
 
-The official **MCP server** for the Content engine — an agentic facade that lets
-any MCP-compatible client (Claude, IDEs, agents) drive Content. It speaks only
-through the [SDK](../../packages/python-sdk/README.md): **no REST, no business
-logic** lives here.
+The official **MCP server** for the Content engine: give Claude, an IDE or any
+MCP-compatible agent the ability to drive your Content instance — analyze a
+URL, generate video/audio/subtitles/transcripts, watch the job, land the files
+in your library. It is an agentic facade over the official
+[Python SDK](../../packages/python-sdk/README.md): **no REST of its own, no
+business logic**.
 
 ```text
-Content Backend (REST) → content_sdk → content-mcp (this) → any MCP agent
+any MCP client → content-mcp (this) → content_sdk → your Content engine (/api/v1)
 ```
 
-## Run (stdio)
+## Install
+
+Once published, the server is an ordinary Python application — nothing to
+clone:
 
 ```bash
-pip install content-mcp
-CONTENT_API_URL=http://localhost:8010 content-mcp   # stdio transport
+uv tool install content-mcp     # isolated, on your PATH — recommended
+content-mcp --help
+
+# or
+pipx install content-mcp
 ```
 
-Example MCP client config:
+`content-mcp` pulls `content-sdk` from PyPI as an ordinary dependency, pinned
+to the matching release.
+
+> **Not published yet.** Until the first publication the packages are attached
+> to each GitHub release as wheels; see *From a release* below. The commands
+> above are what will work afterwards.
+
+### From a release (today)
+
+Download `content_sdk-<version>-py3-none-any.whl` and
+`content_mcp-<version>-py3-none-any.whl` from the
+[latest release](https://github.com/LatentNoise/content/releases/latest), then:
+
+```bash
+uv tool install ./content_mcp-<version>-py3-none-any.whl \
+    --find-links .          # --find-links lets it resolve the SDK beside it
+```
+
+## Connect it to your engine
+
+One environment variable: `CONTENT_API_URL` (default `http://localhost:8010`).
+The server speaks stdio — your MCP client spawns it; you never run it by hand.
+
+### Claude Code
+
+```bash
+claude mcp add content --env CONTENT_API_URL=http://localhost:8010 -- content-mcp
+```
+
+### Claude Desktop, Cursor, and other clients
+
+Claude Desktop (`claude_desktop_config.json`), Cursor (`.cursor/mcp.json`) and
+any other client using the standard JSON shape:
 
 ```json
 {
@@ -28,6 +68,14 @@ Example MCP client config:
   }
 }
 ```
+
+Then ask for something like *"analyze this YouTube URL and download the audio
+into my library"* — the expected flow is `get_config` → `analyze_source` →
+`generate` → `get_job`, ending with a `delivered_path` you can find under the
+engine's delivery folder.
+
+Logs go to **stderr** (stdout carries only the MCP JSON-RPC framing), so a
+client's log pane shows them without corrupting the session.
 
 ## Tools (intention-level, not one-per-endpoint)
 
@@ -48,20 +96,17 @@ Example MCP client config:
 JSON views for a host to attach as context. Prompts are intentionally not
 provided yet.
 
-## Test it with an agent
+## For development
 
-With the engine running (`docker compose up`, port 8010), register the server
-in Claude Code from the repo root:
+From a clone:
 
 ```bash
+make install    # editable installs of the engine, SDK, CLI and MCP in one venv
 claude mcp add content --env CONTENT_API_URL=http://localhost:8010 \
   -- apps/backend/.venv/bin/python -m content_mcp.server
 ```
 
-Then ask for something like *"analyze this YouTube URL and download the audio
-into my library"* — the expected flow is `get_config` → `analyze_source` →
-`generate` → `get_job`, ending with a `delivered_path` you can find under the
-mounted delivery folder.
+Build the distributions with `make wheels` (they land in `dist/`).
 
 ## Verification status
 
@@ -71,8 +116,9 @@ mounted delivery folder.
 - The full journey — MCP service → SDK → real FastAPI engine → executor →
   delivery library, including `delivery` intent and `mode: "none"`:
   **verified in-process** (`tests/test_end_to_end.py`, in `make validate`).
-- An interactive MCP host (Claude) driving the stdio transport against a
-  running engine: **NOT verified here** — that is the manual test above.
+- The installed wheel driven over stdio by an MCP client session against a
+  running engine: **verified** at packaging time (see the repository's
+  release notes); re-run it after any transport change.
 
 ## Design
 
@@ -80,3 +126,6 @@ mounted delivery folder.
   imports, no HTTP. Fully unit-tested over a mock transport.
 - `server.py` — thin wiring: registers the tools/resources on an `MCPServer` and
   runs stdio. `content-mcp` → `content_mcp.server:main`.
+- The layering is enforced by tests: the MCP server may import `content_sdk`
+  only — never an HTTP client, never backend internals
+  (`tests/test_layering.py` at the repo root).

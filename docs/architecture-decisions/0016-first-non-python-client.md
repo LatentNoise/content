@@ -8,7 +8,9 @@ ADR 0015 made `content_sdk` the single door to `/api/v1`: the CLI, the MCP
 server and the three Streamlit UIs all speak through it, nothing else imports an
 HTTP client, and `tests/test_layering.py` enforces it.
 
-The browser extension (`apps/browser-extension/`) cannot obey that rule. It is
+The browser extension (`apps/browser-extension-chromium/` — Chromium is in the
+name because a Safari port would be a second app, not a variant of this one)
+cannot obey that rule. It is
 JavaScript running in a browser; there is no Python there to import a Python
 SDK. Worse, the guard would not notice: it scans `.py` files only, so an
 extension speaking HTTP would pass silently rather than fail — the rule would be
@@ -40,7 +42,7 @@ the boundary it depends on.**
    arrangement that works against a stock engine, and it means the extension
    ships without asking an operator to widen `CONTENT_CORS_ORIGINS` — a setting
    whose whole point is that browsers, not tools, need it.
-3. **The contract is verified from Python** (`tests/test_browser_extension.py`):
+3. **The contract is verified from Python** (`tests/test_browser_extension_chromium.py`):
    the request bodies the extension emits are validated against the real
    `GenerationRequest`, the manifest is checked for permission minimality, and
    the builder is checked for fields the contract does not have. `make validate`
