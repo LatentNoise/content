@@ -24,7 +24,7 @@ VERSION_MODULES    := apps/backend/content/__init__.py \
 .DEFAULT_GOAL := validate
 .PHONY: help install format lint test test-all ui-venv test-ui test-ui-live \
         validate validate-all validate-release clean run \
-        version version-update version-tag extension-zip docker-up docker-update docker-down \
+        version version-update version-tag wheels extension-zip docker-up docker-update docker-down \
         docker-logs
 
 help:  ## List the available targets
@@ -151,6 +151,20 @@ version-tag:  ## Create the annotated tag v<version> (clean tree + agreeing vers
 	@v=$$(grep '^version = ' apps/backend/pyproject.toml | sed 's/.*"\(.*\)"/\1/'); \
 	git tag -a "v$$v" -m "Content v$$v"; \
 	echo "tag v$$v created — push it deliberately with: git push origin v$$v"
+
+# --- python distributions ---------------------------------------------------------
+
+# Wheels for the two packages a user installs to get the `content` command.
+# They are attached to each release rather than published to PyPI: the CLI
+# depends on content-sdk, and neither name is claimed on PyPI, so `pip install
+# content-cli` would resolve to nothing (or worse, to somebody else's package).
+# A wheel pair is self-contained and needs no index — see apps/cli/README.md.
+wheels:  ## Build the SDK + CLI wheels for a release (dist/)
+	@rm -f dist/content_sdk-*.whl dist/content_cli-*.whl \
+	       dist/content_sdk-*.tar.gz dist/content_cli-*.tar.gz
+	uv build --out-dir dist packages/python-sdk
+	uv build --out-dir dist apps/cli
+	@ls -1 dist/content_sdk-* dist/content_cli-*
 
 # --- browser extension -----------------------------------------------------------
 
