@@ -35,10 +35,14 @@ YouTube URL ──→ Content ─────┼─ My Conference - subtitles - 
 Content produces several related outputs from one declarative request,
 preserving the provenance of every artifact.
 
-<!-- Demo GIF and screenshots will be attached to a release, not tracked in
-the repository, and embedded here as
-https://github.com/LatentNoise/content/releases/download/<tag>/<asset>
-They are produced in media/ (untracked; see media/README.md). -->
+<div align="center">
+  <img src="https://github.com/LatentNoise/content/releases/download/v0.1.0/2026-08-09-hometube-demo.gif"
+       alt="HomeTube demo — paste a YouTube URL, choose the outputs, watch the job deliver into the library"
+       width="75%">
+</div>
+
+<!-- Visuals are produced in media/ (untracked) and attached to releases —
+see media/README.md. -->
 
 ## Why Content?
 
@@ -168,6 +172,23 @@ inventory.
   OpenAPI and Swagger documentation.
 - **[MCP server](apps/mcp/README.md)** — intention-level tools and resources for
   MCP-compatible agents.
+
+<div align="center">
+<table>
+  <tr>
+    <td align="center" width="50%">
+      <img src="https://github.com/LatentNoise/content/releases/download/v0.1.0/2026-08-09-studio.png"
+           alt="Content Studio — the general-purpose request builder" width="100%"><br>
+      <sub><b>Content Studio</b> — compose any request the contract allows</sub>
+    </td>
+    <td align="center" width="50%">
+      <img src="https://github.com/LatentNoise/content/releases/download/v0.1.0/2026-08-09-console.png"
+           alt="Content Console — jobs, runners, storage and configuration, live" width="100%"><br>
+      <sub><b>Content Console</b> — observe and pilot the engine</sub>
+    </td>
+  </tr>
+</table>
+</div>
 
 ### Python SDK example
 
