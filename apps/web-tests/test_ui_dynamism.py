@@ -18,6 +18,15 @@ def _labels(at, kind) -> list[str]:
     return [getattr(el, "label", "") or "" for el in getattr(at, kind)]
 
 
+def _generation_request(at) -> dict:
+    """The body the page says it will send (its `st.json` preview) — the same
+    dict `build_request()` produced, so a test can assert on real intent."""
+    import json as _json
+
+    value = at.json[0].value
+    return _json.loads(value) if isinstance(value, str) else value
+
+
 # --- HomeTube ------------------------------------------------------------------
 
 
@@ -294,3 +303,34 @@ def test_hometube_playlist_still_asks_for_languages(run_app):
     assert "Subtitles" in ms, "a playlist must still let you ask for subtitles"
     # primary_include_subtitles=false → fr excluded, the secondaries remain.
     assert ms["Subtitles"].value == ["en", "es"]
+
+
+def test_hometube_prefills_the_engines_proposed_name(run_app):
+    """The name field shows the engine's own proposal (ADR 0017), editable.
+
+    It used to show the raw title as a mere placeholder — a name that is not
+    what the file gets called, since the display profile rewrites it (a slash
+    becomes " - "). The proposal is the real answer, so the user sees the
+    truth and can edit it.
+    """
+    at = run_app("hometube", "https://x/video")
+    assert not at.exception, at.exception
+    names = [i for i in at.text_input if (i.label or "").endswith("name")]
+    assert names, "the name field disappeared"
+    assert names[0].value == "Fake - Official Video"
+
+
+def test_hometube_sends_no_filename_when_the_proposal_is_untouched(run_app):
+    """Leaving the proposal alone is not naming intent: the request carries no
+    `delivery.filename`, and the server names the artifacts itself — landing on
+    the same name by construction. Editing it does send the raw text."""
+    at = run_app("hometube", "https://x/video")
+    assert not at.exception, at.exception
+    request = _generation_request(at)
+    assert "filename" not in (request["outputs"][0].get("delivery") or {})
+
+    names = [i for i in at.text_input if (i.label or "").endswith("name")]
+    names[0].set_value("My Own Name").run()
+    assert not at.exception, at.exception
+    edited = _generation_request(at)
+    assert edited["outputs"][0]["delivery"]["filename"] == "My Own Name"

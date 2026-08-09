@@ -257,6 +257,10 @@ class FakeContentClient:
                     "source_id": sid,
                     "resource_type": rtype,
                     "title": "Fake",
+                    # The naming engine's proposal, as the real endpoint sends
+                    # it (ADR 0017): the display profile has already turned the
+                    # raw title into what the file will actually be called.
+                    "suggested_filename": "Fake - Official Video",
                     "capabilities": caps,
                 }
             ],
