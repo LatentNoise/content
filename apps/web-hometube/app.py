@@ -758,7 +758,18 @@ if "summary" in want:
 
 # --- 🍪 Cookie Management -------------------------------------------------------
 
-with st.expander("🍪 Cookie Management"):
+# The expander label itself carries the cookie state, so the flag is visible
+# without opening it. Declared-but-missing is a *guided setup* state, not an
+# error: the credential ships declared by default because HomeTube in Docker
+# all but needs cookies, and the flag tells the user the one step left.
+_cookie_metas = [credential_files.get(c) for c in credentials]
+if any(m and m.get("exists") for m in _cookie_metas):
+    _cookie_flag = " · ✅ ready"
+elif any(_cookie_metas):
+    _cookie_flag = " · ⚠️ cookies file missing"
+else:
+    _cookie_flag = ""
+with st.expander(f"🍪 Cookie Management{_cookie_flag}"):
     credential = st.selectbox(
         "Authentication",
         ["none", *credentials],
@@ -768,6 +779,16 @@ with st.expander("🍪 Cookie Management"):
     # Kill the classic doubt — "are my cookies actually in use?" — with the
     # file's own facts: which path, whether it is there, when it was last
     # refreshed (the metadata the server reports; contents never leave it).
+    for _cred_id in credentials:
+        _meta = credential_files.get(_cred_id)
+        if _meta and not _meta.get("exists"):
+            st.caption(
+                f"⚠️ `{_cred_id}` is declared but its file is not there yet — "
+                f"drop your cookies export at `{_meta['path']}` (host side: "
+                "the `./config` folder), then run `make docker-update`. "
+                "Cookies unlock age-restricted videos and make YouTube "
+                "downloads more reliable — see config/README.md."
+            )
     if credential != "none":
         meta = credential_files.get(credential)
         if meta and meta.get("exists"):
@@ -775,16 +796,10 @@ with st.expander("🍪 Cookie Management"):
                 f"✅ Will be used for this download: `{meta['path']}` · "
                 f"updated {ago(meta.get('updated_at'))}"
             )
-        elif meta:
-            st.caption(
-                f"🚫 Declared, but the file is missing: `{meta['path']}` — "
-                "drop your export there (see config/README.md), then "
-                "`make docker-update`."
-            )
     if not credentials:
         st.caption(
             "No credentials configured on the server — to add YouTube "
-            "cookies, see config/README.md (two steps)."
+            "cookies, see config/README.md."
         )
 
 

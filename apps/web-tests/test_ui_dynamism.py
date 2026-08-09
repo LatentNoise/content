@@ -246,3 +246,34 @@ def test_console_reports_credential_files_and_freshness(run_app, monkeypatch):
     assert "/config/youtube_cookies.txt" in text
     assert "updated" in text
     assert "file not found" in text  # the dangling declaration is visible
+
+
+def test_hometube_flags_a_declared_but_missing_cookie_file(run_app, monkeypatch):
+    """The default deployment declares the youtube credential before the file
+    exists — deliberately. The UI must turn that into guided setup (what to
+    drop, where, then what to run), visible without selecting anything."""
+    from conftest import FakeContentClient
+
+    base_config = FakeContentClient.config
+
+    def with_missing_credential(self):
+        payload = dict(base_config(self))
+        payload["credentials"] = ["youtube"]
+        payload["credentials_info"] = [
+            {
+                "id": "youtube",
+                "path": "/config/youtube_cookies.txt",
+                "exists": False,
+                "size_bytes": None,
+                "updated_at": None,
+            }
+        ]
+        return payload
+
+    monkeypatch.setattr(FakeContentClient, "config", with_missing_credential)
+    at = run_app("hometube")
+    assert not at.exception, at.exception
+    text = _all_text(at)
+    assert "not there yet" in text
+    assert "/config/youtube_cookies.txt" in text
+    assert "docker-update" in text  # the instruction, not just the alarm
