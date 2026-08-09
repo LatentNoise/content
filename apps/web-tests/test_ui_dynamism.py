@@ -99,3 +99,75 @@ def test_console_renders_without_error(run_app):
     at = run_app("console")
     assert not at.exception, at.exception
     assert "Content Admin" in _all_text(at)
+
+
+def test_console_says_what_a_job_was_about(run_app, monkeypatch):
+    """A job must be recognizable at a glance — outputs ← source in the list
+    and the detail, plus the first artifact's name as a human title. All of it
+    comes from data the API already returns; the console only renders it."""
+    from conftest import FakeContentClient
+
+    request = {
+        "schema_version": "1.0",
+        "sources": [
+            {
+                "id": "v",
+                "type": "url",
+                "uri": "https://www.youtube.com/watch?v=jNQXAC9IVRw",
+            }
+        ],
+        "outputs": [{"id": "a", "type": "audio"}, {"id": "b", "type": "video"}],
+    }
+    row = {
+        "job_id": "job_abcdef123456",
+        "status": "succeeded",
+        "created_at": "2026-08-09T10:00:00+00:00",
+        "started_at": "2026-08-09T10:00:01+00:00",
+        "finished_at": "2026-08-09T10:00:30+00:00",
+        "failure_policy": "required_only",
+        "error": "",
+        "cancel_requested": False,
+        "retry_of": "",
+        "plan_id": "plan_x",
+        "request": request,
+    }
+    monkeypatch.setattr(
+        FakeContentClient, "list_jobs", lambda self, limit=30: [row], raising=False
+    )
+    monkeypatch.setattr(
+        FakeContentClient,
+        "job",
+        lambda self, job_id: {**row, "steps": []},
+        raising=False,
+    )
+    monkeypatch.setattr(
+        FakeContentClient,
+        "artifacts",
+        lambda self, job_id: [
+            {
+                "id": "art_1",
+                "filename": "Me at the zoo.webm",
+                "media_type": "audio/webm",
+                "size_bytes": 252182,
+                "checksum": "sha256:abc",
+                "provenance": {"producer": {"operation": "media.acquire_audio"}},
+            }
+        ],
+        raising=False,
+    )
+    monkeypatch.setattr(
+        FakeContentClient,
+        "events",
+        lambda self, job_id, after_sequence=0: [],
+        raising=False,
+    )
+    monkeypatch.setattr(
+        FakeContentClient, "logs", lambda self, job_id: {"logs": {}}, raising=False
+    )
+
+    at = run_app("console")
+    assert not at.exception, at.exception
+    text = _all_text(at)
+    assert "audio + video" in text  # the outputs, from the request
+    assert "youtube.com/watch?v=jNQXAC9IVRw" in text  # the source, scheme stripped
+    assert "Me at the zoo" in text  # the artifact as the human title

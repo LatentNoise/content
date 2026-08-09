@@ -75,6 +75,46 @@ def _ago(iso: str | None) -> str:
     return f"{delta / 86400:.1f}d ago"
 
 
+def _short_source(source: dict) -> str:
+    """A recognizable, compact rendering of one request source."""
+    kind = source.get("type")
+    if kind == "url":
+        uri = str(source.get("uri") or "")
+        for prefix in ("https://", "http://"):
+            uri = uri.removeprefix(prefix)
+        uri = uri.removeprefix("www.")
+        return uri if len(uri) <= 60 else uri[:57] + "…"
+    if kind == "file":
+        return os.path.basename(str(source.get("path") or "")) or "file"
+    if kind == "text":
+        return "inline text"
+    return str(kind or "?")
+
+
+def _job_about(request) -> str:
+    """One line saying what a job was about: ``outputs ← sources``.
+
+    Built purely from the GenerationRequest that every job row already carries
+    (`_job_view` ships it in both the list and the detail) — no new endpoint,
+    no extra fetch, no schema change. The request is client input, so render
+    defensively: anything malformed degrades to an empty string, never an
+    error in the console.
+    """
+    if not isinstance(request, dict):
+        return ""
+    outputs = " + ".join(
+        str(o.get("type") or "?")
+        for o in request.get("outputs", [])
+        if isinstance(o, dict)
+    )
+    sources = ", ".join(
+        _short_source(s) for s in request.get("sources", []) if isinstance(s, dict)
+    )
+    if not outputs and not sources:
+        return ""
+    return f"{outputs or '?'} ← {sources or '?'}"
+
+
 st.set_page_config(page_title="Content Admin", page_icon="🛠️", layout="wide")
 st.markdown(
     """
@@ -173,6 +213,12 @@ def render_job_detail(job_id: str) -> None:
     except Exception as exc:  # noqa: BLE001
         st.error(f"job failed: {exc}")
         return
+    # Fetched once, up front: the first artifact names the job for a human
+    # ("Me at the zoo"), and the Artifacts expander below reuses the list.
+    try:
+        arts = client.artifacts(job_id)
+    except Exception:  # noqa: BLE001
+        arts = []
     icon, color = display(job["status"])
     live = "  🔴 live" if job["status"] not in TERMINAL else ""
     st.markdown(
@@ -180,6 +226,14 @@ def render_job_detail(job_id: str) -> None:
         f"<span style='color:#5b6472;font-size:.7rem'>{live}</span>",
         unsafe_allow_html=True,
     )
+    about = _job_about(job.get("request"))
+    title = arts[0]["filename"].rsplit(".", 1)[0].strip() if arts else ""
+    if title or about:
+        st.markdown(
+            (f"**{title}**" if title else "")
+            + (" — " if title and about else "")
+            + about
+        )
     st.caption(
         f"`{job_id}` · created {_ago(job['created_at'])} · "
         f"finished {_ago(job.get('finished_at'))} · policy {job['failure_policy']}"
@@ -216,10 +270,6 @@ def render_job_detail(job_id: str) -> None:
     with st.expander("Submitted request (GenerationRequest)"):
         st.json(job.get("request") or {})
     with st.expander("Artifacts"):
-        try:
-            arts = client.artifacts(job_id)
-        except Exception:  # noqa: BLE001
-            arts = []
         for art in arts:
             prov = art.get("provenance", {})
             st.markdown(
@@ -512,13 +562,16 @@ with tab_jobs:
         shown = [j for j in jobs if j["status"] in flt]
         st.caption(f"{len(shown)}/{len(jobs)} jobs")
         job_ids = [j["job_id"] for j in shown]
-        labels = {
-            j["job_id"]: (
+        labels = {}
+        for j in shown:
+            label = (
                 f"{display(j['status'])[0]} {j['job_id'][4:16]} · "
                 f"{j['status']} · {_ago(j.get('created_at'))}"
             )
-            for j in shown
-        }
+            about = _job_about(j.get("request"))
+            if about:
+                label += f" · {about[:44]}{'…' if len(about) > 44 else ''}"
+            labels[j["job_id"]] = label
         selected = (
             st.radio(
                 "Select a job",
