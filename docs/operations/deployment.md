@@ -111,14 +111,26 @@ authenticating reverse proxy in front (the API provides no auth of its own).
 
 ## Cookies / authentication
 
-1. Mount the cookie file(s) into the `content` container (a volume).
-2. Declare `CONTENT_CREDENTIALS="youtube=/path/inside/the/container.txt"`.
-3. A source references them through `auth.credential_id`; `GET /api/v1/config`
-   lists the ids (never the paths or the content).
+The repository ships a **`config/` folder mounted read-only at `/config`** in
+the backend container — the one place for external runtime files (cookies
+today; another site's cookies or a custom PDF font tomorrow). Nothing in it is
+ever committed or baked into an image. Full walkthrough:
+[`config/README.md`](../../config/README.md).
+
+The whole recipe for YouTube:
+
+1. Export a Netscape `cookies.txt` from a signed-in browser and save it as
+   `config/youtube_cookies.txt`.
+2. In `.env`, uncomment `CONTENT_CREDENTIALS=youtube=/config/youtube_cookies.txt`
+   and run `make docker-update`.
+3. HomeTube's "🍪 Cookie Management" now offers `youtube`; API clients pass
+   `auth.credential_id`. `GET /api/v1/config` lists the ids (never the paths
+   or the content). Several credentials: comma-separated `id=path` pairs.
 
 The backend **copies** the cookie file to a writable location before passing it
 to yt-dlp: yt-dlp rewrites the cookie jar on exit, so a `:ro` mount would cause
-an error. The mount can therefore stay read-only.
+an error. The mount therefore stays read-only and your export is never
+modified.
 
 ## yt-dlp freshness (important)
 

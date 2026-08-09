@@ -80,9 +80,12 @@ services:
       # Host path is configurable (CONTENT_DELIVERY_DIR_HOST) so you point it at
       # your own media library; its sub-folders become the UI's destinations.
       - ${CONTENT_DELIVERY_DIR_HOST:-./playground/output}:/output
-      # Mount cookie files for authenticated downloads, e.g.:
-      #   - ./secrets/youtube_cookies.txt:/config/youtube_cookies.txt:ro
-      # then set CONTENT_CREDENTIALS=youtube=/config/youtube_cookies.txt
+      # External runtime files (config/README.md): cookies, custom fonts…
+      # Drop a file in ./config on the host, reference it as /config/<name>.
+      # e.g. ./config/youtube_cookies.txt +
+      #   CONTENT_CREDENTIALS=youtube=/config/youtube_cookies.txt  (in .env)
+      # Read-only is fine: the engine copies cookie jars before use.
+      - ./config:/config:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped
