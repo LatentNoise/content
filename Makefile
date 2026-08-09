@@ -23,7 +23,8 @@ VERSION_MODULES    := apps/backend/content/__init__.py \
 .DEFAULT_GOAL := validate
 .PHONY: help install format lint test test-all ui-venv test-ui test-ui-live \
         validate validate-all validate-release clean run \
-        version version-update version-tag docker-up docker-down docker-logs
+        version version-update version-tag docker-up docker-update docker-down \
+        docker-logs
 
 help:  ## List the available targets
 	@grep -hE '^[a-zA-Z][a-zA-Z0-9_-]*:.*##' $(MAKEFILE_LIST) \
@@ -152,6 +153,16 @@ docker-up:  ## Build and start the compose stack (UIs per COMPOSE_PROFILES in .e
 	docker compose up --build -d
 	@echo "engine http://localhost:8010 — console http://localhost:8503"
 	@echo "UIs per COMPOSE_PROFILES: HomeTube http://localhost:8501 — Studio http://localhost:8502"
+
+# Same engine as docker-up, framed for the everyday loop: after editing code
+# or pulling a new version, rebuild from the working tree and refresh the
+# running stack. Layer cache keeps untouched services instant; compose only
+# recreates containers whose image actually changed; ./data is a bind mount
+# and survives; --remove-orphans clears containers whose service was removed.
+docker-update:  ## Rebuild images from the working tree and refresh running containers
+	docker compose up -d --build --remove-orphans
+	@echo "stack refreshed — running now:"
+	@docker compose ps --format "  {{.Service}}  {{.Status}}"
 
 docker-down:  ## Stop and remove the compose stack
 	docker compose down
