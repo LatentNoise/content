@@ -98,7 +98,7 @@ A union discriminated by `type` (a logical result, never a tool):
 
 ### `scope`
 
-The full enum is validated from V1 on: `single`, `each_source`, `each_item`, `all_sources`, `collection`, `group`. Only `single` is executable in V1; the others produce:
+The full enum is validated from V1 on: `single`, `each_source`, `each_item`, `all_sources`, `collection`, `group`. Any scope that fans one instruction out over several items is bound by [INV-018](architecture/invariants.md): the orchestration chooses the items and their order, and delegates each one to the canonical single-item pipeline — it never re-implements planning for the multi-item case, and never invents facts a listing does not carry (ADR 0019). Only `single` and `each_item` are executable in V1; the others produce:
 
 ```json
 { "code": "scope_not_supported", "path": "outputs[0].scope",

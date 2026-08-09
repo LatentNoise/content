@@ -12,6 +12,12 @@ analyses), ADR 0017 (naming)
 > Every concrete resource is analyzed and deterministically planned before its
 > own execution begins. Nothing about a member is guessed.
 
+Recorded as a standing rule beyond collections:
+[**INV-018** — fan-out delegates, it never re-implements](../architecture/invariants.md).
+A playlist is the first fan-out Content grew, not the last: the same rule binds
+multi-page documents, batched sources, per-chapter expansions and anything else
+where one instruction becomes N independent pieces of work.
+
 ## Context
 
 A playlist is analyzed with `yt-dlp --flat-playlist`: members come back as

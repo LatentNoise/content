@@ -120,6 +120,31 @@ ADR 0010). Details and sub-invariants
 *Guaranteed by:* `storage/paths.py` + `storage/layout.py`; *verified by:*
 `test_storage`.
 
+**INV-018 — Fan-out delegates; it never re-implements.**
+Whenever Content applies the same operation independently to several items, the
+orchestration decides *which items and in what order* and delegates each one to
+the canonical single-item pipeline: analyze the concrete resource, resolve its
+capabilities, plan it, execute it. It never invents facts the listing does not
+carry, and never grows a parallel path for the multi-item case.
+*Rationale:* a second pipeline that approximates the first is a defect
+generator. The playlist path proved it — subtitles lost, extra audio tracks
+lost, `VO_FIRST` silently unhonoured, codecs stamped available without
+evidence — because a flat listing gives references, not facts, and the code
+guessed instead of resolving (ADR 0019). Each of those was fixed in the copy
+while the original stayed correct.
+*Scope:* this is the rule for **every** future fan-out, not only playlists —
+multi-page documents, batched sources, a per-chapter or per-segment expansion,
+anything where one instruction becomes N independent pieces of work.
+*Corollaries:* an item that cannot satisfy the request answers with the
+ordinary structured reason for that item, and the others proceed; there is no
+size or count at which the engine reverts to guessing.
+*Guaranteed by:* `application/collections.py` (derivation + a `StepRunner` that
+only sequences `AnalysisService` → `build_plan` → execution, so the executor
+acquires no planning role). *Verified by:* `test_playlists` — in particular the
+check that a member's derived plan has the same operations and parameters as
+submitting that item alone, and the heterogeneous case where one incapable
+member fails alone.
+
 ---
 
 ## Invariants **targeted but not yet guaranteed** (debt, see discoveries)
