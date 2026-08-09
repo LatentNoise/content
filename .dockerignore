@@ -18,6 +18,9 @@
 !.env.example
 .claude/
 secrets/
+# External runtime files (cookies, fonts) reach the container as a volume,
+# never inside an image.
+config/
 
 # Virtualenvs, bytecode, tool caches and editable-install metadata. Anchored
 # with **/ because these exist per-app, not only at the root.

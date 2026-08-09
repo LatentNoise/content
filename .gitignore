@@ -48,6 +48,13 @@
 !.env.example
 syncthing*.txt
 
+# External runtime files (cookies, fonts…), mounted read-only into the
+# backend at /config. Everything here is local by definition — only the
+# README explaining the folder is tracked. This also closes the allowlist
+# hole: without it, a stray *.md dropped here would be committable.
+config/*
+!config/README.md
+
 # Playground: everything in input/ and output/ is supplied or produced by a
 # local run (media, cookies, job folders, summaries…). The allowlist above would
 # otherwise let a generated *.md / *.csv / *.py slip in — pgverify's `sum.md`
