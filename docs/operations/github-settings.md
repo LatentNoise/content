@@ -114,6 +114,8 @@ Deliberately in the repository, so it can be reviewed rather than remembered:
 - `.github/workflows/ytdlp-base-check.yml` — the weekly base-image check. It
   files an issue and nothing else; see
   [ytdlp-base-image.md](ytdlp-base-image.md).
+- `.github/workflows/release-draft.yml` — a **draft** release skeleton on every
+  version tag. Publishing it stays a manual, deliberate act.
 
 The contribution policy itself is *not* versioned: it is the pull-request
 setting in row 1, which is why that row exists.
