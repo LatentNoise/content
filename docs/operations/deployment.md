@@ -25,6 +25,29 @@ docker compose up -d --build              # everything in COMPOSE_PROFILES (.env
 docker compose up -d --build content      # the backend alone
 ```
 
+### Prebuilt images, or a local build
+
+Every version tag publishes four multi-arch images (amd64 + arm64) to GHCR:
+
+```text
+ghcr.io/latentnoise/content            the engine
+ghcr.io/latentnoise/content-hometube   HomeTube
+ghcr.io/latentnoise/content-studio     Content Studio
+ghcr.io/latentnoise/content-console    Content Console
+```
+
+Compose names them, so nothing has to be built:
+
+```bash
+docker compose pull        # fetch the published images
+docker compose up -d       # start, no build step
+```
+
+Tags follow the release: `0.1.0`, `0.1`, `0` and `latest` (a pre-release gets
+its exact tag only). Pin one with `CONTENT_VERSION=0.1.0` in `.env`. Keeping
+`--build` instead is always valid — the `build:` sections stay, so a clone
+builds from source without touching the registry.
+
 The same command is also the update path: after changing code or pulling a new
 version, it rebuilds images from the tree and recreates only the containers
 whose image changed (`make docker-update` wraps it, with orphan cleanup, and

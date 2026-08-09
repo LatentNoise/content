@@ -28,7 +28,7 @@ tree, so the audit is an audit of the working tree, not of past commits.
 | AGPL §13 chain | Mechanically correct end to end: `/api/v1/system` reports `license` + `source_url`, every UI renders it (`content_sdk.legal`). The URL 404s until the repository is public — the last thing to re-check on publication day. |
 | Documentation links | 46 documents, 125 relative links, 0 broken — and none resolving to a git-ignored target, which is the failure a filesystem-based check does not catch |
 | README as a stranger reads it | Answers all five: what it is, who maintains it, how to run it, what it costs, what the licence permits |
-| CI on a first push | `ci.yml` needs no secret, pins every action by SHA, and cannot publish: the image job is gated on a `v*` tag and builds with `push: false` |
+| CI on a first push | `ci.yml` needs no stored secret and pins every action by SHA. A branch push can publish nothing: the image job is gated on a `v*` tag, where publishing to GHCR is the deliberate point |
 | `make validate` | Green — 599 backend (5 skipped), 9 CLI, 10 MCP, 32 SDK, 16 layering (4 skipped); ruff format and lint clean across 169 files |
 | UI AppTests | Green — 36 passed |
 | `make version` | `0.1.0`, consistent across 12 declarations |

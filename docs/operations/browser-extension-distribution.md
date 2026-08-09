@@ -62,12 +62,12 @@ stating in the justification rather than leaving a reviewer to guess.
 It is roughly twenty lines of `curl`, or an off-the-shelf action.
 
 **But it changes the project's release posture**, which is why nothing does it
-today. Publishing is the one step that pushes to the outside world; every other
-workflow here deliberately stops short of that (`ci.yml` builds images with
-`push: false`, `release-draft.yml` creates a *draft*). Automating the store
-upload would mean the first push of a tag reaches real users' browsers with no
-human in between, and it puts long-lived publishing credentials in the
-repository's secrets.
+today. Publishing to a *store* is a different act from publishing an image.
+`ci.yml` does push container images to GHCR on a tag — with the repository's
+own `GITHUB_TOKEN`, no stored credential — while `release-draft.yml` stops at
+a **draft** so a human writes the notes. A store upload would need long-lived
+Google credentials in the repository's secrets, and it would put a new
+extension in real users' browsers with no human in between.
 
 ## Recommendation
 
