@@ -13,14 +13,10 @@
 
 </div>
 
-Content is an engine for turning one or more sources into useful artifacts.
-
-Give it URLs, files, or text, declare the results you want, and let Content
-analyze what is available, resolve what can be produced, plan the work, and
-deliver the resulting artifacts.
-
-No client needs to orchestrate yt-dlp, ffmpeg, transcription models, LLMs, or
-document renderers itself.
+Paste a link. Say what you want — the video, the audio, subtitles, a
+transcript, a summary, a PDF. Content analyzes the source, works out what it
+can honestly produce, does the work, names the files like a human would, and
+delivers them into your library.
 
 ```text
                              ┌─ My Conference.mp4
@@ -32,53 +28,61 @@ YouTube URL ──→ Content ─────┼─ My Conference - subtitles - 
                              └─ My Conference - summary.pdf
 ```
 
-Content produces several related outputs from one declarative request,
-preserving the provenance of every artifact.
+That is one request. Everything above comes from it — no yt-dlp flags, no
+ffmpeg incantations, no gluing five tools together. Content runs them for you,
+behind one API, on your own machine.
 
 <div align="center">
   <img src="https://github.com/LatentNoise/content/releases/download/v0.1.0/2026-08-09-hometube-demo.gif"
        alt="HomeTube demo — paste a YouTube URL, choose the outputs, watch the job deliver into the library"
        width="75%">
+  <br>
+  <sub><b>HomeTube</b>, Content's YouTube UI — paste, choose, done.</sub>
 </div>
 
 <!-- Visuals are produced in media/ (untracked) and attached to releases —
 see media/README.md. -->
 
-## Why Content?
-
-- **Sources in, artifacts out.** Reuse the same source for media, text,
-  derived knowledge, and documents.
-- **Declare intent, not tooling.** Ask for an output; let the engine select and
-  coordinate the available providers and processors.
-- **Self-hosted and local-first.** Run it on a workstation, NAS, homelab, or
-  server. There is no telemetry or phone-home behavior.
-- **Local AI by default.** Ollama is supported for local LLM work; cloud LLMs
-  are optional, opt-in, and can be excluded per request.
-- **API-first.** One public contract powers focused web apps, the Python SDK,
-  CLI, browser extension, REST API, and MCP server.
-- **Traceable execution.** Jobs expose status, ordered events, artifacts,
-  provenance, cancellation, and retry.
-
 ## Coming from HomeTube?
 
-Content is the next step after HomeTube.
+Start exactly where you are. Content ships a **HomeTube UI**: the classic
+flow — paste a URL, pick video/audio, subtitles, SponsorBlock, a library
+folder — rebuilt on a real engine. Same reflexes, nothing to relearn. (The
+original HomeTube remains its own project; this is its workflow, grown up.)
 
-HomeTube started with a focused problem: take a YouTube URL and turn it into
-ad-free media that fits cleanly into a self-hosted library. Content takes the lessons
-from that project and generalizes them into a resource-to-artifact engine.
+The difference appears the day you want one step more. Every HomeTube action
+is a plain API request underneath — and the API answers requests HomeTube
+never could:
 
-The original HomeTube repository remains a separate project. Content includes
-a new **HomeTube UI** for the familiar YouTube workflow, now backed by the
-general Content API.
+- the talk you just downloaded → **a transcript and a summary PDF** next to it;
+- a playlist → **numbered files**, each with its own subtitles and metadata;
+- a web article → **clean Markdown** for your notes vault;
+- your AI assistant → *"grab the audio of this lecture and summarize it"* —
+  Content is an **MCP server** Claude or any agent can drive;
+- a script, a cron job, a NAS hook → the same one request, through the CLI or
+  the Python SDK.
 
-If all you want is the classic flow — paste a URL, choose video/audio,
-subtitles, SponsorBlock, and a library folder — the HomeTube UI is where to
-start.
+**HomeTube downloads media. Content decides what a source can become.**
 
-The engine underneath, though, is no longer limited to that workflow:
+## Why Content?
 
-**HomeTube focused on downloading media. Content focuses on what a source can
-become.**
+- **More than a downloader.** Plenty of excellent tools fetch videos. Content
+  is about what happens *after* — transcripts, summaries, translations,
+  chapters, documents — produced by the same engine, from the same source, in
+  the same request.
+- **Declare intent, not tooling.** Ask for outputs; the engine analyzes the
+  source, tells you honestly what it can produce, and plans the rest. yt-dlp,
+  ffmpeg, Whisper, LLMs, and PDF renderers stay behind its boundaries.
+- **Self-hosted and local-first.** A workstation, NAS, or homelab is the
+  target, not an afterthought. No telemetry, no phone-home, no account.
+- **Local AI by default.** Ollama for transcripts-to-summaries on your own
+  hardware; cloud LLMs are optional, opt-in, and excludable per request.
+- **Files worth keeping.** Artifacts get human names — `Talk - summary.pdf`,
+  not `dQw4w9WgXcQ.f251.webm` — and land in your Plex/Jellyfin/NAS library.
+- **One engine, many doors.** Web UIs, a browser extension, a CLI, a Python
+  SDK, an MCP server for agents — all clients of one versioned API.
+- **Traceable execution.** Every job exposes status, ordered events, logs,
+  provenance, cancellation, and retry. When something fails, you can see why.
 
 ## Quick start
 
@@ -241,6 +245,23 @@ content audio "https://…" --format opus --playlist --watch
 content jobs
 ```
 
+### Agent example
+
+`uv tool install content-mcp`, add one block to Claude, Cursor, or any MCP
+client, and your assistant can drive the engine — *"analyze this talk, grab
+the audio, and summarize it into my library"*:
+
+```json
+{
+  "mcpServers": {
+    "content": {
+      "command": "content-mcp",
+      "env": { "CONTENT_API_URL": "http://localhost:8010" }
+    }
+  }
+}
+```
+
 ## How it works
 
 The public request describes desired outputs. It does not prescribe technical
@@ -338,9 +359,9 @@ currently available.
 
 Content is developed and maintained by Yann Orieult under a single-maintainer
 model. Bug reports, ideas, and design feedback are welcome through issues. Code
-contributions are not accepted and pull requests are disabled; forking is the
-intended path for independent changes. See [CONTRIBUTING.md](CONTRIBUTING.md)
-and [GOVERNANCE.md](GOVERNANCE.md).
+contributions are not accepted — unsolicited pull requests are closed without
+review; forking is the intended path for independent changes. See
+[CONTRIBUTING.md](CONTRIBUTING.md) and [GOVERNANCE.md](GOVERNANCE.md).
 
 Report security issues privately as described in [SECURITY.md](SECURITY.md).
 
