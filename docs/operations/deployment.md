@@ -4,6 +4,13 @@ The accepted state of the deployment. Single-host, Docker Compose, four
 services: the engine and the console always run, the download UIs are selected
 by `COMPOSE_PROFILES` in `.env` (both by default).
 
+Two equivalent compose files describe it: the repository root's
+`docker-compose.yml` (with `build:` blocks, for clones) and
+[`deploy/docker-compose.yml`](../../deploy/docker-compose.yml) — its
+build-free twin for installs from the published images, no source tree
+needed (the README's quick start). `tests/test_deploy_compose.py` keeps
+them in lockstep.
+
 ## Topology
 
 | Service | Role | Host port | Runs | Base |
