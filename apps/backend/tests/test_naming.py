@@ -364,3 +364,80 @@ def test_suggest_base_name_is_the_sanitized_title_then_provider_id():
         == "dQw4w9WgXcQ"
     )
     assert suggest_base_name(NormalizedResource()) == ""
+
+
+# --- title curation (the "smart" in the proposal) --------------------------------
+
+
+class TestCurateTitle:
+    """`curate_title` strips click-decoration, never content. The same
+    function feeds `suggest_base_name` (the proposal every UI prefills) and
+    the engine's own default base, so an untouched proposal still equals the
+    server's own name."""
+
+    def test_strips_noise_tags_hashtags_flanks_and_shouting_punctuation(self):
+        from content.naming.engine import curate_title
+
+        assert (
+            curate_title("🔥 INSANE Sims Build!!! [4K] #shorts #sims")
+            == "INSANE Sims Build!"
+        )
+
+    def test_strips_official_video_style_tags(self):
+        from content.naming.engine import curate_title
+
+        assert curate_title("Song Name (Official Music Video) [HD]") == "Song Name"
+        assert curate_title("Track (Official Audio)") == "Track"
+        assert curate_title("Piece [Lyrics] (4K, 60fps)") == "Piece"
+
+    def test_strips_the_channel_affix_when_the_channel_is_known(self):
+        from content.naming.engine import curate_title
+
+        assert curate_title("My Video - ChannelName", "ChannelName") == "My Video"
+        assert curate_title("ChannelName: Deep Dive", "ChannelName") == "Deep Dive"
+        # Unknown channel: the suffix could be content — untouched.
+        assert curate_title("My Video - ChannelName") == "My Video - ChannelName"
+
+    def test_keeps_content_that_merely_looks_technical(self):
+        from content.naming.engine import curate_title
+
+        # Bracketed *content* survives: a year is not presentation noise.
+        assert curate_title("(2024) A Retrospective") == "(2024) A Retrospective"
+        # Tokens inside prose survive: only bracketed groups are considered.
+        assert curate_title("What is 4K video?") == "What is 4K video?"
+        # Mixed groups survive: one content word keeps the whole group.
+        assert (
+            curate_title("Concert (Live in Paris, 4K)") == "Concert (Live in Paris, 4K)"
+        )
+
+    def test_keeps_clean_titles_untouched(self):
+        from content.naming.engine import curate_title
+
+        for title in (
+            "Trapped by plates in The Sims",
+            "héhé — l'été à Zürich",
+            "A.I. — the basics",
+        ):
+            assert curate_title(title) == title
+
+    def test_decoration_only_title_curates_to_empty(self):
+        from content.naming.engine import curate_title
+
+        assert curate_title("🔥🔥🔥") == ""
+
+
+def test_suggest_base_name_offers_the_curated_title_with_raw_fallback():
+    """The proposal is the curated title; a decoration-only title falls back
+    to the display profile of the raw one rather than proposing nothing."""
+    from content.domain.analysis import NormalizedResource
+    from content.naming.engine import suggest_base_name
+
+    decorated = NormalizedResource(
+        title="🔥 INSANE Sims Build!!! [4K] #shorts", channel="SimsChannel"
+    )
+    assert suggest_base_name(decorated) == "INSANE Sims Build!"
+
+    channel_suffixed = NormalizedResource(
+        title="Temporary Power | SimsChannel", channel="SimsChannel"
+    )
+    assert suggest_base_name(channel_suffixed) == "Temporary Power"

@@ -15,6 +15,8 @@ details. Two phases:
 Pure module: no FastAPI, no providers, no filesystem.
 """
 
+import re
+
 from pydantic import BaseModel, Field
 
 from content.domain.analysis import ResourceAnalysis
@@ -98,8 +100,12 @@ def _base_for(output, outputs_by_id, resolved, sources_by_id, analysis) -> str:
     source = sources_by_id.get(source_ids[0])
     source_analysis = analysis.for_source(source_ids[0]) if analysis else None
     resource = source_analysis.resource if source_analysis else None
+    title = resource.title if resource else ""
+    channel = resource.channel if resource else ""
     candidates = (
-        resource.title if resource else "",
+        # Curated first so the artifact's own default equals the proposal a UI
+        # prefills; the raw title backs it up when curation empties it.
+        curate_title(title, channel) or title,
         _source_filename(source) if source else "",
         resource.provider_id if resource else "",
     )
@@ -137,11 +143,92 @@ def _primary_output_id(outputs) -> str | None:
     return None
 
 
+# --- title curation -------------------------------------------------------------
+#
+# A media title is written to win a click, not to name a file: emoji flanks,
+# [4K]-style tags, trailing hashtags, "!!!" and a "| Channel" suffix. The
+# curation below removes exactly that decoration and nothing else — it is the
+# "smart" in the proposal a UI prefills, and because the same function feeds
+# the engine's own default naming, an untouched proposal still equals the name
+# the server would pick on its own (the ADR 0017/0018 invariant).
+#
+# Deterministic and conservative by design: only *bracketed groups made
+# entirely of known noise tokens* are dropped, so "(2024) Retrospective" or a
+# 4K mentioned in prose survive. When curation would erase everything (a
+# decoration-only title), callers fall back to the uncurated title.
+
+# One bracketed tag's vocabulary: presentation/format noise, never content.
+_NOISE_TOKEN = re.compile(
+    r"""(?xi)^(?:
+        (?:official\s+)?(?:music\s+|lyric(?:s)?\s+)?(?:video|audio|visuali[sz]er)
+      | official | lyrics?
+      | hd | fhd | uhd | hq | [48]k | \d{3,4}p | \d{1,3}\s*fps
+      | full\s+(?:hd|video|album|movie|episode)
+      | free\s+download | no\s+copyright(?:\s+music)?
+      | (?:with\s+)?subtitles? | cc | remaster(?:ed)?
+    )$"""
+)
+_BRACKET_GROUP = re.compile(r"\(([^()]*)\)|\[([^\[\]]*)\]|\{([^{}]*)\}")
+_TRAILING_HASHTAGS = re.compile(r"(?:\s+#[^\s#]+)+\s*$")
+_AFFIX_SEPARATORS = (" - ", " – ", " — ", " | ", " · ", ": ")
+
+
+def _is_noise_group(inner: str) -> bool:
+    parts = re.split(r"[,/|+&]| {2,}", inner)
+    meaningful = [part.strip() for part in parts if part.strip()]
+    return bool(meaningful) and all(_NOISE_TOKEN.match(part) for part in meaningful)
+
+
+def curate_title(title: str, channel: str = "") -> str:
+    """The title with its click-decoration removed; ``""`` if nothing is left.
+
+    Removes, in order: trailing hashtag runs; bracketed groups made only of
+    noise tokens ("[4K]", "(Official Music Video)"); a leading/trailing
+    channel affix when *channel* is known ("Title - Channel", "Channel:
+    Title"); emoji/symbol flanks; repeated terminal punctuation; separator
+    residue the removals left behind. Inner content is never touched.
+    """
+    cleaned = _TRAILING_HASHTAGS.sub("", title or "")
+    cleaned = _BRACKET_GROUP.sub(
+        lambda m: (
+            ""
+            if _is_noise_group(next(g for g in m.groups() if g is not None) or "")
+            else m.group(0)
+        ),
+        cleaned,
+    )
+    channel = (channel or "").strip()
+    if channel:
+        lowered = cleaned.lower()
+        for separator in _AFFIX_SEPARATORS:
+            suffix = f"{separator}{channel}".lower()
+            if lowered.endswith(suffix) and len(cleaned) > len(suffix):
+                cleaned = cleaned[: -len(suffix)]
+                break
+            prefix = f"{channel}{separator}".lower()
+            if lowered.startswith(prefix) and len(cleaned) > len(prefix):
+                cleaned = cleaned[len(prefix) :]
+                break
+    # Emoji/symbol flanks: \w is unicode-aware, so letters in any script stay.
+    cleaned = re.sub(r"""^[^\w("'#$€£@]+""", "", cleaned)
+    cleaned = re.sub(r"""[^\w)"'!?.%]+$""", "", cleaned)
+    cleaned = re.sub(r"([!?])\1{1,}", r"\1", cleaned)
+    cleaned = re.sub(r"(\?!|!\?)[!?]*", "?!", cleaned)
+    # Separator residue: doubled marks, then orphans at either edge.
+    cleaned = re.sub(r"\s*([|·–—-])(\s*\1)+\s*", r" \1 ", cleaned)
+    cleaned = re.sub(r"^(?:[|·–—:-]\s*)+", "", cleaned)
+    cleaned = re.sub(r"(?:\s*[|·–—:-])+$", "", cleaned)
+    return re.sub(r"\s{2,}", " ", cleaned).strip()
+
+
 def suggest_base_name(resource) -> str:
-    """The base name the engine would give this resource's artifacts (title,
-    then provider id, through the display profile) — what a UI should offer
-    the user as the editable proposal. ``""`` when nothing usable exists."""
-    return display_name(resource.title) or display_name(resource.provider_id)
+    """The base name the engine would give this resource's artifacts (curated
+    title, then provider id, through the display profile) — what a UI should
+    offer the user as the editable proposal. ``""`` when nothing usable
+    exists. Curation falling back to the raw title keeps a decoration-only
+    title nameable."""
+    title = curate_title(resource.title, resource.channel) or resource.title
+    return display_name(title) or display_name(resource.provider_id)
 
 
 def resolve_naming_plan(request, analysis: ResourceAnalysis | None) -> NamingPlan:
@@ -188,7 +275,10 @@ def resolve_naming_plan(request, analysis: ResourceAnalysis | None) -> NamingPla
                     if not entry.url:
                         continue
                     label = item_slug(entry.title or entry.id, position)
-                    title = display_name(entry.title) or base
+                    # Same curation as a single video, so a member's name in a
+                    # playlist matches what it would be downloaded alone.
+                    curated = curate_title(entry.title, entry.uploader)
+                    title = display_name(curated or entry.title) or base
                     item_bases[label] = f"{position:0{width}d} - {title}"
 
         entries.append(

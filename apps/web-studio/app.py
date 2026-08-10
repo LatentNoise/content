@@ -497,9 +497,16 @@ def render_job() -> None:
         st.progress(done / len(steps), text=f"{done}/{len(steps)} steps")
         for s in steps:
             si = display(s["status"])[0]
+            # Collection members announce themselves as "3/6 · Title" (the
+            # API joins that context onto the step); others keep their id.
+            if s.get("item_title"):
+                ordinal = f"{s.get('member_index')}/{s.get('member_total')}"
+                name = f"{ordinal} · {s['item_title']}"
+            else:
+                name = s["step_id"]
             err = f" · {s['error']}" if s["error"] else ""
             st.markdown(
-                f"<div class='step'>{si} {s['step_id']} "
+                f"<div class='step'>{si} {name} "
                 f"<span style='color:#5b6472'>{s['status']}{err}</span></div>",
                 unsafe_allow_html=True,
             )

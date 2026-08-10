@@ -240,13 +240,13 @@ def wanted_langs(*, include_primary: bool = True) -> list[str]:
     """The server's wanted languages as *intent*, with nothing to intersect.
 
     `preferred_langs` keeps only what a source actually offers, which needs an
-    analysis. A collection has none: its entries are listed, never probed. So a
-    playlist expresses the same preferences optimistically — exactly what the
-    engine already does with codecs for `each_item` (`_each_item_video_params`)
-    — and each entry keeps whatever it really has: yt-dlp's profile ladder ends
-    in a language-free fallback, and `--sub-langs` simply skips a track a video
-    does not carry. VO is absent on purpose: "original" is a per-video fact,
-    not a language code, so it cannot be requested for a whole playlist.
+    analysis. A collection has none at form time: its entries are listed, never
+    probed (ADR 0019 keeps discovery flat by design). So a playlist expresses
+    the preferences as intent, and the engine intersects them against each
+    member's real tracks when that member is analyzed and planned by the
+    canonical single-video pipeline. VO is absent on purpose: "original" is a
+    per-video fact, not a language code, so it cannot be requested for a whole
+    playlist.
     """
     primary = lang_prefs.get("primary") or ""
     out: list[str] = []
