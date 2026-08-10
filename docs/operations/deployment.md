@@ -11,6 +11,24 @@ build-free twin for installs from the published images, no source tree
 needed (the README's quick start). `tests/test_deploy_compose.py` keeps
 them in lockstep.
 
+## Container user and mounted state
+
+The engine image starts as root, adopts the directories mounted into it, then
+drops to the unprivileged `content` user (uid 1000) before running anything —
+`docker compose exec content ps` shows the engine as `content`.
+
+That startup step exists because Docker creates a missing bind-mount source
+directory as `root:root`, which made a first `docker compose up -d` in an
+empty folder fail with *"container content is unhealthy"* on Linux (v0.3.1).
+`/data` is always adopted. The delivery library is adopted **only when it is
+empty**: an existing library keeps its ownership, since rewriting the
+ownership of an operator's media collection would be worse than the failure it
+would avoid.
+
+If delivery fails on a library owned by another user, point
+`CONTENT_DELIVERY_DIR_HOST` at a directory you own, or set `user:` on the
+`content` service to match the library's uid/gid.
+
 ## Topology
 
 | Service | Role | Host port | Runs | Base |
