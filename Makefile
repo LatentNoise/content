@@ -183,6 +183,20 @@ version-tag:  ## Create the annotated tag v<version> (clean tree required; asks 
 	  echo "  2. make version-tag         back here, on the updated main"; \
 	  exit 1; \
 	fi; \
+	if [ ! -f "docs/releases/v$$v.md" ]; then \
+	  echo "docs/releases/v$$v.md is missing — the release draft uses it as its"; \
+	  echo "body and silently falls back to a bare commit list without it."; \
+	  echo "Write the notes with the release, then tag."; \
+	  exit 1; \
+	fi; \
+	git fetch -q origin main 2>/dev/null || true; \
+	if git rev-parse -q --verify origin/main >/dev/null \
+	   && ! git merge-base --is-ancestor HEAD origin/main; then \
+	  echo "HEAD is not on origin/main — merge first, then tag the merged commit."; \
+	  echo "(v0.3.0 was tagged on an unmerged commit: the tag's tree had no"; \
+	  echo " release notes and the published notes advertised a 404.)"; \
+	  exit 1; \
+	fi; \
 	printf 'create annotated tag v%s at %s (%s)? [y/N] ' \
 	  "$$v" "$$(git rev-parse --short HEAD)" "$$(git branch --show-current)"; \
 	read -r answer; \
@@ -191,7 +205,19 @@ version-tag:  ## Create the annotated tag v<version> (clean tree required; asks 
 	  *) echo "aborted — no tag created"; exit 1;; \
 	esac; \
 	git tag -a "v$$v" -m "Content v$$v"; \
-	echo "tag v$$v created — push it deliberately with: git push origin v$$v"
+	echo "tag v$$v created."; \
+	echo; \
+	echo "Pushing it starts the release: CI, the four GHCR images, and a draft"; \
+	echo "release with the wheels, the extension zip and your notes attached."; \
+	echo "Nothing is published — the draft waits for you."; \
+	printf 'push v%s to origin now? [y/N] ' "$$v"; \
+	read -r push; \
+	case "$$push" in \
+	  [yY]*) \
+	    git push origin "v$$v" && \
+	    echo "pushed — follow it in Actions, then publish the draft release";; \
+	  *) echo "kept local — push it when ready with: git push origin v$$v";; \
+	esac
 
 # --- python distributions ---------------------------------------------------------
 
