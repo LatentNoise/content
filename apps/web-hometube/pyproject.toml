@@ -1,6 +1,6 @@
 [project]
 name = "content-frontend"
-version = "0.1.0"
+version = "0.2.0"
 description = "Content — Streamlit front-end (pure API client of the back-end)"
 license = "AGPL-3.0-or-later"
 authors = [{ name = "Yann Orieult" }]
