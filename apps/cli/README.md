@@ -8,7 +8,7 @@ there is no parallel contract.
 
 ## Install
 
-Once published, the CLI is an ordinary Python application — nothing to clone:
+The CLI is an ordinary Python application — nothing to clone:
 
 ```bash
 uv tool install content-cli     # isolated, on your PATH — recommended
@@ -18,23 +18,12 @@ content --help
 pipx install content-cli
 ```
 
-`content-cli` pulls `content-sdk` from PyPI as an ordinary dependency, pinned
-to the matching release.
-
-> **Not published yet.** Until the first publication the packages are attached
-> to each GitHub release as wheels; see *From a release* below. The commands
-> above are what will work afterwards.
-
-### From a release (today)
-
-Download `content_sdk-<version>-py3-none-any.whl` and
-`content_cli-<version>-py3-none-any.whl` from the
-[latest release](https://github.com/LatentNoise/content/releases/latest), then:
-
-```bash
-uv tool install ./content_cli-<version>-py3-none-any.whl \
-    --find-links .          # --find-links lets it resolve the SDK beside it
-```
+[`content-cli` on PyPI](https://pypi.org/project/content-cli/) pulls
+[`content-sdk`](https://pypi.org/project/content-sdk/) as an ordinary
+dependency, pinned to the matching release. The wheels are also attached to
+each [GitHub release](https://github.com/LatentNoise/content/releases/latest)
+for air-gapped installs (`uv tool install ./content_cli-<v>-py3-none-any.whl
+--find-links .`).
 
 ### From a clone
 

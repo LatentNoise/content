@@ -3,15 +3,12 @@
 ## Install
 
 ```bash
-pip install content-sdk
+pip install content-sdk        # https://pypi.org/project/content-sdk/
 ```
 
-> **Not published yet.** Until the first publication, the wheel is attached to
-> each [GitHub release](https://github.com/LatentNoise/content/releases/latest);
-> `pip install ./content_sdk-<version>-py3-none-any.whl`. From a clone:
-> `pip install ./packages/python-sdk`.
-
-Python 3.11+. Requires only `httpx` and `pydantic`.
+Python 3.11+. Requires only `httpx` and `pydantic`. The wheel is also attached
+to each [GitHub release](https://github.com/LatentNoise/content/releases/latest);
+from a clone: `pip install ./packages/python-sdk`.
 
 
 The official Python SDK for the [Content](../../README.md) engine — the **one**

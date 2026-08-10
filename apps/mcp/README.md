@@ -13,8 +13,7 @@ any MCP client → content-mcp (this) → content_sdk → your Content engine (/
 
 ## Install
 
-Once published, the server is an ordinary Python application — nothing to
-clone:
+The server is an ordinary Python application — nothing to clone:
 
 ```bash
 uv tool install content-mcp     # isolated, on your PATH — recommended
@@ -24,23 +23,12 @@ content-mcp --help
 pipx install content-mcp
 ```
 
-`content-mcp` pulls `content-sdk` from PyPI as an ordinary dependency, pinned
-to the matching release.
-
-> **Not published yet.** Until the first publication the packages are attached
-> to each GitHub release as wheels; see *From a release* below. The commands
-> above are what will work afterwards.
-
-### From a release (today)
-
-Download `content_sdk-<version>-py3-none-any.whl` and
-`content_mcp-<version>-py3-none-any.whl` from the
-[latest release](https://github.com/LatentNoise/content/releases/latest), then:
-
-```bash
-uv tool install ./content_mcp-<version>-py3-none-any.whl \
-    --find-links .          # --find-links lets it resolve the SDK beside it
-```
+[`content-mcp` on PyPI](https://pypi.org/project/content-mcp/) pulls
+[`content-sdk`](https://pypi.org/project/content-sdk/) as an ordinary
+dependency, pinned to the matching release. The wheels are also attached to
+each [GitHub release](https://github.com/LatentNoise/content/releases/latest)
+for air-gapped installs (`uv tool install ./content_mcp-<v>-py3-none-any.whl
+--find-links .`).
 
 ## Connect it to your engine
 
