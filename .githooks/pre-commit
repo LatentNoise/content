@@ -1,0 +1,24 @@
+#!/bin/sh
+# Refuse a commit authored by anything but Content's public identity.
+#
+# This machine carries two identities: `git config --global user.email` is a
+# personal gmail address, and this repository overrides it locally. The
+# override is one command away from being absent — a fresh clone, a new
+# worktree, a reset — and a wrong author in a public commit cannot be
+# corrected without rewriting published history.
+#
+# Content is offered under the AGPL with the option of separate commercial
+# terms, which only holds because copyright sits with one identifiable person
+# (COMMERCIAL.md). One identity in the record is part of that argument, not
+# cosmetics.
+expected="yann@orieult.com"
+actual=$(git config user.email)
+
+if [ "$actual" != "$expected" ]; then
+    echo "commit refused: author is '${actual:-unset}', expected '$expected'"
+    echo
+    echo "  git config user.email $expected"
+    echo
+    echo "(this repository's identity is documented in AGENTS.md)"
+    exit 1
+fi

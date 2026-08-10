@@ -1,0 +1,20 @@
+#!/bin/sh
+# Keep tool attribution out of the history.
+#
+# Content's commit messages describe the change and its reasoning; they never
+# advertise what typed them. The patterns below are attribution *trailers* and
+# badges, never prose — a commit that legitimately discusses the Anthropic
+# summarizer or a Claude model id passes untouched, which is why this matches
+# `Co-Authored-By:` and not a bare vendor name.
+message_file="$1"
+
+if grep -qiE '^(co-authored-by:.*(claude|copilot|cursor|bot@)|generated with)' "$message_file" \
+   || grep -q '🤖' "$message_file"; then
+    echo "commit refused: the message carries tool attribution"
+    echo
+    grep -inE '^(co-authored-by:|generated with)|🤖' "$message_file" | sed 's/^/  /'
+    echo
+    echo "Remove those lines (AGENTS.md: nothing in this repository advertises"
+    echo "what wrote it)."
+    exit 1
+fi
