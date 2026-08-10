@@ -1,41 +1,67 @@
-"""The deploy compose file is the build-free twin of the source one.
+"""The deploy compose file is the generated twin of the source one.
 
-deploy/docker-compose.yml is what a user without the source tree runs
-(curl + docker compose up); the root docker-compose.yml is what a clone
-builds from. They must describe the SAME deployment — same services, same
-images, same environment, same ports, same volumes — differing only by the
-`build:` blocks. Two hand-maintained copies drift; this guard makes the
-drift a test failure instead of a support ticket.
+deploy/docker-compose.yml is what a user without the source tree runs (curl +
+`docker compose up -d`); the root docker-compose.yml is what a clone builds
+from. They must describe the SAME deployment, so the deploy file is generated
+(`make deploy-compose`) and this guard fails when the committed copy no longer
+matches its source — the drift becomes a red test instead of a user's broken
+install.
+
+Standard library only, deliberately: the root suite runs in the plain test
+venv, which carries no YAML parser.
 """
 
 from __future__ import annotations
 
 import pathlib
-
-import yaml
+import sys
 
 REPO = pathlib.Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO / "scripts"))
+
+from gen_deploy_compose import TARGET, render, strip_build_blocks
 
 
-def _services(path: str) -> dict:
-    return yaml.safe_load((REPO / path).read_text())["services"]
+def test_the_committed_deploy_file_matches_its_source():
+    assert TARGET.read_text() == render(), (
+        "deploy/docker-compose.yml is stale — docker-compose.yml changed "
+        "without regenerating it. Run: make deploy-compose"
+    )
 
 
-def test_deploy_compose_is_the_source_compose_minus_build():
-    source = _services("docker-compose.yml")
-    deploy = _services("deploy/docker-compose.yml")
+def test_the_deploy_file_never_builds():
+    """A user running it has no source tree: every service must pull."""
+    text = TARGET.read_text()
+    for line in text.splitlines():
+        assert line.strip() != "build:", "the deploy file must not build"
+    images = [
+        line.strip() for line in text.splitlines() if line.strip().startswith("image:")
+    ]
+    assert len(images) == 4, f"expected four services, found {len(images)}"
+    for image in images:
+        assert "ghcr.io/latentnoise/" in image, image
 
-    assert set(deploy) == set(source), "service sets differ"
-    for name, service in source.items():
-        expected = {key: value for key, value in service.items() if key != "build"}
-        assert "build" not in deploy[name], f"{name}: deploy file must not build"
-        assert deploy[name] == expected, (
-            f"{name}: deploy/docker-compose.yml drifted from docker-compose.yml "
-            f"— update it (everything except `build:` must match)"
-        )
 
-
-def test_deploy_compose_never_builds():
-    for name, service in _services("deploy/docker-compose.yml").items():
-        assert "image" in service, f"{name} has no image to pull"
-        assert service["image"].startswith("ghcr.io/latentnoise/"), name
+def test_stripping_leaves_the_surrounding_service_intact():
+    """The generator removes the build block and nothing around it."""
+    source = """\
+services:
+  app:
+    image: example:latest
+    build:
+      context: .
+      args:
+        FOO: bar
+    ports:
+      - "1:1"
+"""
+    assert (
+        strip_build_blocks(source)
+        == """\
+services:
+  app:
+    image: example:latest
+    ports:
+      - "1:1"
+"""
+    )

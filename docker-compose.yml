@@ -18,8 +18,7 @@
 # Data (SQLite DB, jobs, artifacts, analysis cache) persists in ./data.
 services:
   content:
-    # Published on each version tag; `docker compose pull` fetches it instead
-    # of building. Kept beside `build:` so a clone can still build locally.
+    # Published on each version tag; `docker compose pull` fetches it.
     image: ghcr.io/latentnoise/content:${CONTENT_VERSION:-latest}
     build:
       # Repo-root context so LICENSE/NOTICE ship inside the image (AGPL §4),
