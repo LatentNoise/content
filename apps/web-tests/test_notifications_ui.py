@@ -20,7 +20,7 @@ RELEASE_NOTE = {
     "id": "release:9.9.9",
     "level": "success",
     "title": "A new version is available",
-    "message": "Content 9.9.9 is out — this instance runs 0.1.0.",
+    "message": "Content 9.9.9 is out — this instance runs an older release.",
     "action_label": "View the release",
     "action_url": "https://example.invalid/releases",
 }
@@ -175,7 +175,7 @@ def test_the_source_link_comes_from_the_instance_not_the_ui(run_app, app, monkey
         FakeContentClient,
         "system",
         lambda self: {
-            "version": "0.1.0",
+            "version": conftest.ENGINE_VERSION,
             "license": "AGPL-3.0-or-later",
             "source_url": "https://forked.invalid/mine",
             "cache_enabled": True,
@@ -203,6 +203,12 @@ def test_the_source_link_comes_from_the_instance_not_the_ui(run_app, app, monkey
 # --- version mismatch (the launch check) ----------------------------------------
 
 
+# Deliberately impossible release numbers: a divergence fabricated with a
+# real-looking version broke the moment the monorepo reached it (0.2.0 did).
+DIVERGED = "9.8.7"
+DIVERGED_NEXT = "9.8.8"
+
+
 def _system_with_version(version):
     """The fake's full system payload with only the version changed."""
     base = FakeContentClient.system
@@ -219,12 +225,12 @@ def _system_with_version(version):
 def test_a_version_mismatch_warns_in_every_ui(run_app, app, monkeypatch):
     """The one notification the client builds itself: the backend cannot know
     its clients, so only the UI can notice a torn deployment."""
-    monkeypatch.setattr(FakeContentClient, "system", _system_with_version("0.2.0"))
+    monkeypatch.setattr(FakeContentClient, "system", _system_with_version(DIVERGED))
     at = run_app(app)
     assert not at.exception, at.exception
     text = _text(at)
     assert "UI and backend versions differ" in text
-    assert "0.2.0" in text
+    assert DIVERGED in text
     assert "docker compose pull" in text
     assert len(_dismiss_buttons(at)) == 1
 
@@ -259,7 +265,7 @@ def test_a_system_endpoint_failure_is_silent_not_fatal(run_app, monkeypatch):
 
 
 def test_dismissing_the_mismatch_survives_a_reload(run_app, monkeypatch):
-    monkeypatch.setattr(FakeContentClient, "system", _system_with_version("0.2.0"))
+    monkeypatch.setattr(FakeContentClient, "system", _system_with_version(DIVERGED))
 
     first = run_app("hometube")
     _dismiss_buttons(first)[0].click().run()
@@ -271,23 +277,25 @@ def test_dismissing_the_mismatch_survives_a_reload(run_app, monkeypatch):
 
 
 def test_a_new_divergence_notifies_after_an_old_dismissal(run_app, monkeypatch):
-    """Dismissal is keyed by the exact version pair: silencing 0.1.0/0.2.0 must
-    not also silence 0.1.0/0.3.0."""
-    monkeypatch.setattr(FakeContentClient, "system", _system_with_version("0.2.0"))
+    """Dismissal is keyed by the exact version pair: silencing one divergence
+    must not also silence the next one."""
+    monkeypatch.setattr(FakeContentClient, "system", _system_with_version(DIVERGED))
     at = run_app("hometube")
     _dismiss_buttons(at)[0].click().run()
 
-    monkeypatch.setattr(FakeContentClient, "system", _system_with_version("0.3.0"))
+    monkeypatch.setattr(
+        FakeContentClient, "system", _system_with_version(DIVERGED_NEXT)
+    )
     later = run_app("hometube")
     assert not later.exception, later.exception
     assert "UI and backend versions differ" in _text(later)
-    assert "0.3.0" in _text(later)
+    assert DIVERGED_NEXT in _text(later)
 
 
 def test_the_mismatch_joins_backend_notifications_in_one_banner(run_app, monkeypatch):
     """Client-built and backend-sent notifications share the bar — same shape,
     same dismissal store, no separate rendering path."""
-    monkeypatch.setattr(FakeContentClient, "system", _system_with_version("0.2.0"))
+    monkeypatch.setattr(FakeContentClient, "system", _system_with_version(DIVERGED))
     conftest.NOTIFICATIONS = [RELEASE_NOTE]
     at = run_app("hometube")
     assert not at.exception, at.exception
