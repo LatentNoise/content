@@ -34,6 +34,11 @@
 # Licence and governance: extensionless by convention, so allowlisted by name.
 !LICENSE
 !NOTICE
+# Git hooks: extensionless by Git's own contract (the file must be named
+# exactly `pre-commit`), so they need naming here or the allowlist would hide
+# the very guard that protects the commit identity. Armed with `make hooks`.
+!.githooks/pre-commit
+!.githooks/commit-msg
 !.github/CODEOWNERS
 !.github/ISSUE_TEMPLATE/*.yml
 !.github/workflows/*.yml

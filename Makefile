@@ -26,7 +26,7 @@ VERSION_MODULES    := apps/backend/content/__init__.py \
                       apps/web-admin/app.py
 
 .DEFAULT_GOAL := validate
-.PHONY: help install format lint test test-all ui-venv test-ui test-ui-live \
+.PHONY: help install hooks format lint test test-all ui-venv test-ui test-ui-live \
         validate validate-all validate-release clean run \
         version version-update version-tag wheels deploy-compose extension-zip docker-up docker-update docker-down \
         docker-logs
@@ -35,10 +35,18 @@ help:  ## List the available targets
 	@grep -hE '^[a-zA-Z][a-zA-Z0-9_-]*:.*##' $(MAKEFILE_LIST) \
 	  | awk -F ':.*## ' '{printf "  \033[1m%-18s\033[0m %s\n", $$1, $$2}'
 
-install:  ## Create the venv and install the engine + SDK + CLI + MCP + shared client
+install: hooks  ## Create the venv and install the engine + SDK + CLI + MCP + shared client
 	cd apps/backend && uv venv .venv && uv pip install -e ".[test,dev,pdf]" --python .venv/bin/python
 	uv pip install -e packages/python-sdk --python apps/backend/.venv/bin/python
 	uv pip install -e apps/cli -e apps/mcp --python apps/backend/.venv/bin/python
+
+# Git hooks live in .githooks/ (tracked, so a fix reaches every checkout)
+# rather than .git/hooks/ (local, invisible, copied once and then stale).
+# Pointing core.hooksPath at them is the whole installation, and `make install`
+# does it so a fresh clone is guarded before its first commit.
+hooks:  ## Arm the tracked git hooks (identity + attribution guards)
+	@git config core.hooksPath .githooks
+	@echo "git hooks armed from .githooks/ (identity: $$(git config user.email))"
 
 format:  ## Rewrite code to the canonical style (ruff format)
 	$(VENV)/ruff format $(SRC)
