@@ -15,16 +15,17 @@
 # Without this the allowlist silently dropped them from every clone, so a
 # stranger's checkout had no template to render with.
 !*.typ
-# Web formats: the browser extension (apps/browser-extension) is plain ES
-# modules a browser loads directly — no bundler, no build step — so its source
-# *is* these files. Scoped to that app rather than allowed repo-wide, so a stray
-# minified bundle or a downloaded asset elsewhere still stays out.
-!apps/browser-extension/**/*.js
-!apps/browser-extension/**/*.json
-!apps/browser-extension/**/*.html
-!apps/browser-extension/**/*.css
-!apps/browser-extension/**/*.svg
-!apps/browser-extension/**/*.png
+# Web formats: the browser extension (apps/browser-extension-chromium) is
+# plain ES modules a browser loads directly — no bundler, no build step — so
+# its source *is* these files. Scoped to that app rather than allowed
+# repo-wide, so a stray minified bundle or a downloaded asset elsewhere still
+# stays out. (A future Safari sibling gets its own block.)
+!apps/browser-extension-chromium/**/*.js
+!apps/browser-extension-chromium/**/*.json
+!apps/browser-extension-chromium/**/*.html
+!apps/browser-extension-chromium/**/*.css
+!apps/browser-extension-chromium/**/*.svg
+!apps/browser-extension-chromium/**/*.png
 !pyproject.toml
 !Dockerfile
 !docker-compose.yml

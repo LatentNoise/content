@@ -85,6 +85,37 @@ def test_no_extension_file_is_hidden_by_the_allowlist():
     )
 
 
+def test_new_extension_files_are_committable():
+    """The scan above has a blind spot the 2026-08-10 rename exposed: git
+    suppresses ignore rules for *tracked* paths, so once the files are in the
+    index, `check-ignore` answers "not ignored" even when the allowlist rule
+    rotted (the negations still said `apps/browser-extension/**` after the
+    directory became `apps/browser-extension-chromium/`). Tracked files kept
+    working; every NEW file silently became uncommittable.
+
+    So probe with paths that do not exist: for each runtime format the
+    extension is made of, an untracked candidate must be committable."""
+    import subprocess
+
+    candidates = [
+        f"{EXTENSION.relative_to(REPO)}/somewhere/new-file{suffix}"
+        for suffix in (".js", ".json", ".html", ".css", ".png")
+    ]
+    result = subprocess.run(
+        ["git", "check-ignore", "--stdin"],
+        cwd=REPO,
+        input="\n".join(candidates),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    blocked = sorted(line for line in result.stdout.split("\n") if line.strip())
+    assert not blocked, (
+        f"the allowlist no longer covers this app's runtime formats: {blocked} "
+        "— any new extension file would be silently uncommittable"
+    )
+
+
 # --- the manifest ----------------------------------------------------------------
 
 

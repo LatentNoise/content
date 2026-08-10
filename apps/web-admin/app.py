@@ -100,20 +100,51 @@ st.set_page_config(page_title="Content Admin", page_icon="🛠️", layout="wide
 st.markdown(
     """
     <style>
-      .block-container { padding-top: 2rem; max-width: 1240px; }
-      .ca-brand .name { font-size: 2.3rem; font-weight: 800; letter-spacing:.3px;
+      .block-container { padding-top: 1.6rem; padding-bottom: 4rem;
+        max-width: 1240px; }
+
+      /* Header: gradient wordmark over a thin gradient rule, so the brand
+         block visually owns the page instead of floating above the tabs. */
+      .ca-brand { padding-bottom: .9rem; margin-bottom: .4rem;
+        border-bottom: 1px solid transparent;
+        border-image: linear-gradient(90deg,#8B5CF6,#D946EF,transparent 70%) 1; }
+      .ca-brand .name { font-size: 2.2rem; font-weight: 800; letter-spacing:.3px;
         background: linear-gradient(90deg,#8B5CF6,#D946EF);
         -webkit-background-clip:text; background-clip:text; color:transparent; }
-      .ca-brand .sub { color:#8b93a3; font-size:.9rem; margin-top:-.2rem; }
-      .ca-card { background:#171a23; border:1px solid #2a2f3a; border-radius:14px;
-        padding:14px 16px; margin:.2rem 0 1rem 0; }
-      .ca-card h4 { margin:0 0 .5rem 0; font-size:.95rem; color:#c9cfda; }
-      .step { font-family: ui-monospace, monospace; font-size:.82rem; padding:1px 0; }
-      .pill { display:inline-block; font-size:.72rem; padding:2px 9px;
+      .ca-brand .sub { color:#8b93a3; font-size:.9rem; margin-top:-.15rem; }
+
+      /* Tabs: roomier hit targets, quieter inactive state. */
+      button[data-baseweb="tab"] { padding: .55rem 1.05rem; border-radius: 10px 10px 0 0; }
+      button[data-baseweb="tab"] p { font-size: .92rem; }
+
+      /* One card language everywhere: same radius, soft border, faint lift
+         on hover. Applied to our own cards AND Streamlit's metric boxes, so
+         the Overview reads as a row of stat cards. */
+      .ca-card, div[data-testid="stMetric"] {
+        background: linear-gradient(180deg,#171a23,#151821);
+        border:1px solid #2a2f3a; border-radius:14px;
+        padding:14px 16px; margin:.2rem 0 1rem 0;
+        transition: border-color .15s ease; }
+      .ca-card:hover, div[data-testid="stMetric"]:hover { border-color:#3a4152; }
+      div[data-testid="stMetric"] { margin:0; }
+      div[data-testid="stMetric"] label p { color:#8b93a3; font-size:.78rem;
+        text-transform: uppercase; letter-spacing:.6px; }
+      div[data-testid="stMetricValue"] { font-size:1.5rem; }
+      .ca-card h4 { margin:0 0 .55rem 0; font-size:.82rem; color:#8b93a3;
+        text-transform: uppercase; letter-spacing:.6px; font-weight:600; }
+
+      .step { font-family: ui-monospace, monospace; font-size:.82rem;
+        padding:3px 8px; border-radius:8px; }
+      .step:hover { background:#171a23; }
+      .pill { display:inline-block; font-size:.72rem; padding:2px 10px;
         border-radius:99px; border:1px solid #2a2f3a; color:#8b93a3;
-        margin:2px 4px 0 0; }
-      .env-row { display:grid; grid-template-columns: 300px 1fr; gap:10px;
-        padding:7px 0; border-bottom:1px solid #21252f; align-items:baseline; }
+        margin:2px 4px 2px 0; background:rgba(23,26,35,.6); }
+
+      .env-row { display:grid;
+        grid-template-columns: minmax(220px, 300px) 1fr; gap:10px;
+        padding:8px 10px; border-bottom:1px solid #1c202a;
+        align-items:baseline; border-radius:8px; }
+      .env-row:hover { background:#141722; }
       .env-name { font-family: ui-monospace, monospace; font-size:.82rem;
         color:#c9cfda; }
       .env-val { font-family: ui-monospace, monospace; font-size:.82rem;
@@ -125,8 +156,17 @@ st.markdown(
       .badge { display:inline-block; font-size:.68rem; padding:1px 8px;
         border-radius:99px; border:1px solid #2a2f3a; margin-left:6px;
         vertical-align:middle; }
+
+      /* The job list reads as navigation: full-width rows with a hover state
+         instead of bare radio labels. */
+      div[role="radiogroup"] label { padding:5px 8px; border-radius:8px;
+        width:100%; transition: background .12s ease; }
+      div[role="radiogroup"] label:hover { background:#171a23; }
+
       div[data-testid="stExpander"] details { border-color:#2a2f3a;
-        border-radius:12px; }
+        border-radius:14px; }
+      hr { border-color:#1c202a; }
+      section[data-testid="stSidebar"] .block-container { padding-top:1.4rem; }
     </style>
     """,
     unsafe_allow_html=True,
@@ -232,16 +272,41 @@ def render_job_detail(job_id: str) -> None:
         client.retry(job_id)
         st.rerun()
 
+    # One events fetch per refresh: live percentages for the running steps
+    # here, and the (filtered) timeline in the expander below.
+    try:
+        events = client.events(job_id)
+    except Exception:  # noqa: BLE001
+        events = []
+    percent: dict[str, float] = {}
+    for e in events:
+        if e["type"] == "step.progress":
+            data = e.get("data") or {}
+            progress = data.get("progress") or {}
+            if progress.get("current") is not None:
+                percent[data.get("step_id", "")] = progress["current"]
+
     steps = job.get("steps", [])
     done = sum(1 for s in steps if s["status"] == "succeeded")
     if steps:
         st.progress(done / len(steps), text=f"{done}/{len(steps)} steps")
     for s in steps:
         si = display(s["status"])[0]
+        # Collection members announce themselves as "3/6 · Title" (the API
+        # joins that context onto the step); other steps keep their id.
+        if s.get("item_title"):
+            name = (
+                f"{s.get('member_index')}/{s.get('member_total')} · {s['item_title']}"
+            )
+        else:
+            name = s["step_id"]
+        detail = s["status"]
+        if s["status"] == "running" and s["step_id"] in percent:
+            detail = f"running · {percent[s['step_id']]:.0f}%"
         err = f" · {s['error']}" if s.get("error") else ""
         st.markdown(
-            f"<div class='step'>{si} {s['step_id']} "
-            f"<span style='color:#5b6472'>{s['status']}{err}</span></div>",
+            f"<div class='step'>{si} {name} "
+            f"<span style='color:#5b6472'>{detail}{err}</span></div>",
             unsafe_allow_html=True,
         )
 
@@ -272,16 +337,15 @@ def render_job_detail(job_id: str) -> None:
         if not arts:
             st.caption("no artifacts")
     with st.expander("Events (timeline)"):
-        try:
-            events = client.events(job_id)
-        except Exception:  # noqa: BLE001
-            events = []
-        st.code(
-            "\n".join(
-                f"{e['sequence']:>3} {e['type']} {e.get('data') or ''}" for e in events
-            )
-            or "—"
-        )
+        # step.progress fires every few seconds per step; the percentages are
+        # already live on the step lines, so the timeline keeps the events
+        # that tell the story and summarizes the rest to a count.
+        shown = [e for e in events if e["type"] != "step.progress"]
+        skipped = len(events) - len(shown)
+        lines = [f"{e['sequence']:>3} {e['type']} {e.get('data') or ''}" for e in shown]
+        if skipped:
+            lines.append(f"    … {skipped} step.progress events (shown live above)")
+        st.code("\n".join(lines) or "—")
     with st.expander("Logs (per step)"):
         try:
             logs = client.logs(job_id).get("logs", {})
