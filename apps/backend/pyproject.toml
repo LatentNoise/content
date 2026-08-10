@@ -1,6 +1,6 @@
 [project]
 name = "content-backend"
-version = "0.1.0"
+version = "0.2.0"
 description = "Content — declarative resource-to-artifact generation engine"
 license = "AGPL-3.0-or-later"
 authors = [{ name = "Yann Orieult" }]
