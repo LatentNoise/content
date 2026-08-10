@@ -309,6 +309,7 @@ make validate-all  # official gate plus UI and opt-in external-tool tests
 The main test suite does not require the Internet. Read the
 [repository architecture](docs/repository-architecture.md) and
 [validation guide](docs/development/validation.md) before changing the code.
+Releases follow the [release runbook](docs/operations/releasing.md).
 
 ## Documentation
 
