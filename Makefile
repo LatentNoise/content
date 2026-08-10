@@ -28,7 +28,7 @@ VERSION_MODULES    := apps/backend/content/__init__.py \
 .DEFAULT_GOAL := validate
 .PHONY: help install format lint test test-all ui-venv test-ui test-ui-live \
         validate validate-all validate-release clean run \
-        version version-update version-tag wheels extension-zip docker-up docker-update docker-down \
+        version version-update version-tag wheels deploy-compose extension-zip docker-up docker-update docker-down \
         docker-logs
 
 help:  ## List the available targets
@@ -200,6 +200,11 @@ wheels:  ## Build the SDK + CLI + MCP wheels for a release (dist/)
 	uv build --out-dir dist apps/cli
 	uv build --out-dir dist apps/mcp
 	@ls -1 dist/content_sdk-* dist/content_cli-* dist/content_mcp-*
+
+# The clone-free install's compose file is generated from the one above, so
+# the two can never describe different deployments (tests/test_deploy_compose).
+deploy-compose:  ## Regenerate deploy/docker-compose.yml from docker-compose.yml
+	$(VENV)/python scripts/gen_deploy_compose.py
 
 # --- browser extension -----------------------------------------------------------
 

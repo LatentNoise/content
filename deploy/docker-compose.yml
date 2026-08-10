@@ -1,5 +1,8 @@
 # Content — deployment without the source tree.
 #
+# GENERATED from ../docker-compose.yml by scripts/gen_deploy_compose.py
+# (`make deploy-compose`). Edit the source file, then regenerate.
+#
 # The published images, nothing to build:
 #
 #   mkdir content && cd content
@@ -7,14 +10,12 @@
 #   curl -fsSL -o .env https://raw.githubusercontent.com/LatentNoise/content/main/.env.example
 #   docker compose up -d
 #
-# This file is the build-free twin of the repository root's
-# docker-compose.yml — identical services, images, environment, ports and
-# volumes, minus the `build:` blocks a clone uses to build locally.
-# tests/test_deploy_compose.py keeps the two in lockstep.
+# Identical to the source compose — same services, images, environment, ports
+# and volumes — minus the `build:` blocks a clone uses to build locally.
 #
 services:
   content:
-    # Published on each version tag; `docker compose pull` refreshes it.
+    # Published on each version tag; `docker compose pull` fetches it.
     image: ghcr.io/latentnoise/content:${CONTENT_VERSION:-latest}
     container_name: content
     environment:
