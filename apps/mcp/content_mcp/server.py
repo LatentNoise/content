@@ -23,7 +23,13 @@ INSTRUCTIONS = (
     "server's delivery policy is on (see get_config), finished files are also "
     "copied into the server's media library and each artifact reports its "
     "delivered_path there. An output spec may carry delivery "
-    '{"mode": "inherit|deliver|none", "folder": …, "filename": …} to steer this.'
+    '{"mode": "inherit|deliver|none", "folder": …, "filename": …} to steer this. '
+    "A source whose resource_type is 'collection' (a playlist) is a special "
+    "case worth knowing: its capabilities describe the collection itself, so "
+    "media outputs read as unavailable there. To produce something for every "
+    "member, ask for the output with scope 'each_item' — the engine analyzes "
+    "and plans each member on its own, and the job returns one artifact per "
+    "member, numbered in order."
 )
 
 
