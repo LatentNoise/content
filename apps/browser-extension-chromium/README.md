@@ -43,10 +43,12 @@ so only tracked, needed files are packaged and no local stray file can ride
 along — and CI attaches it to every version tag automatically, beside a
 `SHA256SUMS.txt` covering every asset.
 
-### Pointing it at another backend
+### Pointing it at another engine
 
-For a backend somewhere else (a NAS, another port), open the extension's
-settings and change the address. Chrome will ask for permission for that host:
+The popup's footer always names the engine it talks to (`192.168.21.30:8010`,
+say) — the answer to "where is this sending my video?" is on screen, and
+clicking it opens the settings. For an engine somewhere else (a NAS, another
+port), change the address there. Chrome will ask for permission for that host:
 the manifest grants only `http://localhost:8010` up front, so any other origin
 is an explicit, revocable grant rather than blanket access shipped to everybody.
 
