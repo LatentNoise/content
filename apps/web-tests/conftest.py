@@ -80,6 +80,15 @@ class ApiError(Exception):
 # existing assertion sees exactly the page it saw before this feature.
 NOTIFICATIONS: list = []
 
+# The version the fake backend reports. The apps compare their __version__
+# against the backend's to warn about torn deployments, and every declaration
+# in the monorepo moves in lockstep (`make version`) — so the fake must move
+# too, or a release bump fabricates a mismatch banner on every page and breaks
+# the whole suite (as 0.2.0 did to a hard-coded "0.1.0"). content_sdk is one
+# of the lockstep declarations and is installed in the UI venv: the honest
+# source. Mismatch tests patch their own, deliberately impossible versions.
+from content_sdk import __version__ as ENGINE_VERSION
+
 
 class FakeContentClient:
     """Canned, contract-shaped answers keyed by the source URI."""
@@ -88,7 +97,7 @@ class FakeContentClient:
         pass
 
     def health(self):
-        return {"status": "ok", "version": "0.1.0"}
+        return {"status": "ok", "version": ENGINE_VERSION}
 
     def notifications(self):
         return list(NOTIFICATIONS)
@@ -270,7 +279,7 @@ class FakeContentClient:
 
     def system(self):
         return {
-            "version": "0.1.0",
+            "version": ENGINE_VERSION,
             # AGPL §13: the source offer the UIs render in their footer.
             "license": "AGPL-3.0-or-later",
             "source_url": "https://example.invalid/content",
