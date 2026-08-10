@@ -130,14 +130,24 @@ def _reason_text(reason: dict | None) -> str:
 
 TERMINAL = {"succeeded", "partially_succeeded", "failed", "cancelled"}
 
-st.set_page_config(page_title="HomeTube", page_icon="🎬", layout="centered")
+# The sidebar (status, recent jobs) starts collapsed on purpose: HomeTube's
+# value is the single centered form. Collapsed, not gone — the header keeps
+# the toggle that reopens it.
+st.set_page_config(
+    page_title="HomeTube",
+    page_icon="🎬",
+    layout="centered",
+    initial_sidebar_state="collapsed",
+)
 
 st.markdown(
     """
     <style>
-      /* Remove Streamlit's top toolbar/decoration ribbon — it added a dark
-         band that clipped the logo and served no purpose for this app. */
-      header[data-testid="stHeader"] { display: none; }
+      /* Streamlit's header ribbon added a dark band that clipped the logo —
+         but `display: none` also removed the sidebar TOGGLE that lives in
+         it, leaving the collapsed sidebar unreachable. Transparent keeps the
+         control and loses the band. */
+      header[data-testid="stHeader"] { background: transparent; }
       div[data-testid="stDecoration"] { display: none; }
       #MainMenu, footer { visibility: hidden; }
       .block-container { padding-top: 1.5rem; padding-bottom: 3rem;
