@@ -26,7 +26,7 @@ PUBLIC_API_URL = os.getenv("CONTENT_PUBLIC_API_URL", API_URL).rstrip("/")
 # This app's own release, in lockstep with the whole monorepo (`make version`
 # guards every declaration). Passed to the notification bar so the launch check
 # can compare it against the backend's version and warn on a torn deployment.
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 TERMINAL = {"succeeded", "partially_succeeded", "failed", "cancelled"}
 CATEGORY_ORDER = [
