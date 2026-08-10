@@ -22,10 +22,55 @@ def _is_inlineable_text(media_type: str) -> bool:
     return media_type.startswith("text/") or media_type in _INLINE_TEXT_TYPES
 
 
+# Every key an output spec may carry. Anything else is a mistake worth
+# refusing: the engine's own models forbid unknown fields, and this layer
+# used to read the keys it recognised and drop the rest — so an agent that
+# flattened `{"type": "subtitles", "languages": ["es"]}` instead of nesting
+# them under `options` got a *successful* job producing English subtitles.
+# Silently answering a question nobody asked is the worst failure mode for a
+# caller that cannot see the result, so the leniency is gone.
+_OUTPUT_KEYS = frozenset(
+    {
+        "type",
+        "id",
+        "from_sources",
+        "from_outputs",
+        "scope",
+        "required",
+        "delivery",
+        "options",
+    }
+)
+
+
 def _output_from_spec(spec: Any) -> dict[str, Any]:
-    """Accept a plain type string or a {type, options, from_sources, ...} dict."""
+    """Accept a plain type string or a {type, options, from_sources, ...} dict.
+
+    Rejects anything else with a message that shows the correct shape: an
+    agent's next attempt should succeed on what it reads here, not on a
+    second guess.
+    """
     if isinstance(spec, str):
         return outputs.output(spec)
+    if not isinstance(spec, dict):
+        raise TypeError(
+            f"an output must be a type string or an object, got {type(spec).__name__}. "
+            'Example: {"type": "subtitles", "options": {"languages": ["es"]}}'
+        )
+    if "type" not in spec:
+        raise ValueError(
+            f"this output has no 'type' (keys: {sorted(spec)}). "
+            'Example: {"type": "subtitles", "options": {"languages": ["es"]}}'
+        )
+    unknown = sorted(set(spec) - _OUTPUT_KEYS)
+    if unknown:
+        raise ValueError(
+            f"unknown key(s) {unknown} on the '{spec['type']}' output. "
+            "Per-output settings belong under 'options' — for example "
+            '{"type": "subtitles", "options": {"languages": ["es"]}}, not '
+            '{"type": "subtitles", "languages": ["es"]}. '
+            f"Allowed keys: {sorted(_OUTPUT_KEYS)}."
+        )
     return outputs.output(
         spec["type"],
         id=spec.get("id"),
@@ -85,13 +130,37 @@ def generate(
 
 
 def get_job(client: ContentClient, job_id: str) -> dict[str, Any]:
-    """Job status; once terminal, the produced artifacts (metadata only)."""
+    """Job status; once terminal, the produced artifacts (metadata only), and
+    when something went wrong, what went wrong.
+
+    The engine records a failure on the *step* that failed; the job's own
+    ``error`` is usually empty. Reporting only that left an agent with
+    ``{"status": "failed", "error": ""}`` — enough to know it should stop,
+    nothing to tell the user or to decide whether a different request would
+    work. Failures now travel with their reason.
+    """
     job = client.get_job(job_id)
     result: dict[str, Any] = {
         "job_id": job.id,
         "status": job.status,
         "error": job.data.error,
     }
+    if job.status in ("failed", "partially_succeeded"):
+        failures = [
+            {
+                "step": step.get("step_id", ""),
+                "operation": step.get("operation", ""),
+                "error": step.get("error", ""),
+            }
+            for step in (job.data.steps or [])
+            if step.get("status") == "failed"
+        ]
+        if failures:
+            result["failures"] = failures
+            # The job-level field is what a caller reads first; when the
+            # engine left it empty, the first real reason belongs there.
+            if not result["error"]:
+                result["error"] = failures[0]["error"]
     if job.is_terminal:
         result["artifacts"] = [
             {

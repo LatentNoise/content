@@ -109,6 +109,11 @@ class JobData(_Model):
     started_at: str | None = None
     finished_at: str | None = None
     warnings: list[dict[str, Any]] = Field(default_factory=list)
+    # The job detail carries its steps with their status and error; the list
+    # endpoint does not, hence the default. Declared rather than left to
+    # `extra="allow"` because callers depend on it to explain a failure — the
+    # engine records the reason on the step that failed, not on the job.
+    steps: list[dict[str, Any]] = Field(default_factory=list)
 
 
 # --- input builders (requests) ------------------------------------------------
