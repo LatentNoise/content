@@ -93,6 +93,21 @@ _CODEC_PRIORITY = ("av1", "vp9", "h264")
 # Rotated only for YouTube URLs (the arg is ignored by other extractors).
 _PLAYER_CLIENTS = ("", "ios", "web")
 
+# Acquisition attempts for an audio-only download, in order.
+#
+# The default client appears twice on purpose, and the repeat is the point.
+# A media URL is signed and short-lived, and every yt-dlp invocation
+# re-extracts it — so running the same command again is exactly what recovers
+# a transient `HTTP Error 403: Forbidden`. Observed on a real job whose video
+# output succeeded while the audio output, asking for the *same* stream
+# seconds later, was refused; the identical command then succeeded on replay.
+#
+# The alternative clients come last because they usually cannot serve
+# audio-only formats at all — `ios` and `web` answer "only images are
+# available" without a PO token — so trying them before a plain retry would
+# turn a recoverable blip into a different, more confusing failure.
+_AUDIO_ATTEMPTS = ("", "", "ios", "web")
+
 
 def _client_args(client: str) -> list[str]:
     return ["--extractor-args", f"youtube:player_client={client}"] if client else []
@@ -912,42 +927,76 @@ class YtDlpProvider:
         self, step: PlanStep, ctx: ExecutionContext
     ) -> list[ProducedFile]:
         base = f"audio-{step.id}"
+        uri = step.params["uri"]
         cookie_file = prepare_cookies(
             step.params.get("credential_id"), ctx.settings, ctx.workdir
         )
-        args = [
-            self.binary,
-            "--newline",
-            "--no-playlist",
-            "-o",
-            f"{base}.%(ext)s",
-            "--paths",
-            f"home:{ctx.workdir}",
-            "-f",
-            audio_language_selector(step.params.get("audio_languages")),
-            "--force-overwrites",
-            "--retries",
-            "10",
-            *audio_format_args(step.params),
-            *cookies_args(cookie_file),
-            *sponsorblock_args(step.params),
-            *extra_args(ctx.settings, step.params),
-            step.params["uri"],
-        ]
-        self._run(args, ctx)
-        produced = _find_by_ext(ctx.workdir, base, AUDIO_EXTS)
-        if not produced:
-            raise StepExecutionError(
-                "no_output", "Audio acquisition succeeded but produced no audio file."
-            )
-        attributes = self._apply_fast_sponsorblock_cut(step, ctx, produced) or {}
-        return [
-            ProducedFile(
-                path=produced,
-                media_type=media_type_for(produced),
-                attributes=attributes,
-            )
-        ]
+
+        def args_for(client: str) -> list[str]:
+            return [
+                self.binary,
+                "--newline",
+                "--no-playlist",
+                "-o",
+                f"{base}.%(ext)s",
+                "--paths",
+                f"home:{ctx.workdir}",
+                "-f",
+                audio_language_selector(step.params.get("audio_languages")),
+                "--force-overwrites",
+                "--retries",
+                "10",
+                *audio_format_args(step.params),
+                *_client_args(client),
+                *cookies_args(cookie_file),
+                *sponsorblock_args(step.params),
+                *extra_args(ctx.settings, step.params),
+                uri,
+            ]
+
+        # Video acquisition has had a fallback ladder since the beginning;
+        # audio had a single shot, so one refused request ended the output
+        # while the video beside it — which had recovered from the very same
+        # kind of refusal — succeeded. Same resilience, now, for both.
+        attempts = _AUDIO_ATTEMPTS if _is_youtube(uri) else ("",)
+        last_error: StepExecutionError | None = None
+        for attempt, client in enumerate(attempts):
+            try:
+                self._run(args_for(client), ctx)
+            except StepExecutionError as exc:
+                # A cancelled or timed-out step is a decision, not a hiccup.
+                if exc.code in ("cancelled", "timeout"):
+                    raise
+                last_error = exc
+                continue
+            produced = _find_by_ext(ctx.workdir, base, AUDIO_EXTS)
+            if produced is None:
+                last_error = StepExecutionError(
+                    "no_output", "yt-dlp reported success but no audio file."
+                )
+                continue
+            attributes: dict = {"player_client": client or "default"}
+            if attempt > 0:
+                # Provenance says the first answer was refused: an operator
+                # comparing two runs should not have to guess why one took
+                # longer or came from another client.
+                attributes["attempts"] = attempt + 1
+                if client:
+                    attributes["selection"] = "fallback"
+            cut = self._apply_fast_sponsorblock_cut(step, ctx, produced)
+            if cut:
+                attributes.update(cut)
+            return [
+                ProducedFile(
+                    path=produced,
+                    media_type=media_type_for(produced),
+                    attributes=attributes,
+                )
+            ]
+
+        raise last_error or StepExecutionError(
+            "no_output", "Audio acquisition failed for every attempt."
+        )
 
     def _acquire_thumbnail(
         self, step: PlanStep, ctx: ExecutionContext
