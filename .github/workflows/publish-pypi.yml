@@ -24,6 +24,17 @@ on:
         default: testpypi
         type: choice
         options: [testpypi, pypi]
+      only:
+        description:
+          "Restrict the upload to one package. Bootstrap only: PyPI allows a
+          single *pending* (project-creating) publisher per workflow identity,
+          so brand-new projects are published one at a time — register the
+          pending publisher, run with only=<pkg>, repeat. Once the projects
+          exist they share the identity and publish together (all)."
+        required: true
+        default: all
+        type: choice
+        options: [all, sdk, cli, mcp]
 
 permissions:
   contents: read
@@ -84,6 +95,15 @@ jobs:
         with:
           name: distributions
           path: dist/
+
+      # Bootstrap mode (see the `only` input): drop every distribution except
+      # the requested package, so a first-time project can be created while
+      # its siblings' pending publishers do not exist yet.
+      - name: Restrict the upload to one package (bootstrap)
+        if: inputs.only != 'all'
+        run: |
+          find dist -type f ! -name "content_${{ inputs.only }}-*" -delete
+          echo "uploading only:" && ls -1 dist
 
       - name: Publish
         uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
