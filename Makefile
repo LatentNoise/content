@@ -131,7 +131,12 @@ version-update:  ## Set the version everywhere (asks when VERSION= is omitted)
 	@v="$(VERSION)"; \
 	if [ -z "$$v" ]; then \
 	  current=$$(grep -m1 '^version = ' apps/backend/pyproject.toml | sed 's/.*"\(.*\)"/\1/'); \
-	  printf 'current version: %s\nnew version (x.y.z): ' "$$current"; \
+	  major=$${current%%.*}; rest=$${current#*.}; \
+	  minor=$${rest%%.*}; patch=$${rest#*.}; \
+	  printf 'current version: %s\n' "$$current"; \
+	  printf 'suggestions:     %s.%s.%s (fixes only) | %s.%s.0 (features)\n' \
+	    "$$major" "$$minor" "$$((patch+1))" "$$major" "$$((minor+1))"; \
+	  printf 'new version (x.y.z): '; \
 	  read -r v; \
 	fi; \
 	v=$${v#v}; \
@@ -162,6 +167,14 @@ version-tag:  ## Create the annotated tag v<version> (clean tree required; asks 
 	  echo "the working tree is not clean — commit or stash first"; exit 1; }
 	@$(MAKE) --no-print-directory version >/dev/null
 	@v=$$(grep '^version = ' apps/backend/pyproject.toml | sed 's/.*"\(.*\)"/\1/'); \
+	if git rev-parse -q --verify "refs/tags/v$$v" >/dev/null; then \
+	  echo "v$$v already exists — the tree still declares $$v, so there is"; \
+	  echo "nothing new to tag. A tag seals the version the tree declares"; \
+	  echo "(the publish workflow verifies they agree). To cut a new release:"; \
+	  echo "  1. make version-update      on a branch, then PR + merge"; \
+	  echo "  2. make version-tag         back here, on the updated main"; \
+	  exit 1; \
+	fi; \
 	printf 'create annotated tag v%s at %s (%s)? [y/N] ' \
 	  "$$v" "$$(git rev-parse --short HEAD)" "$$(git branch --show-current)"; \
 	read -r answer; \
