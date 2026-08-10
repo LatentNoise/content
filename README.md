@@ -165,15 +165,16 @@ inventory.
 - **[Python SDK](packages/python-sdk/README.md)** — the typed sync and async
   client used by the Python applications.
 - **[CLI](apps/cli/README.md)** — ergonomic commands for analysis, generation,
-  job tracking, scripts, and raw requests. Installed from the wheels attached
-  to each release (`pipx install ./content_cli-*.whl --pip-args "--find-links ."`).
+  job tracking, scripts, and raw requests: `uv tool install content-cli`
+  (or `pipx install content-cli`).
 - **[Browser extension](apps/browser-extension-chromium/README.md)** — send the current
   tab to Content, in one click. Chromium (Chrome, Brave, Edge…); download the
   zip from a release, unzip, *Load unpacked*.
 - **[REST API](docs/contract.md)** — the versioned `/api/v1` contract, with
   OpenAPI and Swagger documentation.
 - **[MCP server](apps/mcp/README.md)** — intention-level tools and resources for
-  MCP-compatible agents.
+  MCP-compatible agents: `uv tool install content-mcp`, one config block in
+  Claude, Cursor, or any MCP client.
 
 <div align="center">
 <table>
