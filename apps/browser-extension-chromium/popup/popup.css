@@ -90,6 +90,27 @@ header a:hover {
   color: var(--fg);
 }
 
+/* The engine line: quiet, centered, and a link — mirrors the header's border
+   so the popup is framed by its two fixed facts, what it is and where it
+   sends. */
+footer {
+  padding: 8px 0 2px;
+  border-top: 1px solid var(--line);
+  margin-top: 10px;
+  text-align: center;
+}
+
+footer a {
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 11px;
+  font-family: ui-monospace, monospace;
+}
+
+footer a:hover {
+  color: var(--fg);
+}
+
 .hidden {
   display: none !important;
 }

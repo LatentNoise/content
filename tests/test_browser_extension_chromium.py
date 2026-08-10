@@ -249,6 +249,22 @@ def test_request_builder_mentions_no_field_the_contract_lacks():
     )
 
 
+def test_the_popup_names_the_engine_it_talks_to() -> None:
+    """The footer answering "where is this sending my video?" stays wired.
+
+    A static guard in the suite's usual idiom: the popup carries the element
+    and the script fills it from the configured backend. Whether it *renders*
+    is browser-only, like everything else about the popup (module docstring).
+    """
+    html = (EXTENSION / "popup" / "popup.html").read_text(encoding="utf-8")
+    assert 'id="engine-target"' in html, "the popup lost its engine footer"
+    script = (EXTENSION / "popup" / "popup.js").read_text(encoding="utf-8")
+    filling = script.split("engine-target", 1)[-1]
+    assert "backendUrl" in filling, (
+        "the engine footer is no longer filled from settings.backendUrl"
+    )
+
+
 # --- executing the JavaScript, when a runtime happens to be available ------------
 
 NODE = shutil.which("node")

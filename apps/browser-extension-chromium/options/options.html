@@ -11,8 +11,11 @@
 
     <fieldset>
       <legend>Engine</legend>
+      <!-- "Address", not "Backend URL": the legend already says Engine, and
+           every other surface calls it the engine ("Cannot reach the engine
+           at…"). One vocabulary, one thing to configure. -->
       <label>
-        Backend URL
+        Address
         <input id="backend-url" type="url" placeholder="http://localhost:8010" />
       </label>
       <p class="muted">
