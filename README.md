@@ -189,6 +189,13 @@ inventory.
       <sub><b>Content Console</b> — observe and pilot the engine</sub>
     </td>
   </tr>
+  <tr>
+    <td colspan="2" align="center">
+      <img src="https://github.com/LatentNoise/content/releases/download/v0.2.0/2026-08-10-browser_extension.jpg"
+           alt="HomeTube for Content — the Chromium extension popup on a video page" width="420"><br>
+      <sub><b>Browser extension</b> — the current tab to your library, in one click</sub>
+    </td>
+  </tr>
 </table>
 </div>
 
