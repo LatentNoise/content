@@ -45,7 +45,18 @@ def build_server(client: ContentClient | None = None) -> MCPServer:
     @server.tool()
     def generate(analysis_id: str, outputs: list[Any]) -> dict[str, Any]:
         """Start a job producing the requested outputs from an analyzed source.
-        Each output is a type string ("audio") or a {type, options, ...} dict."""
+
+        Each output is either a type string — ["video", "subtitles"] — or an
+        object. Per-output settings go under "options", never beside "type":
+
+            {"type": "subtitles", "options": {"languages": ["es"]}}
+            {"type": "video", "options": {"selection": {"max_height": 1080}},
+             "delivery": {"mode": "deliver", "folder": "Talks"}}
+
+        Other keys of an output object: id, from_sources, from_outputs, scope
+        ("single" or "each_item" for a collection), required. An unknown key
+        is refused rather than ignored.
+        """
         return service.generate(client, analysis_id, outputs)
 
     @server.tool()
