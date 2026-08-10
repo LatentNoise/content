@@ -19,6 +19,11 @@ import re
 _UNSAFE = re.compile(r"[^A-Za-z0-9._-]+")
 
 _SEPARATORS = re.compile(r"[/\\]+")
+# A colon *used as a separator* ("Artist: Title") keeps its meaning as " - ",
+# exactly like path separators above; only the separator usage (colon followed
+# by whitespace) qualifies, so "12:34" stays a time and degrades to a space
+# with the other forbidden characters below.
+_COLON_SEPARATOR = re.compile(r"\s*:\s+")
 _FORBIDDEN = re.compile(r'[\x00-\x1f\x7f|:"*?<>]+')
 _WHITESPACE = re.compile(r"\s+")
 _WINDOWS_RESERVED = frozenset(
@@ -39,6 +44,7 @@ def display_name(name: str, max_length: int = 120) -> str:
     caller decides the fallback (an empty *intent* is not the same as an
     empty *name*)."""
     cleaned = _SEPARATORS.sub(" - ", name)
+    cleaned = _COLON_SEPARATOR.sub(" - ", cleaned)
     cleaned = _FORBIDDEN.sub(" ", cleaned)
     cleaned = _WHITESPACE.sub(" ", cleaned).strip(" .")
     cleaned = cleaned[:max_length].rstrip(" .")

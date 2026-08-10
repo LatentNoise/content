@@ -31,7 +31,11 @@ from tests.conftest import make_request, minimal_payload
         ("My Conference", "My Conference"),
         ("Artist - Song / Official Video", "Artist - Song - Official Video"),
         ("a\\b", "a - b"),
-        ('What? A "quote": here*', "What A quote here"),
+        # A colon used as a separator keeps its meaning, like / and \ above…
+        ("twenty one pilots: Stressed Out", "twenty one pilots - Stressed Out"),
+        ('What? A "quote": here*', "What A quote - here"),
+        # …while a non-separator colon (no space after) degrades to a space.
+        ("Meeting at 12:34", "Meeting at 12 34"),
         ("  spaced   out  ", "spaced out"),
         ("Trailing dots...", "Trailing dots"),
         ("héhé — l'été à Zürich", "héhé — l'été à Zürich"),  # unicode survives
@@ -415,15 +419,36 @@ class TestCurateTitle:
 
         for title in (
             "Trapped by plates in The Sims",
-            "héhé — l'été à Zürich",
             "A.I. — the basics",
         ):
             assert curate_title(title) == title
+
+    def test_capitalizes_only_an_all_lowercase_first_word(self):
+        """ "twenty one pilots…" earns its capital; a word that already mixes
+        case is a brand's own spelling and is never corrected."""
+        from content.naming.engine import curate_title
+
+        assert curate_title("twenty one pilots") == "Twenty one pilots"
+        assert curate_title("héhé — l'été à Zürich") == "Héhé — l'été à Zürich"
+        assert curate_title("iPhone 15 review") == "iPhone 15 review"
+        assert curate_title("eBay finds of the year") == "eBay finds of the year"
 
     def test_decoration_only_title_curates_to_empty(self):
         from content.naming.engine import curate_title
 
         assert curate_title("🔥🔥🔥") == ""
+
+
+def test_suggest_base_name_shapes_a_music_video_title():
+    """The reference case, end to end: noise tag stripped, the separator colon
+    spelled as " - ", the first word given its capital."""
+    from content.domain.analysis import NormalizedResource
+    from content.naming.engine import suggest_base_name
+
+    resource = NormalizedResource(
+        title="twenty one pilots: Stressed Out [OFFICIAL VIDEO]"
+    )
+    assert suggest_base_name(resource) == "Twenty one pilots - Stressed Out"
 
 
 def test_suggest_base_name_offers_the_curated_title_with_raw_fallback():

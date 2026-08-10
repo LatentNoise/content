@@ -218,7 +218,15 @@ def curate_title(title: str, channel: str = "") -> str:
     cleaned = re.sub(r"\s*([|·–—-])(\s*\1)+\s*", r" \1 ", cleaned)
     cleaned = re.sub(r"^(?:[|·–—:-]\s*)+", "", cleaned)
     cleaned = re.sub(r"(?:\s*[|·–—:-])+$", "", cleaned)
-    return re.sub(r"\s{2,}", " ", cleaned).strip()
+    cleaned = re.sub(r"\s{2,}", " ", cleaned).strip()
+    # A name starts with a capital — but only when the first word is entirely
+    # lowercase ("twenty one pilots…" → "Twenty…"). A word that already mixes
+    # case is a brand's own spelling (iPhone, eBay) and is not corrected.
+    if cleaned:
+        first_word = cleaned.split(" ", 1)[0]
+        if first_word.islower():
+            cleaned = cleaned[0].upper() + cleaned[1:]
+    return cleaned
 
 
 def suggest_base_name(resource) -> str:
