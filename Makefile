@@ -15,6 +15,10 @@ SRC  := apps/backend/content apps/backend/tests apps/web-hometube apps/web-studi
 VERSION_PYPROJECTS := apps/backend/pyproject.toml apps/cli/pyproject.toml \
                       apps/mcp/pyproject.toml packages/python-sdk/pyproject.toml \
                       apps/web-hometube/pyproject.toml
+# Manifests whose content-sdk==x.y.z dependency pin must move with the
+# release: a CLI or MCP wheel pinning the previous SDK is exactly the drift
+# the pin exists to prevent.
+SDK_PIN_MANIFESTS  := apps/cli/pyproject.toml apps/mcp/pyproject.toml
 EXT_DIR            := apps/browser-extension-chromium
 VERSION_MODULES    := apps/backend/content/__init__.py \
                       packages/python-sdk/content_sdk/__init__.py \
@@ -104,7 +108,8 @@ version:  ## Show every version declaration and fail if they disagree
 	  grep -h '^__version__ = ' $(VERSION_MODULES) | sed 's/.*"\(.*\)"/\1/'; \
 	  grep -o 'version="[0-9][^"]*"' apps/mcp/content_mcp/server.py | sed 's/.*"\(.*\)"/\1/'; \
 	  grep -o 'org.opencontainers.image.version="[^"]*"' apps/backend/Dockerfile | sed 's/.*"\(.*\)"/\1/'; \
-	  grep -m1 '"version"' $(EXT_DIR)/manifest.json | sed 's/.*"\([0-9][^"]*\)".*/\1/' \
+	  grep -m1 '"version"' $(EXT_DIR)/manifest.json | sed 's/.*"\([0-9][^"]*\)".*/\1/'; \
+	  grep -ho 'content-sdk==[0-9][0-9.]*' $(SDK_PIN_MANIFESTS) | sed 's/.*==//' \
 	); \
 	distinct=$$(echo "$$versions" | sort -u); \
 	count=$$(echo "$$distinct" | wc -l | tr -d ' '); \
@@ -118,37 +123,52 @@ version:  ## Show every version declaration and fail if they disagree
 	  grep -n 'version="[0-9][^"]*"' apps/mcp/content_mcp/server.py; \
 	  grep -n 'org.opencontainers.image.version=' apps/backend/Dockerfile; \
 	  grep -n '"version"' $(EXT_DIR)/manifest.json | head -1; \
+	  grep -n 'content-sdk==' $(SDK_PIN_MANIFESTS); \
 	  exit 1; \
 	fi
 
-version-update:  ## Set the version everywhere: make version-update VERSION=x.y.z
-	@if [ -z "$(VERSION)" ]; then \
-	  echo "usage: make version-update VERSION=x.y.z"; exit 1; \
-	fi
-	@case "$(VERSION)" in \
+version-update:  ## Set the version everywhere (asks when VERSION= is omitted)
+	@v="$(VERSION)"; \
+	if [ -z "$$v" ]; then \
+	  current=$$(grep -m1 '^version = ' apps/backend/pyproject.toml | sed 's/.*"\(.*\)"/\1/'); \
+	  printf 'current version: %s\nnew version (x.y.z): ' "$$current"; \
+	  read -r v; \
+	fi; \
+	v=$${v#v}; \
+	case "$$v" in \
 	  [0-9]*.[0-9]*.[0-9]*) ;; \
-	  *) echo "VERSION must look like x.y.z (got '$(VERSION)')"; exit 1;; \
-	esac
-	@for f in $(VERSION_PYPROJECTS); do \
-	  sed -i.bak 's/^version = ".*"/version = "$(VERSION)"/' $$f && rm $$f.bak; \
-	done
-	@for f in $(VERSION_MODULES); do \
-	  sed -i.bak 's/^__version__ = ".*"/__version__ = "$(VERSION)"/' $$f && rm $$f.bak; \
-	done
-	@sed -i.bak 's/version="[0-9][^"]*"/version="$(VERSION)"/' \
-	  apps/mcp/content_mcp/server.py && rm apps/mcp/content_mcp/server.py.bak
-	@sed -i.bak '0,/"version"/s/"version": "[^"]*"/"version": "$(VERSION)"/' \
-	  $(EXT_DIR)/manifest.json && rm $(EXT_DIR)/manifest.json.bak
-	@sed -i.bak 's/org.opencontainers.image.version="[^"]*"/org.opencontainers.image.version="$(VERSION)"/' \
-	  apps/backend/Dockerfile && rm apps/backend/Dockerfile.bak
-	@$(MAKE) --no-print-directory version
-	@echo "next: review with 'git diff', commit, then 'make version-tag'"
+	  *) echo "the version must look like x.y.z (got '$$v')"; exit 1;; \
+	esac; \
+	for f in $(VERSION_PYPROJECTS); do \
+	  sed -i.bak "s/^version = \".*\"/version = \"$$v\"/" $$f && rm $$f.bak; \
+	done; \
+	for f in $(VERSION_MODULES); do \
+	  sed -i.bak "s/^__version__ = \".*\"/__version__ = \"$$v\"/" $$f && rm $$f.bak; \
+	done; \
+	sed -i.bak "s/version=\"[0-9][^\"]*\"/version=\"$$v\"/" \
+	  apps/mcp/content_mcp/server.py && rm apps/mcp/content_mcp/server.py.bak; \
+	sed -i.bak "s/\"version\": \"[^\"]*\"/\"version\": \"$$v\"/" \
+	  $(EXT_DIR)/manifest.json && rm $(EXT_DIR)/manifest.json.bak; \
+	sed -i.bak "s/org.opencontainers.image.version=\"[^\"]*\"/org.opencontainers.image.version=\"$$v\"/" \
+	  apps/backend/Dockerfile && rm apps/backend/Dockerfile.bak; \
+	for f in $(SDK_PIN_MANIFESTS); do \
+	  sed -i.bak "s/content-sdk==[0-9][0-9.]*/content-sdk==$$v/" $$f && rm $$f.bak; \
+	done; \
+	$(MAKE) --no-print-directory version; \
+	echo "next: review with 'git diff', commit, then 'make version-tag'"
 
-version-tag:  ## Create the annotated tag v<version> (clean tree + agreeing versions required)
+version-tag:  ## Create the annotated tag v<version> (clean tree required; asks first)
 	@test -z "$$(git status --porcelain)" || { \
 	  echo "the working tree is not clean — commit or stash first"; exit 1; }
 	@$(MAKE) --no-print-directory version >/dev/null
 	@v=$$(grep '^version = ' apps/backend/pyproject.toml | sed 's/.*"\(.*\)"/\1/'); \
+	printf 'create annotated tag v%s at %s (%s)? [y/N] ' \
+	  "$$v" "$$(git rev-parse --short HEAD)" "$$(git branch --show-current)"; \
+	read -r answer; \
+	case "$$answer" in \
+	  [yY]*) ;; \
+	  *) echo "aborted — no tag created"; exit 1;; \
+	esac; \
 	git tag -a "v$$v" -m "Content v$$v"; \
 	echo "tag v$$v created — push it deliberately with: git push origin v$$v"
 
