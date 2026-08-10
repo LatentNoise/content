@@ -82,9 +82,11 @@ of (request, analysis). That holds per member.
   guessing codecs, languages or capabilities. Correctness must not depend on
   how long a playlist is.
 - **No eager whole-collection probing.** Analysis happens as each member enters
-  execution, bounded to 1–2 concurrent members initially. The analysis cache
-  (`CONTENT_ANALYSIS_TTL_HOURS`) applies per resource, so re-submitting a
-  playlist re-reads rather than re-probes.
+  execution, bounded by `CONTENT_COLLECTION_MEMBER_CONCURRENCY` (default 2,
+  1 = strictly sequential) — a politeness bound toward the provider, since two
+  concurrent members are two concurrent downloads from the same host. The
+  analysis cache (`CONTENT_ANALYSIS_TTL_HOURS`) applies per resource, so
+  re-submitting a playlist re-reads rather than re-probes.
 - **No duplicated planner logic.** A member is planned by `build_plan`, the
   same function a single video uses. If per-item planning ever needs a rule the
   single-resource path lacks, that rule belongs in the single-resource path.
@@ -136,8 +138,16 @@ To build — small, and none of it plans:
    analyze → `build_plan` → the ordinary step loop for that member's plan, and
    binds the resulting artifacts to the collection's output id (the existing
    `per_item` binding already expresses "one output, N artifacts").
-3. **Bounded concurrency** over members, conservative to start (1–2), so a long
-   playlist does not become a probe storm against the provider.
+3. **Bounded concurrency** over members
+   (`CONTENT_COLLECTION_MEMBER_CONCURRENCY`, default 2), so a long playlist
+   does not become a probe storm against the provider. The executor dispatches
+   a run of member steps — independent by construction — to a small thread
+   pool and nothing else: what a member *is* never changes, only when it
+   starts. Under `fail_fast`, a failing required member stops members that
+   have not started; members already in flight run to completion, because a
+   valid artifact is never thrown away mid-download. Cancellation reaches
+   in-flight members through the same `cancel_check` every step already
+   honors.
 
 One question the implementation must settle rather than assume: **member
 numbering**. Today `item_label` (`001-first`) is a planner-invented parameter.
