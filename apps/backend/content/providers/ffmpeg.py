@@ -511,7 +511,15 @@ class FfmpegProvider:
     def _extract_audio(
         self, step: PlanStep, ctx: ExecutionContext
     ) -> list[ProducedFile]:
-        source = self._input_path(step, ctx)
+        # Either a file source addressed by path, or the video a dependency
+        # just acquired: the audio output of a URL is the track already inside
+        # the video the same request asked for, so it is copied out rather than
+        # downloaded a second time (D-57). Same shape as `video.cut`.
+        source = (
+            ctx.input_materials[0].path
+            if ctx.input_materials
+            else self._input_path(step, ctx)
+        )
         raw = self._probe_for_step(source, ctx)
         audio_streams = [
             s for s in (raw.get("streams") or []) if s.get("codec_type") == "audio"

@@ -286,6 +286,113 @@ def _plan_video_params(
     }
 
 
+# The runner that copies an audio track out of an already-acquired video.
+# ffmpeg is the only implementation, and the registry refuses the step if it
+# is absent — the same guarantee `video.cut` relies on.
+_AUDIO_EXTRACTOR = "ffmpeg"
+
+
+def _audio_already_in_the_video(
+    audio_output,
+    audio_languages: list[str],
+    source,
+    source_analysis,
+    request,
+    resolved,
+    providers,
+    credential_id,
+    builder,
+) -> str | None:
+    """The acquisition step whose video already carries exactly this audio.
+
+    Asking one URL for both a video and an audio output downloaded the same
+    stream twice — merged into the video, then again on its own. The waste
+    was the smaller half of the problem: a second request is a second chance
+    to be refused, and one was, losing a job's audio to a transient 403 while
+    the video beside it already held the identical stream (D-57).
+
+    Returning a step here makes the audio a ``-c:a copy`` extraction from that
+    video: the same packets, no network, and one less thing that can fail.
+
+    Every condition below is a reason to keep downloading instead. Handing
+    back a *different* audio file than the caller asked for — another
+    language, a stream cut where it wanted none — would be a worse bug than
+    fetching twice, so derivation is offered only where the extracted track is
+    provably the one the second download would have produced.
+    """
+    if isinstance(source, FileSource):
+        return None  # already an extraction; nothing is fetched twice
+    if audio_output.scope != "single":
+        return None
+    if audio_output.options.format != "source":
+        return None  # an explicit format means transcoding, which copy cannot do
+    # An installation without the extractor keeps the download it always had:
+    # an optimization must never be the reason a request stops working.
+    try:
+        extractor = providers.get(_AUDIO_EXTRACTOR)
+    except KeyError:
+        return None
+    if T.ACQUIRE_AUDIO not in getattr(extractor, "operations", ()):
+        return None
+
+    wanted_sponsorblock = _sponsorblock_params(audio_output.options.sponsorblock)
+
+    for candidate in request.outputs:
+        if candidate.type != "video" or candidate.scope != "single":
+            continue
+        candidate_sources, _ = resolved.get(candidate.id, ([], []))
+        if candidate_sources != [source.id]:
+            continue
+        # SponsorBlock is applied during acquisition, so it is baked into the
+        # file: cutting one side and not the other makes the tracks differ.
+        if _sponsorblock_params(candidate.options.sponsorblock) != wanted_sponsorblock:
+            continue
+
+        capability = output_feasibility("video", source_analysis, providers)
+        if capability.status == "unavailable":
+            continue
+        provider = providers.for_source(source)
+        if provider is None:
+            continue
+
+        # Recomputing the video's own parameters, discarding its diagnostics:
+        # the real ones are recorded when that output is planned, and issuing
+        # them twice would double every warning the caller reads.
+        drop_errors: list[ValidationIssue] = []
+        drop_warnings: list[ValidationIssue] = []
+        video_params = _plan_video_params(
+            candidate,
+            source,
+            source_analysis,
+            capability,
+            "",
+            drop_errors,
+            drop_warnings,
+        )
+        if video_params is None or drop_errors:
+            continue
+        selection = video_params.get("selection") or {}
+        if (selection.get("audio_languages") or []) != audio_languages:
+            continue  # different tracks requested; genuinely different downloads
+
+        params = _source_params(source, credential_id)
+        params.update(video_params)
+        params.update(_sponsorblock_params(candidate.options.sponsorblock))
+        # Content-addressed: this returns the step the video output plans (or
+        # will plan) for itself, whichever output the loop reaches first — so
+        # the two outputs share one download without depending on their order.
+        return builder.ensure_step(
+            operation=T.ACQUIRE_VIDEO,
+            implementation=provider.name,
+            params=params,
+            resource_key=source_analysis.resource_key,
+            source_id=source.id,
+            id_suffix=candidate.id,
+            unique_id=False,
+        )
+    return None
+
+
 # --- collections: orchestration only (ADR 0019) ---------------------------------
 #
 # A collection generates nothing. It emits one member step per member, and that
@@ -2204,6 +2311,32 @@ def _build_plan(
             if audio_langs:
                 params["audio_languages"] = audio_langs
             params.update(_sponsorblock_params(output.options.sponsorblock))
+
+            # When the same request already downloads a video carrying exactly
+            # this audio, copy the track out of it instead of fetching the
+            # stream a second time (D-57).
+            donor = _audio_already_in_the_video(
+                output,
+                audio_langs,
+                source,
+                source_analysis,
+                request,
+                resolved,
+                providers,
+                credential_id,
+                builder,
+            )
+            if donor is not None:
+                builder.bound_step(
+                    output.id,
+                    operation=_OPERATIONS[output.type],
+                    provider=_AUDIO_EXTRACTOR,
+                    source_id=source.id,
+                    params={},
+                    depends_on=[donor],
+                    resource_key=source_analysis.resource_key,
+                )
+                continue
 
         if output.type == "subtitles":
             requested = output.options.languages
