@@ -47,6 +47,11 @@ class ContentSettings:
     cache_dir: Path | None = None  # None = <data_dir>/cache
     cache_enabled: bool = False  # V1: no inter-job cache / reuse (ADR 0009)
     max_concurrent_jobs: int = 2
+    # How many members of one collection may execute at once (ADR 0019). A
+    # politeness bound toward the provider, not a throughput feature: two
+    # concurrent members are two concurrent downloads from the same host.
+    # 1 = strictly sequential members.
+    collection_member_concurrency: int = 2
     step_timeout_seconds: int = 3600
     analysis_timeout_seconds: int = 120
     analysis_ttl_hours: float = 72.0  # 3 days — URL info is cached this long
@@ -484,6 +489,9 @@ def settings_from_env() -> ContentSettings:
         cache_enabled=_to_bool(os.getenv("CONTENT_CACHE_ENABLED"), False),
         max_concurrent_jobs=max(
             1, _to_int(os.getenv("CONTENT_MAX_CONCURRENT_JOBS"), 2)
+        ),
+        collection_member_concurrency=max(
+            1, _to_int(os.getenv("CONTENT_COLLECTION_MEMBER_CONCURRENCY"), 2)
         ),
         step_timeout_seconds=_to_int(os.getenv("CONTENT_STEP_TIMEOUT_SECONDS"), 3600),
         analysis_timeout_seconds=_to_int(

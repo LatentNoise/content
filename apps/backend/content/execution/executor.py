@@ -9,11 +9,21 @@ gets its products promoted as artifacts (write-then-register — the file is
 moved into artifacts/ before the DB row exists, so a crash can never leave a
 registered-but-missing artifact); an unbound step's products stay in work/ as
 internal materials. A step whose dependency did not succeed is skipped.
+
+Collection members are the one place steps run concurrently (ADR 0019): a run
+of consecutive ``collection.member`` steps — independent by construction, no
+member depends on another — is dispatched to a small thread pool bounded by
+``CONTENT_COLLECTION_MEMBER_CONCURRENCY``. Everything else about a member step
+is the ordinary step lifecycle; the pool only changes *when* members start,
+never what a member is. Every other step keeps the strictly sequential loop.
 """
 
 import json
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 
+from content.application.collections import MEMBER_OPERATION
 from content.config import ContentSettings
 from content.domain.job import aggregate_final_status, ensure_step_transition
 from content.domain.plan import ExecutionPlan, PlanStep
@@ -31,6 +41,112 @@ from content.providers.base import (
 from content.storage.layout import DeliveryStore, JobStorage, checksum_sha256
 
 _PROGRESS_MIN_DELTA = 1.0  # percent — event throttling, HomeTube-proven
+
+
+class _RunState:
+    """The mutable state one running job's steps share.
+
+    With member concurrency the executor touches these from a thread pool, so
+    every mutation goes through a method holding the one lock. The lock guards
+    dict/flag work only — never a runner, a file move or a store call (the
+    store is safe on its own: WAL, one short-lived connection per call). Steps
+    never share ids, and member artifact names embed the member's ordinal
+    (``item_slug``), so files cannot collide either — what genuinely needs
+    protection is exactly what is here: the shared counters and flags.
+    """
+
+    def __init__(self, plan: ExecutionPlan, request: GenerationRequest):
+        self._lock = threading.Lock()
+        self._step_status = {step.id: "pending" for step in plan.steps}
+        self._produced_count = {output.id: 0 for output in request.outputs}
+        self._step_materials: dict[str, list[Material]] = {}
+        self._step_artifact_ids: dict[str, list[str]] = {}
+        self._stop_new_steps = False
+
+    def transition(self, step_id: str, target: str) -> None:
+        """Validate and record a step transition (the store write is the
+        caller's, after — the domain rule must hold before anything persists).
+        """
+        with self._lock:
+            ensure_step_transition(self._step_status[step_id], target)
+            self._step_status[step_id] = target
+
+    def status_of(self, step_id: str) -> str:
+        with self._lock:
+            return self._step_status.get(step_id, "pending")
+
+    def unfinished_steps(self) -> list[str]:
+        with self._lock:
+            return [
+                step_id
+                for step_id, status in self._step_status.items()
+                if status in ("pending", "ready")
+            ]
+
+    def record_products(
+        self, step_id: str, materials: list[Material], artifact_ids: list[str]
+    ) -> None:
+        with self._lock:
+            self._step_materials[step_id] = materials
+            self._step_artifact_ids[step_id] = artifact_ids
+
+    def inputs_for(self, step: PlanStep) -> tuple[list[Material], list[str]]:
+        with self._lock:
+            materials = [
+                material
+                for dep in step.depends_on
+                for material in self._step_materials.get(dep, [])
+            ]
+            artifact_ids = [
+                artifact_id
+                for dep in step.depends_on
+                for artifact_id in self._step_artifact_ids.get(dep, [])
+            ]
+        return materials, artifact_ids
+
+    def count_artifact(self, output_id: str) -> None:
+        with self._lock:
+            self._produced_count[output_id] = self._produced_count.get(output_id, 0) + 1
+
+    def produced_counts(self) -> dict[str, int]:
+        with self._lock:
+            return dict(self._produced_count)
+
+    def request_stop(self) -> None:
+        with self._lock:
+            self._stop_new_steps = True
+
+    @property
+    def stopping(self) -> bool:
+        with self._lock:
+            return self._stop_new_steps
+
+
+def _dispatch_groups(steps: list[PlanStep], member_limit: int):
+    """Split the ordered plan into dispatch groups.
+
+    Runs of consecutive collection-member steps become one group the executor
+    may run concurrently; every other step is a group of one, executed exactly
+    as it always was. With a limit of 1 everything is a group of one — the
+    sequential executor, unchanged. The ``depends_on`` guard is defensive: the
+    planner never gives a member step dependencies, and a step that somehow
+    had them must stay in the ordered sequential flow.
+    """
+    group: list[PlanStep] = []
+    for step in steps:
+        if (
+            member_limit > 1
+            and step.operation == MEMBER_OPERATION
+            and not step.depends_on
+        ):
+            group.append(step)
+            continue
+        if group:
+            yield group
+            group = []
+        yield [step]
+    if group:
+        yield group
 
 
 class JobExecutor:
@@ -70,11 +186,7 @@ class JobExecutor:
         max_runtime = request.constraints.resources.max_runtime_seconds
         deadline = time.monotonic() + max_runtime if max_runtime else None
         outputs_by_id = {output.id: output for output in request.outputs}
-        produced_count: dict[str, int] = {output.id: 0 for output in request.outputs}
-        step_status: dict[str, str] = {step.id: "pending" for step in plan.steps}
-        step_materials: dict[str, list[Material]] = {}
-        step_artifact_ids: dict[str, list[str]] = {}
-        stop_new_steps = False
+        state = _RunState(plan, request)
 
         # Inter-job reuse is a cache feature: inert unless the cache is enabled
         # (ADR 0009). reuse_existing=true is accepted but has no effect in V1.
@@ -82,115 +194,37 @@ class JobExecutor:
             self._settings.cache_enabled and request.execution.reuse_existing
         )
 
-        for step in plan.ordered_steps():
-            if self._store.is_cancel_requested(job_id):
-                self._finish_cancelled(job_id, plan, step_status, storage)
-                return
-
-            # Reuse is checked before the dependency gate: cached work stands
-            # on its own (the signature covers the whole upstream chain).
-            reused = (
-                self._find_reusable(job_id, step)
-                if reuse_enabled and plan.bindings_for_step(step.id)
-                else None
-            )
-
-            failed_deps = [
-                dep for dep in step.depends_on if step_status.get(dep) != "succeeded"
-            ]
-            budget_exhausted = deadline is not None and time.monotonic() > deadline
-            if stop_new_steps or budget_exhausted or (failed_deps and reused is None):
-                if budget_exhausted:
-                    reason = "job runtime budget exhausted"
-                elif failed_deps:
-                    reason = f"dependency did not succeed: {', '.join(failed_deps)}"
-                else:
-                    reason = "skipped by fail_fast policy"
-                self._move_step(job_id, step.id, step_status, "skipped")
-                self._events.publish(
-                    job_id, "step.skipped", {"step_id": step.id, "reason": reason}
-                )
-                continue
-
-            inputs = [
-                material
-                for dep in step.depends_on
-                for material in step_materials.get(dep, [])
-            ]
-            parent_artifact_ids = [
-                artifact_id
-                for dep in step.depends_on
-                for artifact_id in step_artifact_ids.get(dep, [])
-            ]
-
-            self._move_step(job_id, step.id, step_status, "ready")
-            self._move_step(
-                job_id, step.id, step_status, "running", started_at=utcnow()
-            )
-            self._events.publish(job_id, "step.started", {"step_id": step.id})
-
-            try:
-                if reused is not None:
-                    produced, reused_from_job, producer_override = reused
-                    promote_mode = "copy"
-                else:
-                    produced = self._run_step(job_id, step, storage, deadline, inputs)
-                    reused_from_job, producer_override = "", None
-                    promote_mode = "move"
-                artifact_ids, materials = self._register_products(
+        member_limit = max(1, self._settings.collection_member_concurrency)
+        for group in _dispatch_groups(list(plan.ordered_steps()), member_limit):
+            if len(group) == 1:
+                outcome = self._advance_step(
                     job_id,
-                    step,
+                    group[0],
                     plan,
-                    produced,
                     request,
                     storage,
-                    parent_artifact_ids,
-                    produced_count,
-                    promote_mode=promote_mode,
-                    producer_override=producer_override,
+                    deadline,
+                    state,
+                    reuse_enabled,
                 )
-            except StepExecutionError as exc:
-                if exc.code == "cancelled" or self._store.is_cancel_requested(job_id):
-                    self._move_step(
-                        job_id, step.id, step_status, "cancelled", finished_at=utcnow()
-                    )
-                    self._finish_cancelled(job_id, plan, step_status, storage)
-                    return
-                self._move_step(
+                cancelled = outcome == "cancelled"
+            else:
+                cancelled = self._run_member_group(
                     job_id,
-                    step.id,
-                    step_status,
-                    "failed",
-                    error=f"{exc.code}: {exc}",
-                    finished_at=utcnow(),
+                    group,
+                    plan,
+                    request,
+                    storage,
+                    deadline,
+                    state,
+                    reuse_enabled,
+                    member_limit,
                 )
-                self._events.publish(
-                    job_id,
-                    "step.failed",
-                    {
-                        "step_id": step.id,
-                        "code": exc.code,
-                        "message": str(exc),
-                        # Machine-readable context when the failure has some;
-                        # absent rather than empty so consumers can tell the
-                        # difference between "none" and "not reported".
-                        **({"details": exc.details} if exc.details else {}),
-                    },
-                )
-                if policy == "fail_fast" and step.required:
-                    stop_new_steps = True
-                continue
+            if cancelled:
+                self._finish_cancelled(job_id, plan, state, storage)
+                return
 
-            step_materials[step.id] = materials
-            step_artifact_ids[step.id] = artifact_ids
-            self._move_step(
-                job_id, step.id, step_status, "succeeded", finished_at=utcnow()
-            )
-            succeeded_data = {"step_id": step.id, "artifact_ids": artifact_ids}
-            if reused is not None:
-                succeeded_data["reused_from_job"] = reused_from_job
-            self._events.publish(job_id, "step.succeeded", succeeded_data)
-
+        produced_count = state.produced_counts()
         required_missing = any(
             count == 0 and outputs_by_id[output_id].required
             for output_id, count in produced_count.items()
@@ -208,6 +242,164 @@ class JobExecutor:
         storage.write_snapshot("result", {"status": final, "outputs": produced_count})
         storage.purge_work()
         storage.purge_tmp()
+
+    def _run_member_group(
+        self,
+        job_id: str,
+        group: list[PlanStep],
+        plan: ExecutionPlan,
+        request: GenerationRequest,
+        storage: JobStorage,
+        deadline: float | None,
+        state: _RunState,
+        reuse_enabled: bool,
+        member_limit: int,
+    ) -> bool:
+        """Run one group of member steps with bounded concurrency; True means
+        cancellation was observed and the job must finish as cancelled.
+
+        The bound is a politeness limit toward the provider, not a throughput
+        feature: two concurrent members are two concurrent downloads from the
+        same host. On cancellation, in-flight members stop through their own
+        ``cancel_check`` and everything not yet started stays pending for
+        ``_finish_cancelled`` to sweep — the same shape the sequential path
+        leaves behind. ``fail_fast`` stops members that have not started;
+        members already in flight run to completion (a valid artifact is never
+        thrown away mid-download) — see ADR 0019.
+        """
+        outcomes: list[str] = []
+        workers = min(member_limit, len(group))
+        with ThreadPoolExecutor(
+            max_workers=workers, thread_name_prefix=f"{job_id}-member"
+        ) as pool:
+            outcomes = list(
+                pool.map(
+                    lambda step: self._advance_step(
+                        job_id,
+                        step,
+                        plan,
+                        request,
+                        storage,
+                        deadline,
+                        state,
+                        reuse_enabled,
+                    ),
+                    group,
+                )
+            )
+        return "cancelled" in outcomes
+
+    def _advance_step(
+        self,
+        job_id: str,
+        step: PlanStep,
+        plan: ExecutionPlan,
+        request: GenerationRequest,
+        storage: JobStorage,
+        deadline: float | None,
+        state: _RunState,
+        reuse_enabled: bool,
+    ) -> str:
+        """One step through its full lifecycle: gate, run, register, settle.
+
+        Returns ``"cancelled"`` the moment cancellation is observed — the step
+        (if it started) is already moved to cancelled, but the *job* is not
+        finalized here: the caller does that once, after any concurrent
+        siblings have wound down. Every other outcome ("succeeded", "failed",
+        "skipped") is fully settled on return.
+        """
+        if self._store.is_cancel_requested(job_id):
+            return "cancelled"
+
+        # Reuse is checked before the dependency gate: cached work stands
+        # on its own (the signature covers the whole upstream chain).
+        reused = (
+            self._find_reusable(job_id, step)
+            if reuse_enabled and plan.bindings_for_step(step.id)
+            else None
+        )
+
+        failed_deps = [
+            dep for dep in step.depends_on if state.status_of(dep) != "succeeded"
+        ]
+        budget_exhausted = deadline is not None and time.monotonic() > deadline
+        if state.stopping or budget_exhausted or (failed_deps and reused is None):
+            if budget_exhausted:
+                reason = "job runtime budget exhausted"
+            elif failed_deps:
+                reason = f"dependency did not succeed: {', '.join(failed_deps)}"
+            else:
+                reason = "skipped by fail_fast policy"
+            self._move_step(job_id, step.id, state, "skipped")
+            self._events.publish(
+                job_id, "step.skipped", {"step_id": step.id, "reason": reason}
+            )
+            return "skipped"
+
+        inputs, parent_artifact_ids = state.inputs_for(step)
+
+        self._move_step(job_id, step.id, state, "ready")
+        self._move_step(job_id, step.id, state, "running", started_at=utcnow())
+        self._events.publish(job_id, "step.started", {"step_id": step.id})
+
+        try:
+            if reused is not None:
+                produced, reused_from_job, producer_override = reused
+                promote_mode = "copy"
+            else:
+                produced = self._run_step(job_id, step, storage, deadline, inputs)
+                reused_from_job, producer_override = "", None
+                promote_mode = "move"
+            artifact_ids, materials = self._register_products(
+                job_id,
+                step,
+                plan,
+                produced,
+                request,
+                storage,
+                parent_artifact_ids,
+                state,
+                promote_mode=promote_mode,
+                producer_override=producer_override,
+            )
+        except StepExecutionError as exc:
+            if exc.code == "cancelled" or self._store.is_cancel_requested(job_id):
+                self._move_step(
+                    job_id, step.id, state, "cancelled", finished_at=utcnow()
+                )
+                return "cancelled"
+            self._move_step(
+                job_id,
+                step.id,
+                state,
+                "failed",
+                error=f"{exc.code}: {exc}",
+                finished_at=utcnow(),
+            )
+            self._events.publish(
+                job_id,
+                "step.failed",
+                {
+                    "step_id": step.id,
+                    "code": exc.code,
+                    "message": str(exc),
+                    # Machine-readable context when the failure has some;
+                    # absent rather than empty so consumers can tell the
+                    # difference between "none" and "not reported".
+                    **({"details": exc.details} if exc.details else {}),
+                },
+            )
+            if request.execution.failure_policy == "fail_fast" and step.required:
+                state.request_stop()
+            return "failed"
+
+        state.record_products(step.id, materials, artifact_ids)
+        self._move_step(job_id, step.id, state, "succeeded", finished_at=utcnow())
+        succeeded_data = {"step_id": step.id, "artifact_ids": artifact_ids}
+        if reused is not None:
+            succeeded_data["reused_from_job"] = reused_from_job
+        self._events.publish(job_id, "step.succeeded", succeeded_data)
+        return "succeeded"
 
     def _run_step(
         self,
@@ -286,7 +478,7 @@ class JobExecutor:
         request: GenerationRequest,
         storage: JobStorage,
         parent_artifact_ids: list[str],
-        produced_count: dict[str, int],
+        state: _RunState,
         *,
         promote_mode: str = "move",
         producer_override: dict | None = None,
@@ -363,7 +555,7 @@ class JobExecutor:
                     producer_override,
                     display_filename,
                 )
-                produced_count[output.id] = produced_count.get(output.id, 0) + 1
+                state.count_artifact(output.id)
                 all_artifact_ids.append(artifact_id)
                 delivered = self._deliver_artifact(
                     plan, output, target, display_filename
@@ -477,24 +669,24 @@ class JobExecutor:
         self,
         job_id: str,
         step_id: str,
-        step_status: dict[str, str],
+        state: _RunState,
         target: str,
         **fields,
     ) -> None:
-        ensure_step_transition(step_status[step_id], target)
-        step_status[step_id] = target
+        state.transition(step_id, target)
         self._store.update_step(job_id, step_id, status=target, **fields)
 
     def _finish_cancelled(
         self,
         job_id: str,
         plan: ExecutionPlan,
-        step_status: dict[str, str],
+        state: _RunState,
         storage: JobStorage,
     ) -> None:
+        unfinished = set(state.unfinished_steps())
         for step in plan.steps:
-            if step_status[step.id] in ("pending", "ready"):
-                self._move_step(job_id, step.id, step_status, "cancelled")
+            if step.id in unfinished:
+                self._move_step(job_id, step.id, state, "cancelled")
         self._store.transition_job(job_id, "cancelled", finished_at=utcnow())
         self._events.publish(job_id, "job.cancelled", {})
         storage.purge_work()
