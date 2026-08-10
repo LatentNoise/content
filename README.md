@@ -82,8 +82,7 @@ become.**
 
 ## Quick start
 
-Docker is the only prerequisite — no clone, nothing to build. The published
-images come from GitHub Container Registry:
+Docker is the only prerequisite — nothing to clone, nothing to build:
 
 ```bash
 mkdir content && cd content
@@ -92,31 +91,7 @@ curl -fsSL -o .env https://raw.githubusercontent.com/LatentNoise/content/main/.e
 docker compose up -d
 ```
 
-Open **HomeTube at <http://localhost:8501>**. The API and its Swagger docs are
-available at <http://localhost:8010/docs>. Upgrades are
-`docker compose pull && docker compose up -d`.
-
-<details>
-<summary><b>From source instead</b> (developers, or to build the optional
-speech-to-text runner)</summary>
-
-```bash
-git clone https://github.com/LatentNoise/content.git
-cd content
-cp .env.example .env
-docker compose up -d --build
-```
-
-The repository's root `docker-compose.yml` carries `build:` blocks beside the
-same images; `deploy/docker-compose.yml` is its build-free twin, kept in
-lockstep by a test.
-
-</details>
-
-Data persists in `./data`. Finished artifacts are delivered by default to
-`./playground/output`; set `CONTENT_DELIVERY_DIR_HOST` in `.env` to use your
-media library instead — its sub-folders become the destination choices offered
-in the web apps.
+Four services start from the published images:
 
 | Service | Default URL | Purpose |
 | --- | --- | --- |
@@ -125,10 +100,35 @@ in the web apps.
 | Content Console | <http://localhost:8503> | Operations and job control; does not create downloads |
 | Content API | <http://localhost:8010/docs> | REST API, OpenAPI, and embedded worker |
 
-All four start by default. The engine and Content Console always run; the
-`COMPOSE_PROFILES` line in `.env` chooses the download UIs — keep the default
-`hometube,studio`, or set it to just `hometube` or just `studio` to run a
-single one.
+The engine and Content Console always run; the `COMPOSE_PROFILES` line in
+`.env` chooses the download UIs — keep the default `hometube,studio`, or set
+it to just one of them.
+
+**Where your files land.** Everything stays in the folder you created:
+`./data` holds the database, the jobs and the artifacts, and finished files
+are delivered to `./playground/output` — both created on first start. To
+deliver straight into your own library instead — a NAS share, a Plex or
+Jellyfin folder — set `CONTENT_DELIVERY_DIR_HOST` in `.env`; its sub-folders
+become the destination choices offered in the web apps.
+
+**Staying up to date.** `docker compose pull && docker compose up -d`.
+
+<details>
+<summary><b>Build from source instead</b> — for development, or to include the
+optional speech-to-text runner</summary>
+
+```bash
+git clone https://github.com/LatentNoise/content.git
+cd content
+cp .env.example .env
+docker compose up -d --build
+```
+
+The repository's `docker-compose.yml` adds `build:` blocks beside the same
+images; [`deploy/docker-compose.yml`](deploy/docker-compose.yml) is its
+build-free twin for the install above, kept identical by a test.
+
+</details>
 
 ## What Content can produce
 
@@ -182,7 +182,7 @@ inventory.
 - **[Content Console](apps/web-admin/README.md)** — inspect health, runners,
   configuration, storage, jobs, events, and logs; cancel or retry jobs.
 - **[Python SDK](packages/python-sdk/README.md)** — the typed sync and async
-  client used by the Python applications.
+  client used by the Python applications: `pip install content-sdk`.
 - **[CLI](apps/cli/README.md)** — ergonomic commands for analysis, generation,
   job tracking, scripts, and raw requests: `uv tool install content-cli`
   (or `pipx install content-cli`).
