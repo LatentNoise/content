@@ -30,7 +30,7 @@ LABEL org.opencontainers.image.base.name="docker.io/jauderho/yt-dlp:${YTDLP_BASE
     org.opencontainers.image.source="https://github.com/LatentNoise/content" \
     org.opencontainers.image.authors="Yann Orieult" \
     org.opencontainers.image.url="https://github.com/LatentNoise/content" \
-    org.opencontainers.image.version="0.3.0"
+    org.opencontainers.image.version="0.3.1"
 
 # ttf-dejavu: PDF output for non-Latin scripts. Without a Unicode font the
 # renderer falls back to Helvetica, which draws Latin-1 only — a Japanese or
@@ -140,9 +140,16 @@ mkdir -p /data
 addgroup -g 1000 content
 adduser -D -s /bin/sh -u 1000 -G content content
 chown -R content:content /app /data
+# Privilege dropper for the entrypoint: the container starts as root only
+# long enough to make the mounted state writable (see docker-entrypoint.sh).
+apk add --no-cache su-exec
 SH
 
-USER content
+COPY --chmod=0755 apps/backend/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+
+# No `USER content` here: the entrypoint drops to that user itself, after
+# adopting bind mounts Docker created as root. Anything the image runs still
+# runs unprivileged — `docker compose exec content id` reports uid 1000.
 
 ENV CONTENT_DATA_DIR=/data \
     CONTENT_DB_PATH=/data/content.db \
@@ -152,5 +159,5 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=5 \
     CMD curl -fsS http://127.0.0.1:8000/api/v1/health || exit 1
 
-ENTRYPOINT ["/sbin/tini", "--"]
+ENTRYPOINT ["/sbin/tini", "--", "/usr/local/bin/docker-entrypoint.sh"]
 CMD ["python3", "-m", "uvicorn", "content.api.app:app", "--host", "0.0.0.0", "--port", "8000"]
