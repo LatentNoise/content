@@ -82,17 +82,36 @@ become.**
 
 ## Quick start
 
-Docker is the only prerequisite:
+Docker is the only prerequisite — no clone, nothing to build. The published
+images come from GitHub Container Registry:
+
+```bash
+mkdir content && cd content
+curl -fsSLO https://raw.githubusercontent.com/LatentNoise/content/main/deploy/docker-compose.yml
+curl -fsSL -o .env https://raw.githubusercontent.com/LatentNoise/content/main/.env.example
+docker compose up -d
+```
+
+Open **HomeTube at <http://localhost:8501>**. The API and its Swagger docs are
+available at <http://localhost:8010/docs>. Upgrades are
+`docker compose pull && docker compose up -d`.
+
+<details>
+<summary><b>From source instead</b> (developers, or to build the optional
+speech-to-text runner)</summary>
 
 ```bash
 git clone https://github.com/LatentNoise/content.git
 cd content
 cp .env.example .env
-docker compose up --build
+docker compose up -d --build
 ```
 
-Open **HomeTube at <http://localhost:8501>**. The API and its Swagger docs are
-available at <http://localhost:8010/docs>.
+The repository's root `docker-compose.yml` carries `build:` blocks beside the
+same images; `deploy/docker-compose.yml` is its build-free twin, kept in
+lockstep by a test.
+
+</details>
 
 Data persists in `./data`. Finished artifacts are delivered by default to
 `./playground/output`; set `CONTENT_DELIVERY_DIR_HOST` in `.env` to use your
