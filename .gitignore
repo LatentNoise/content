@@ -69,6 +69,9 @@ config/*
 media/*
 !media/README.md
 
+# Ignore social communications
+social-communications/*
+
 # Playground: everything in input/ and output/ is supplied or produced by a
 # local run (media, cookies, job folders, summaries…). The allowlist above would
 # otherwise let a generated *.md / *.csv / *.py slip in — pgverify's `sum.md`
