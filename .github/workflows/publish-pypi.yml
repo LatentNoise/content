@@ -21,7 +21,7 @@ on:
       repository:
         description: "Which index to publish to"
         required: true
-        default: testpypi
+        default: pypi
         type: choice
         options: [testpypi, pypi]
       only:
