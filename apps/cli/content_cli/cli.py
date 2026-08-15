@@ -16,6 +16,21 @@ from content_sdk.resources import TERMINAL_STATUSES
 from content_cli import __version__
 from content_cli.builders import audio_request, video_request
 
+# Exit codes for a watched job (ADR 0021). Three outcomes, three codes: a
+# script chaining on success must not proceed as if everything arrived, and it
+# should still be able to tell "some of it worked" from "none of it did".
+EXIT_OK = 0
+EXIT_FAILED = 1
+EXIT_PARTIAL = 2
+
+
+def _exit_code_for(status: str) -> int:
+    if status == "succeeded":
+        return EXIT_OK
+    if status == "partially_succeeded":
+        return EXIT_PARTIAL
+    return EXIT_FAILED
+
 
 def _out(obj, as_json: bool) -> None:
     print(json.dumps(obj, indent=2, ensure_ascii=False) if as_json else obj)
@@ -38,6 +53,11 @@ def _watch(client: ContentClient, job_id: str) -> str:
         status = client.get_job(job_id).status
         if status in TERMINAL_STATUSES:
             print(f"→ {status}")
+            if status == "partially_succeeded":
+                print(
+                    f"  some steps failed — inspect them with: content job {job_id}",
+                    file=sys.stderr,
+                )
             return status
         time.sleep(2.0)
 
@@ -49,7 +69,7 @@ def _submit_and_maybe_watch(client: ContentClient, request: dict, args) -> int:
     print(job.id)
     if getattr(args, "watch", False):
         status = _watch(client, job.id)
-        return 0 if status in ("succeeded", "partially_succeeded") else 1
+        return _exit_code_for(status)
     return 0
 
 
@@ -239,7 +259,7 @@ def run(argv: list[str], client: ContentClient) -> int:
         _out(job, True) if args.json else _print_job(job)
     elif cmd == "watch":
         status = _watch(client, args.job_id)
-        return 0 if status in ("succeeded", "partially_succeeded") else 1
+        return _exit_code_for(status)
     elif cmd == "artifacts":
         arts = client.artifacts(args.job_id)
         if args.json:

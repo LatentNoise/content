@@ -69,3 +69,19 @@ content cancel <job_id> ; content retry <job_id>
 
 Global flags: `--api-url URL` and `--json` (raw JSON output) go before the
 subcommand. Exit code is non-zero on API errors or a failed watched job.
+
+## Exit codes when watching a job
+
+`content ... --watch` and `content watch <job>` return the outcome, so a script
+can chain on it (ADR 0021):
+
+| Code | Meaning |
+| --- | --- |
+| `0` | `succeeded` — everything asked for was produced |
+| `2` | `partially_succeeded` — some of it was, and at least one step failed |
+| `1` | `failed` or `cancelled` |
+
+`2` is deliberately distinct from `1`. A playlist that yielded five videos of
+six, or a download whose delivery into your library was refused, is not a
+failure — but it is not a success either, and a script that treats it as one
+will quietly move on with missing files.
