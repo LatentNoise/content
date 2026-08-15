@@ -33,6 +33,7 @@ from content.analysis.service import (
 )
 from content.application.collections import attach_collection_runner
 from content.application.submit import submit_generation
+from content.application.uploads import sweep_expired_uploads
 from content.capabilities.facts import facts_from_analysis
 from content.capabilities.inventory import describe_architecture
 from content.capabilities.policy import (
@@ -317,7 +318,14 @@ def create_app(
     attach_collection_runner(providers, analysis_service, settings)
     capability_resolver = CapabilityResolver(build_registry(providers), providers)
     executor = JobExecutor(store, settings, providers)
-    queue = JobQueue(store, executor.execute, settings.max_concurrent_jobs)
+    # Housekeeping runs beside the queue: uploads nobody referenced within
+    # their TTL are collected, which ADR 0020 promised and 0.5.0 did not do.
+    queue = JobQueue(
+        store,
+        executor.execute,
+        settings.max_concurrent_jobs,
+        sweeper=lambda: sweep_expired_uploads(store, settings),
+    )
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):

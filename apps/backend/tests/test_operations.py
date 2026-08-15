@@ -352,8 +352,11 @@ def test_system_endpoint_reports_inventory(client):
 
 def test_storage_endpoint_reports_families(client):
     body = client.get("/api/v1/storage").json()
-    assert set(body) == {"jobs", "delivery", "tmp", "cache"}
+    # Five since ADR 0020: uploads are their own lifecycle, and an operator
+    # asking "what is using my disk" must be able to see them.
+    assert set(body) == {"jobs", "delivery", "tmp", "uploads", "cache"}
     assert "bytes" in body["jobs"] and "count" in body["jobs"]
+    assert {"bytes", "count", "ttl_hours"} <= set(body["uploads"])
 
 
 def test_identical_playlist_reuses_every_entry(pipeline):

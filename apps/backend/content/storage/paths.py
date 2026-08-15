@@ -79,7 +79,7 @@ def _dir_stats(path: Path) -> dict:
 def storage_report(settings) -> dict:
     """Disk usage per storage family for observability (admin console).
 
-    Reports the four lifecycles (docs/storage.md) plus a couple of useful
+    Reports the five lifecycles (docs/storage.md) plus a couple of useful
     sub-counts (job count, cached analyses, delivery folders)."""
     paths = StoragePaths.from_settings(settings)
     delivery_root = Path(settings.delivery_dir or settings.data_dir / "delivery")
@@ -98,6 +98,14 @@ def storage_report(settings) -> dict:
         if delivery_root.exists()
         else 0
     )
+    uploads_root = Path(
+        getattr(settings, "uploads_dir", None) or settings.data_dir / "uploads"
+    )
+    upload_count = (
+        sum(1 for p in uploads_root.iterdir() if p.is_dir())
+        if uploads_root.exists()
+        else 0
+    )
     return {
         "jobs": {**jobs, "count": job_count, "path": str(paths.jobs_root)},
         "delivery": {
@@ -106,6 +114,15 @@ def storage_report(settings) -> dict:
             "path": str(delivery_root),
         },
         "tmp": {**_dir_stats(paths.tmp_root), "path": str(paths.tmp_root)},
+        # The fifth family (ADR 0020). Reported so "why is my disk full" has an
+        # answer without a shell, and so an operator can see the sweep working.
+        "uploads": {
+            **_dir_stats(uploads_root),
+            "count": upload_count,
+            "ttl_hours": getattr(settings, "upload_ttl_hours", 0),
+            "quota_bytes": getattr(settings, "uploads_total_bytes", 0),
+            "path": str(uploads_root),
+        },
         "cache": {
             **_dir_stats(paths.cache_root),
             "enabled": paths.cache_enabled,
