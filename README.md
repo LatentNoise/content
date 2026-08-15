@@ -75,6 +75,47 @@ sources, and it does not expose the broader document workflow or PDF output.
 For those workflows, use Content Studio, the API, CLI, or SDK. **HomeTube is a
 Content client, not a layer every Content user must pass through.**
 
+### Configuring HomeTube
+
+HomeTube has no settings of its own: it reads the engine's configuration, so
+everything below goes in the `.env` next to your `docker-compose.yml`. These
+are the ones that change what you see; the
+[full table](docs/operations/deployment.md#configuration-a-root-env-not-versioned)
+lists every variable.
+
+| Variable | Default | What it changes in HomeTube |
+| --- | --- | --- |
+| `CONTENT_DELIVERY_DIR_HOST` | `./playground/output` | Where finished files land. Point it at your Plex/Jellyfin/Emby library and its sub-folders become the destination choices in the form |
+| `CONTENT_LANGUAGE_PRIMARY` | — | The language you speak: first in the audio order and pre-selected |
+| `CONTENT_LANGUAGES_SECONDARIES` | — | `en,es` — offered and pre-selected after the primary |
+| `CONTENT_VO_FIRST` | `true` | Put the original voice ahead of your own language |
+| `CONTENT_LANGUAGE_PRIMARY_INCLUDED_IN_SUBTITLES` | `true` (the shipped `.env` sets `false`) | Whether your primary language is also pre-checked in the subtitle list |
+| `CONTENT_CREDENTIALS` | — | `youtube=/config/cookies.txt` — a cookie file for age-restricted or members-only videos. The file never leaves the server; HomeTube only shows its id |
+| `COMPOSE_PROFILES` | `hometube,studio` | Which UIs start. `hometube` alone runs HomeTube only |
+| `HOMETUBE_PORT` | `8501` | The host port HomeTube listens on |
+
+**What the language settings actually do**, since the effect is easier to read
+than the rule. With:
+
+```bash
+CONTENT_LANGUAGE_PRIMARY=fr
+CONTENT_LANGUAGES_SECONDARIES=en,es
+CONTENT_VO_FIRST=true
+CONTENT_LANGUAGE_PRIMARY_INCLUDED_IN_SUBTITLES=false
+```
+
+on a Japanese talk that offers `ja`/`en` audio and `ja`/`fr`/`en`/`de`
+subtitles, HomeTube shows **audio** ordered `ja, en` — the original voice
+first because `VO_FIRST` is on, then your languages — with both pre-selected.
+For **subtitles** it pre-checks `en` only: the original voice never applies to
+subtitles, `de` is not one of your languages, and `fr` is left out because
+`…_INCLUDED_IN_SUBTITLES=false` — someone fluent in French does not need French
+subtitles but still wants the English ones. Set it to `true` and `fr, en` are
+both pre-checked.
+
+Nothing is ever pre-selected that the source does not actually offer, and every
+default remains editable in the form before you launch the job.
+
 ## One source, many artifacts
 
 The same engine serves media and document workflows:

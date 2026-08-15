@@ -128,10 +128,13 @@ console are not listed there because they always run.
 | `CONTENT_CACHE_ENABLED` | `false` (compose: `true`) | URL JSON cache + video reuse ([storage.md](../storage.md), ADR 0010) |
 | `CONTENT_ANALYSIS_TTL_HOURS` | `72` | How long a URL analysis is cached (3 days) |
 | **🗣️ Language preferences** | | |
-| `CONTENT_LANGUAGE_PRIMARY` | — | The primary audio language (a client default) |
-| `CONTENT_LANGUAGES_SECONDARIES` | — | Secondary languages `fr,es` (audio + subtitles) |
-| `CONTENT_VO_FIRST` | `true` | Original voice first in the track order |
-| `CONTENT_LANGUAGE_PRIMARY_INCLUDED_IN_SUBTITLES` | `true` | Include the primary language in the default subtitle selection |
+| `CONTENT_LANGUAGE_PRIMARY` | — | The language this installation speaks. Ordered first (after the original voice) and pre-selected in the UIs, for **audio and subtitles** |
+| `CONTENT_LANGUAGES_SECONDARIES` | — | Secondary languages `en,es` — offered and pre-selected after the primary (audio + subtitles) |
+| `CONTENT_VO_FIRST` | `true` | Original voice ahead of the primary language in the track order |
+| `CONTENT_LANGUAGE_PRIMARY_INCLUDED_IN_SUBTITLES` | `true` (`.env.example`: `false`) | Whether the primary language is pre-checked among subtitles too. `false` excludes **only** the primary — the secondaries keep pre-filling, because someone fluent in `fr` does not need `fr` subtitles but wants the `en` ones |
+
+A worked example of the four together — what a given source ends up showing —
+is in [HomeTube's README](../../apps/web-hometube/README.md#language-preferences-by-example).
 | **🧠 Providers & LLM runners** | | |
 | `CONTENT_YTDLP_EXTRA_ARGS` | — | The operator's yt-dlp args (trusted), added to every call |
 | `CONTENT_OLLAMA_URL` / `_MODEL` | host / auto | The **local** LLM for `summary`, `translation` and derived `chapters`. Empty model = the first installed one, resolved deterministically and recorded in provenance |
