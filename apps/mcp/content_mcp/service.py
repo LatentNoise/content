@@ -90,11 +90,39 @@ def _output_from_spec(spec: Any) -> dict[str, Any]:
 # --- tools --------------------------------------------------------------------
 
 
+def _looks_like_url(value: str) -> bool:
+    return "://" in value.split("?", 1)[0][:12]
+
+
+def _source_for(client: ContentClient, source: str, credential: str | None):
+    """A URL stays a URL; a local file is uploaded and becomes an upload source.
+
+    A path handed to this server is **always a path on this machine** — the one
+    running the MCP process. It is never assumed to mean the same thing on the
+    engine, because identical path strings on two hosts do not imply identical
+    filesystems, and guessing wrong would either fail confusingly or, worse,
+    read a different file. So a local file is always uploaded (ADR 0020).
+
+    Note what that means: the named file is read and sent to the engine the
+    user configured. That is the point of the feature, and it is why the tool
+    description says so plainly — an agent should choose it deliberately.
+    """
+    if _looks_like_url(source):
+        return outputs.url_source(source, credential_id=credential)
+    path = Path(source).expanduser()
+    if not path.is_file():
+        raise ValueError(
+            f"'{source}' is neither a URL nor a file on this machine. "
+            "Give a URL, or a path that exists where this MCP server runs."
+        )
+    return client.upload_file(path)
+
+
 def analyze_source(
     client: ContentClient, url: str, credential: str | None = None
 ) -> dict[str, Any]:
-    """Analyze a URL and report what it is + what can be produced from it."""
-    analysis = client.analyze(outputs.url_source(url, credential_id=credential))
+    """Analyze a URL **or a local file** and report what can be produced."""
+    analysis = client.analyze(_source_for(client, url, credential))
     caps = client.get_capabilities(analysis.id)
     entry = analysis.sources[0]
     return {
