@@ -19,9 +19,11 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
+from content.config import uploads_root
 from content.domain import errors as codes
 from content.domain.errors import ValidationIssue
 from content.domain.request import FileSource, SourceDescriptor, UploadSource
+from content.storage.layout import UploadStore
 
 
 def resolve_upload_sources(
@@ -110,3 +112,45 @@ def resolve_request_uploads(request, store, settings):
             ValidationResult(valid=False, phase="feasibility", errors=issues)
         )
     return request.model_copy(update={"sources": resolved})
+
+
+def sweep_expired_uploads(store, settings) -> dict:
+    """Delete uploads no job has referenced within the TTL.
+
+    ADR 0020 promised this and 0.5.0 shipped only half of it: an expired upload
+    was *refused* at resolution, but its bytes stayed on disk forever. A
+    documented TTL that deletes nothing is a bug, not a missing feature.
+
+    **Row first, then directory.** A crash between the two then leaves an
+    orphan directory — invisible, reclaimable, harmless — rather than a row
+    pointing at bytes that are gone, which would answer a later job with a
+    confusing "file not found" instead of the honest `upload_expired`. Orphans
+    from an earlier crash are swept here too, which makes the pass
+    self-healing.
+
+    Never silent: the caller logs what was removed. Deleting a user's file
+    without a trace is precisely what should leave one.
+    """
+    ttl = getattr(settings, "upload_ttl_hours", 0) or 0
+    uploads = UploadStore(uploads_root(settings))
+    removed, reclaimed = 0, 0
+
+    if ttl > 0:
+        cutoff = (datetime.now(timezone.utc) - timedelta(hours=ttl)).isoformat()
+        for row in store.expired_uploads(cutoff):
+            store.delete_upload(row["id"])
+            uploads.remove(row["id"])
+            removed += 1
+            reclaimed += int(row.get("size_bytes") or 0)
+
+    orphans = 0
+    if uploads.root.exists():
+        for directory in uploads.root.iterdir():
+            if directory.is_dir() and store.get_upload(directory.name) is None:
+                reclaimed += sum(
+                    p.stat().st_size for p in directory.rglob("*") if p.is_file()
+                )
+                uploads.remove(directory.name)
+                orphans += 1
+
+    return {"removed": removed, "orphans": orphans, "bytes_reclaimed": reclaimed}
