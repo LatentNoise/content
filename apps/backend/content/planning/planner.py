@@ -580,21 +580,60 @@ def _resolve_transcript_language(
     requested: str,
     subtitle_details: dict,
     resource_languages: list[str],
+    preferred_languages: tuple[str, ...] = (),
 ) -> str | None:
-    """Deterministic language choice: explicit request wins; `auto` prefers a
-    manual track matching the resource language, then the first manual track,
-    then the first automatic one."""
+    """Deterministic language choice for a transcript.
+
+    An explicit request always wins. For ``auto``, a transcript is the text of
+    what is actually *said*, so the order chases the source's own language and
+    keeps alphabetical order as a genuine last resort:
+
+    1. the language analysis reports for the resource, from either kind of
+       track — when we know what was spoken, nothing else can beat it;
+    2. otherwise, among **manual** tracks: an operator-configured language
+       (``CONTENT_LANGUAGE_PRIMARY`` and its secondaries), then English, then
+       the first one. A hand-written track is almost always in the video's own
+       language, which makes it the best available stand-in for step 1;
+    3. only if no manual track exists at all, the same order among automatic
+       ones.
+
+    Note what this deliberately does *not* do: a French installation asking for
+    a transcript of an English video gets the English one, not a machine
+    translation into French. Preferences choose among what was genuinely said;
+    they do not turn a transcript into a translation. Ask for a `translation`
+    output for that.
+
+    Why the order matters (D-58): YouTube offers auto-*translated* subtitles in
+    around a hundred languages, so "the first track" used to resolve to ``aa``
+    (Afar) for an ordinary English video. The engine then downloaded Afar
+    subtitles and called the result a transcript — silently wrong, which is
+    worse than failing.
+    """
     manual = sorted(subtitle_details.get("manual", []))
     automatic = sorted(subtitle_details.get("automatic", []))
     if requested != "auto":
         return requested
-    for lang in resource_languages:
-        if lang in manual:
-            return lang
-    if manual:
-        return manual[0]
-    if automatic:
-        return automatic[0]
+
+    # 1. what the source is known to be in, whoever wrote the track.
+    for candidate in resource_languages:
+        if candidate and candidate in (set(manual) | set(automatic)):
+            return candidate
+
+    # Deduplicate while keeping the order; a language named twice must not let
+    # a later, weaker signal jump the queue.
+    ordered: list[str] = []
+    for lang in (*preferred_languages, "en"):
+        if lang and lang not in ordered:
+            ordered.append(lang)
+
+    # 2. then 3. — human tracks first, machine ones only if there are none.
+    for tracks in (manual, automatic):
+        if not tracks:
+            continue
+        for candidate in ordered:
+            if candidate in tracks:
+                return candidate
+        return tracks[0]  # deterministic, and only ever within one kind
     return None
 
 
@@ -625,6 +664,7 @@ def _transcript_chain(
     errors: list[ValidationIssue],
     warnings: list[ValidationIssue],
     credential_id: str | None = None,
+    preferred_languages: tuple[str, ...] = (),
 ) -> tuple[str, str, str, str | None, str] | None:
     """Feasibility + the acquisition chain feeding a transcript, for BOTH
     variants (R3: the same order the resolver selects — subtitles when present,
@@ -689,7 +729,10 @@ def _transcript_chain(
         )
 
     language = _resolve_transcript_language(
-        requested_language, subtitle_details, source_analysis.resource.languages
+        requested_language,
+        subtitle_details,
+        source_analysis.resource.languages or [],
+        preferred_languages,
     )
     if language is None:
         # Unknown capability (e.g. direct URL): attempt a sensible default.
@@ -869,6 +912,7 @@ def _plan_transcript(
     errors: list[ValidationIssue],
     warnings: list[ValidationIssue],
     credential_id: str | None = None,
+    preferred_languages: tuple[str, ...] = (),
 ) -> None:
     path = f"outputs[{index}]"
     options = output.options
@@ -954,6 +998,7 @@ def _plan_transcript(
         errors,
         warnings,
         credential_id,
+        preferred_languages,
     )
     if chain is None:
         return
@@ -1068,6 +1113,7 @@ def _plan_summary(
     errors: list[ValidationIssue],
     warnings: list[ValidationIssue],
     credential_id: str | None = None,
+    preferred_languages: tuple[str, ...] = (),
 ) -> None:
     path = f"outputs[{index}]"
     options = output.options
@@ -1170,6 +1216,7 @@ def _plan_summary(
             errors,
             warnings,
             credential_id,
+            preferred_languages,
         )
         if chain is None:
             return
@@ -1789,6 +1836,7 @@ def _plan_chapters(
     errors: list[ValidationIssue],
     warnings: list[ValidationIssue],
     credential_id: str | None = None,
+    preferred_languages: tuple[str, ...] = (),
 ) -> None:
     from content.processors.chapters import ChaptersProcessor
 
@@ -1895,6 +1943,7 @@ def _plan_chapters(
         errors,
         warnings,
         credential_id,
+        preferred_languages,
     )
     if chain is None:
         return
@@ -1995,6 +2044,14 @@ def _build_plan(
 ) -> ExecutionPlan:
     errors: list[ValidationIssue] = []
     warnings: list[ValidationIssue] = []
+    # What this installation reads, in order — used when a text output has to
+    # choose a language for itself (`language: "auto"`). Configured once by the
+    # operator; the request always outranks it.
+    preferred_languages = tuple(
+        language
+        for language in (settings.language_primary, *settings.languages_secondaries)
+        if language
+    )
     builder = PlanBuilder(
         {output.id: output.required for output in request.outputs},
         registry=build_registry(providers),
@@ -2162,6 +2219,7 @@ def _build_plan(
                 errors,
                 warnings,
                 credential_id,
+                preferred_languages,
             )
             continue
 
@@ -2180,6 +2238,7 @@ def _build_plan(
                 errors,
                 warnings,
                 credential_id,
+                preferred_languages,
             )
             continue
 
@@ -2198,6 +2257,7 @@ def _build_plan(
                 errors,
                 warnings,
                 credential_id,
+                preferred_languages,
             )
             continue
 
