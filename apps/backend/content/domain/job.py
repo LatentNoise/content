@@ -64,17 +64,30 @@ def aggregate_final_status(
     required_missing: bool,
     optional_missing: bool,
     any_artifact_produced: bool,
+    any_step_failed: bool = False,
 ) -> JobStatus:
     """Terminal status of a run that was not cancelled (docs/domain.md §4).
 
     ``required_missing``: at least one required output produced no artifact.
     ``optional_missing``: at least one optional output produced no artifact.
+    ``any_step_failed``: at least one step ended `failed`, whatever the
+    outputs ended up containing.
+
+    **`succeeded` means everything asked for happened** (ADR 0021). The rule
+    used to read only the outputs, which let two real situations report success
+    dishonestly: a playlist where one member died still had a non-empty output,
+    and a delivery refused by a library owned by another user failed its step
+    *after* the artifact had been counted — leaving an operator with a green
+    job and an empty library. A failed step can now only soften a `succeeded`
+    into `partially_succeeded`; it never turns a `failed` into anything milder.
     """
     if failure_policy == "best_effort":
         if not required_missing and not optional_missing:
-            return "succeeded"
+            return "partially_succeeded" if any_step_failed else "succeeded"
         return "partially_succeeded" if any_artifact_produced else "failed"
     # fail_fast and required_only: success demands every required output.
     if required_missing:
         return "failed"
-    return "partially_succeeded" if optional_missing else "succeeded"
+    if optional_missing or any_step_failed:
+        return "partially_succeeded"
+    return "succeeded"

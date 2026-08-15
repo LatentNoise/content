@@ -108,6 +108,16 @@ class _RunState:
         with self._lock:
             self._produced_count[output_id] = self._produced_count.get(output_id, 0) + 1
 
+    def any_step_failed(self) -> bool:
+        """Did any step end `failed`? (ADR 0021.)
+
+        Read from the recorded statuses rather than tracked by a flag: skipped
+        steps must not count — under `fail_fast` they were never attempted —
+        and cancelled ones end the job by another path entirely.
+        """
+        with self._lock:
+            return any(status == "failed" for status in self._step_status.values())
+
     def produced_counts(self) -> dict[str, int]:
         with self._lock:
             return dict(self._produced_count)
@@ -235,7 +245,11 @@ class JobExecutor:
         )
         any_artifact = any(count > 0 for count in produced_count.values())
         final = aggregate_final_status(
-            policy, required_missing, optional_missing, any_artifact
+            policy,
+            required_missing,
+            optional_missing,
+            any_artifact,
+            any_step_failed=state.any_step_failed(),
         )
         self._store.transition_job(job_id, final, finished_at=utcnow())
         self._events.publish(job_id, f"job.{final}", {"outputs": produced_count})

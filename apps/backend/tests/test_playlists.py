@@ -348,11 +348,14 @@ def test_members_get_isolated_workdirs(pipeline, store, monkeypatch):
     assert len(parents) == 1, "member workdirs must share the job workdir"
 
 
-def test_one_incapable_member_does_not_spoil_the_others(pipeline, store, monkeypatch):
+def test_one_incapable_member_is_admitted_not_hidden(pipeline, store, monkeypatch):
     """A heterogeneous playlist: one member cannot satisfy the requested
-    output. It gets the ordinary structured failure for that member, and the
-    members that can are produced normally — no optimistic guessing, no
-    collection-wide abort."""
+    output. The members that can are produced normally — no optimistic
+    guessing, no collection-wide abort — and the job says so.
+
+    Renamed with ADR 0021: the capable members are still not spoiled, but
+    the job no longer reports plain success while one member died. Asking
+    for six videos and receiving five is not "succeeded"."""
     from tests.conftest import FakeProvider
 
     original = FakeProvider.analyze
@@ -371,10 +374,10 @@ def test_one_incapable_member_does_not_spoil_the_others(pipeline, store, monkeyp
 
     job_id = pipeline(_each_item_video_payload())
 
-    # The output produced *something*, so the job succeeds: the aggregate rule
-    # counts outputs, not members. What the collection owes the caller is the
-    # per-member truth, and that is in the events below.
-    assert store.get_job(job_id)["status"] == "succeeded"
+    # The output produced *something*, but a step failed — so the honest
+    # terminal status is partial, not success (ADR 0021). The per-member
+    # detail is in the events below; the status is what a script reads.
+    assert store.get_job(job_id)["status"] == "partially_succeeded"
 
     artifacts = store.list_artifacts(job_id)
     assert len(artifacts) == 1, "the capable member is still produced"
