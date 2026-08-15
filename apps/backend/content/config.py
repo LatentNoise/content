@@ -140,6 +140,13 @@ class ContentSettings:
     credentials: dict[str, Path] = field(default_factory=dict)
 
 
+def uploads_root(settings: "ContentSettings") -> Path:
+    """Where the engine keeps client uploads. Engine-owned, so it is always
+    readable back — and deliberately NOT part of `allowed_input_roots`, which
+    is the operator's policy for `file` sources (ADR 0020)."""
+    return settings.uploads_dir or (settings.data_dir / "uploads")
+
+
 def _parse_credentials(raw: str | None) -> dict[str, Path]:
     """Parse ``CONTENT_CREDENTIALS`` (``id=path,id2=path2``). Malformed entries
     are skipped so a bad value never prevents startup."""

@@ -10,6 +10,7 @@ from datetime import datetime, timedelta, timezone
 from pydantic import TypeAdapter
 
 from content.analysis.cache import AnalysisJsonCache
+from content.application.uploads import resolve_upload_sources
 from content.config import ContentSettings
 from content.domain import errors as codes
 from content.domain.analysis import (
@@ -82,6 +83,18 @@ class AnalysisService:
         Raises RequestRejected (feasibility phase) when a source cannot be
         analyzed — unsupported type or provider failure.
         """
+        # An `upload` source stands for bytes the engine already holds: swap it
+        # for that file before anything dispatches on source type, so every
+        # provider sees an ordinary file and none learns uploads exist
+        # (ADR 0020). Unresolvable uploads are refused here, with their own
+        # codes rather than a generic "unsupported type".
+        sources, upload_issues = resolve_upload_sources(
+            list(sources), self._store, self._settings
+        )
+        if upload_issues:
+            raise RequestRejected(
+                ValidationResult(valid=False, phase="feasibility", errors=upload_issues)
+            )
         results: list[SourceAnalysis] = []
         issues: list[ValidationIssue] = []
         credential_ids = set(self._settings.credentials)

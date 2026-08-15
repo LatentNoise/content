@@ -18,6 +18,7 @@ from __future__ import annotations
 import hashlib
 from pathlib import Path
 
+from content.config import uploads_root
 from content.domain import errors as codes
 from content.domain.analysis import (
     AnalysisError,
@@ -88,7 +89,11 @@ class DocumentProvider:
             ).hexdigest()
             return f"{self.name}:text:{digest}"
         assert isinstance(source, FileSource)
-        path = check_path_allowed(source.path, ctx.settings.allowed_input_roots)
+        path = check_path_allowed(
+            source.path,
+            ctx.settings.allowed_input_roots,
+            engine_roots=(uploads_root(ctx.settings),),
+        )
         try:
             stat = path.stat()
             # Content identity without reading the file: size + mtime is enough
@@ -112,7 +117,11 @@ class DocumentProvider:
             )
 
         assert isinstance(source, FileSource)
-        path = check_path_allowed(source.path, ctx.settings.allowed_input_roots)
+        path = check_path_allowed(
+            source.path,
+            ctx.settings.allowed_input_roots,
+            engine_roots=(uploads_root(ctx.settings),),
+        )
         suffix = path.suffix.lower()
         if suffix in DEFERRED_SUFFIXES:
             # Terminal: without it the chain fell through to ffmpeg, which
