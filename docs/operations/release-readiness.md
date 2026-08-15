@@ -47,6 +47,15 @@ setting and four documents become wrong at once, on pages whose whole purpose is
 to be trusted about the project's terms. It is now row 1 of the settings
 checklist, to be verified in the web UI before the repository is announced.
 
+> **Correction, 2026-08-15.** This finding was half right and its remedy was
+> impossible. The documents were indeed unenforced — but **GitHub offers no
+> setting to disable pull requests on a public repository**, so row 1 of the
+> checklist asked for something that does not exist, and the promise could never
+> have been kept. The documents now state what is true and actually applied:
+> unsolicited pull requests are closed without review. See
+> [github-settings.md](github-settings.md). Left in place rather than rewritten,
+> because this file is a dated record of what was found.
+
 **No record of the platform settings the model depends on.** Now
 [github-settings.md](github-settings.md) — twelve settings, why each matters,
 and the §13 verification command.

@@ -8,15 +8,24 @@ platform, and what to check when something looks wrong.
 
 Written during release preparation.
 
-## The one the contribution policy rests on
+## The one the contribution policy rested on — and the setting that does not exist
 
-CONTRIBUTING.md, the README and the issue templates all state that pull requests
-cannot be opened. That is true only for as long as **pull requests are turned
-off in the repository's settings**. Nothing in the repository enforces it: if
-the setting is ever flipped back on, the project silently starts receiving pull
-requests it has told everyone it will not read, and four documents become wrong
-at once. It is row 1 of the checklist below for that reason — verify it, in the
-web UI, before announcing the repository.
+This document used to open by requiring that pull requests be "turned off in the
+repository's settings", and four other documents promised the same thing.
+
+**GitHub offers no such setting for a public repository.** Anyone can open a pull
+request from a fork, and always could. So the promise was never enforced by
+anything — it was a wall described in documents and absent from the platform,
+which is the worst of both: contributors trusted it and wasted their time, and
+the project's own "policy vs. enforcement" table listed it under *enforced*.
+
+The documents now say what is actually true and actually applied: **unsolicited
+pull requests are closed without review, and forking is the intended path.**
+
+If that policy should become mechanical rather than manual, the honest way is a
+workflow that closes such pull requests with an explanation — kinder than
+silence, and genuinely enforced. That is a deliberate decision, not a default;
+see the note at the end of this document.
 
 ## Checklist
 
@@ -25,7 +34,7 @@ from a clone, which is why it is written down.
 
 | # | Setting | Required value | Why |
 | --- | --- | --- | --- |
-| 1 | **Pull requests** | Disabled | The whole contribution policy: CONTRIBUTING.md, the README and the issue templates all promise a PR cannot be opened. Nothing in the repository enforces this |
+| 1 | ~~**Pull requests**~~ | — | **Removed: no such setting exists for a public repository.** The policy is stated in CONTRIBUTING.md and applied by hand; see the section above |
 | 2 | **Actions → Allow all actions** (or allow the pinned ones) | Enabled for `actions/*`, `astral-sh/setup-uv`, `docker/*` | `ci.yml` pins these by SHA; a restrictive allowlist blocks the gate |
 | 2b | **Actions → Workflow permissions** | Must permit `issues: write` | A workflow can only *narrow* the repository maximum, never exceed it. On the read-only default, `ytdlp-base-check.yml` fails to file its issue and the base image silently stops being tracked |
 | 3 | **Branches → default branch** | `main` | Every documentation link uses `/blob/main/…`, including the issue-template contact links |
@@ -119,3 +128,75 @@ Deliberately in the repository, so it can be reviewed rather than remembered:
 
 The contribution policy itself is *not* versioned: it is the pull-request
 setting in row 1, which is why that row exists.
+
+
+## Presentation — the three fields a visitor sees first
+
+All three are set in the web UI and are invisible from a clone. They were still
+at their defaults when the repository was announced.
+
+**Description** (the line under the repository name, and the one that follows the
+link into search results and social cards). It read `Content generator`, which
+says nothing and reads like a placeholder. Proposed:
+
+> Self-hosted engine that turns URLs, files and text into media, transcripts, summaries and documents. API-first, local-first, AGPL.
+
+Under GitHub's 350-character limit, leads with what it does, and contains the
+words someone would search for.
+
+**Topics.** None were set; topics are how the repository is found from other
+projects' pages. Proposed, ordered from most to least defining:
+
+`self-hosted` · `yt-dlp` · `ffmpeg` · `media-automation` · `mcp` ·
+`model-context-protocol` · `fastapi` · `streamlit` · `python` ·
+`docker` · `transcription` · `youtube-dl` · `agpl`
+
+**Social preview** (1280×640). Produced at `media/social-preview.png`, with its
+source beside it as `social-preview.svg` so it can be regenerated:
+
+```bash
+inkscape media/social-preview.svg --export-type=png \
+  --export-filename=media/social-preview.png -w 1280 -h 640
+```
+
+It uses the project's own visual language — the play mark and the
+`#8B5CF6 → #D946EF` gradient of the UIs and the extension — with the tagline the
+README now opens on. Upload it under Settings → General → Social preview.
+
+## Optional: enforcing the pull-request policy mechanically
+
+Closing unsolicited pull requests by hand works, but a contributor who opens one
+at 2 a.m. learns nothing until the maintainer wakes up. A small workflow can
+close them immediately with the reason, which is kinder and makes the stated
+policy genuinely enforced:
+
+```yaml
+# .github/workflows/close-pull-requests.yml — NOT installed; a decision to make
+name: Close unsolicited pull requests
+on:
+  pull_request_target:
+    types: [opened, reopened]
+permissions:
+  pull-requests: write
+jobs:
+  close:
+    if: github.actor != github.repository_owner
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.html_url }}
+        run: |
+          gh pr comment "$PR" --body "Thank you for taking the time — and
+          sorry: Content does not accept code contributions, for the reasons in
+          CONTRIBUTING.md (undivided copyright, and the cost of reviewing
+          properly). This is closed unread, not judged. Forking is the intended
+          path and the AGPL grants it explicitly."
+          gh pr close "$PR"
+```
+
+Two caveats before installing it. `pull_request_target` runs with repository
+permissions on a fork's pull request, so the job must never check out or execute
+the fork's code — the version above only comments and closes, which is why it
+uses `gh` and no checkout. And a bot closing a stranger's work needs its wording
+read once more before it speaks for the project.

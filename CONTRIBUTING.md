@@ -2,8 +2,8 @@
 
 Content follows a **single-maintainer development model**. Bug reports, feature
 requests and design feedback are welcome. **Code contributions are not
-accepted** — pull requests are turned off in the repository's settings, so
-there is no way to open one.
+accepted**: unsolicited pull requests are closed without review. Forking is the
+intended path instead.
 
 That is a deliberate design choice, not a temporary state and not a comment on
 anyone's code.
@@ -18,7 +18,7 @@ anyone's code.
 | 💡 **Ideas & feature requests** | **Yes.** They shape the roadmap. Opening one is not a commitment that it will be built. |
 | 💬 **Design feedback** | **Yes.** Especially where the contract or the model feels wrong. |
 | 🔒 **Security reports** | **Yes, privately.** Never in a public issue — see [SECURITY.md](SECURITY.md). |
-| 🔀 **Pull requests** | **No.** They are disabled in the repository's settings, so the button is not there to press. Forking is the intended path instead. |
+| 🔀 **Pull requests** | **No.** GitHub lets anyone open one on a public repository, so the button exists — but unsolicited pull requests are closed without review. Forking is the intended path instead. |
 | 👥 **Collaborator access** | **No.** There is one maintainer, by design — see [GOVERNANCE.md](GOVERNANCE.md). |
 
 ## Why code contributions are refused
@@ -58,8 +58,8 @@ difference matters:
 
 | | |
 | --- | --- |
-| **Enforced by the platform** | Pull requests are disabled in the repository's settings, so none can be opened. Merge rights, releases and package publication are restricted to the maintainer. |
-| **Stated here as policy** | That no collaborator will be added, and that the roadmap is a personal one. Issues are open, and moderated by the maintainer alone. |
+| **Enforced by the platform** | Merge rights, releases and package publication are restricted to the maintainer, so nothing lands without them. |
+| **Stated here as policy** | That unsolicited pull requests are closed unread, that no collaborator will be added, and that the roadmap is a personal one. GitHub offers no way to disable pull requests on a public repository, so this one is a policy the maintainer applies, not a wall — please do not spend your time on a change that will be closed. Issues are open, and moderated by the maintainer alone. |
 
 `CODEOWNERS` records ownership; it does not itself block anything. It exists so
 that if contributions were ever accepted, review would still be required from

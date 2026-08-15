@@ -4,9 +4,10 @@
 
 **Do not open a public issue for a security problem.**
 
-Report it privately, either through GitHub's private vulnerability reporting on
-this repository (Security → Report a vulnerability), if enabled, or by email to
-**<yann@orieult.com>**.
+Report it privately by email to **<yann@orieult.com>**.
+
+GitHub's private vulnerability reporting is not enabled on this repository, so
+the Security tab offers no reporting form — email is the route.
 
 Please include:
 
