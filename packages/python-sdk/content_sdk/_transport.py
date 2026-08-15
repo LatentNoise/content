@@ -130,6 +130,14 @@ class SyncTransport:
             files = {"file": (Path(source).name, handle, media_type or None)}
             return self.request("POST", path, files=files).json()
 
+    def post_bytes(
+        self, path: str, filename: str, data: bytes, media_type: str = ""
+    ) -> object:
+        """POST bytes already in memory as multipart — for callers that never
+        had a file on disk, such as a browser upload arriving through a UI."""
+        files = {"file": (filename, data, media_type or None)}
+        return self.request("POST", path, files=files).json()
+
     def content(self, path: str) -> bytes:
         return self.request("GET", path).content
 
@@ -235,6 +243,13 @@ class AsyncTransport:
         """
         payload = await asyncio.to_thread(Path(source).read_bytes)
         files = {"file": (Path(source).name, payload, media_type or None)}
+        return (await self.request("POST", path, files=files)).json()
+
+    async def post_bytes(
+        self, path: str, filename: str, data: bytes, media_type: str = ""
+    ) -> object:
+        """POST bytes already in memory as multipart — the async twin."""
+        files = {"file": (filename, data, media_type or None)}
         return (await self.request("POST", path, files=files)).json()
 
     async def content(self, path: str) -> bytes:

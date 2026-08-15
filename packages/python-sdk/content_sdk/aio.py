@@ -172,6 +172,12 @@ class AsyncContentClient:
         record = await self.upload(path, media_type=media_type)
         return upload_source(record["upload_id"], id=id)
 
+    async def upload_bytes(
+        self, filename: str, data: bytes, media_type: str = ""
+    ) -> dict[str, Any]:
+        """Upload bytes already in memory — the async twin."""
+        return await self._t.post_bytes("/uploads", filename, data, media_type)
+
     async def get_upload(self, upload_id: str) -> dict[str, Any]:
         return await self._t.get(f"/uploads/{upload_id}")
 

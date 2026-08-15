@@ -89,12 +89,27 @@ NOTIFICATIONS: list = []
 # source. Mismatch tests patch their own, deliberately impossible versions.
 from content_sdk import __version__ as ENGINE_VERSION
 
+UPLOADED: list[dict] = []
+
 
 class FakeContentClient:
     """Canned, contract-shaped answers keyed by the source URI."""
 
     def __init__(self, base_url=None, timeout=0, session=None):
         pass
+
+    def upload_bytes(self, filename, data, media_type=""):
+        """A file the user picked in the browser. The fake records it so a test
+        can assert the bytes really left the UI (ADR 0020)."""
+        UPLOADED.append({"filename": filename, "size": len(data), "type": media_type})
+        return {
+            "upload_id": f"upl_{len(UPLOADED)}",
+            "filename": filename,
+            "media_type": media_type,
+            "size_bytes": len(data),
+            "sha256": "sha256:fake",
+            "created_at": "t",
+        }
 
     def health(self):
         return {"status": "ok", "version": ENGINE_VERSION}

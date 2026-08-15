@@ -17,6 +17,7 @@ import streamlit as st
 from content_sdk import legal, notifications
 from content_sdk.compat import ApiError, ContentClient
 from content_sdk.status import better_status, display, is_producible
+from content_sdk.uploads import upload_once
 
 API_URL = os.getenv("CONTENT_API_URL", "http://localhost:8000")
 PUBLIC_API_URL = os.getenv("CONTENT_PUBLIC_API_URL", API_URL).rstrip("/")
@@ -180,6 +181,29 @@ st.subheader("1 · Sources")
 n_sources = st.number_input("How many sources?", 1, 8, 1, key="n_sources")
 
 
+def _upload_once(index: int, picked) -> str:
+    """Send the chosen file to the engine, at most once per selection.
+
+    The de-duplication rule lives in the SDK (`content_sdk.uploads`) because
+    Streamlit re-runs this whole script on every interaction: without it, the
+    same file would be re-sent each time the user touched any other widget.
+    """
+    try:
+        with st.spinner(f"Sending {picked.name} to the engine…"):
+            return upload_once(
+                st.session_state.setdefault("uploads", {}),
+                index,
+                picked.name,
+                picked.size,
+                lambda: client.upload_bytes(
+                    picked.name, picked.getvalue(), picked.type or ""
+                ),
+            )
+    except Exception as exc:  # noqa: BLE001 — surfaced in the UI, not swallowed
+        st.error(f"Upload failed: {exc}")
+        return ""
+
+
 def source_editor(i: int) -> dict:
     sid = f"s{i + 1}"
     cols = st.columns([1, 3])
@@ -193,8 +217,29 @@ def source_editor(i: int) -> dict:
             if cred != "none":
                 src["auth"] = {"credential_id": cred}
     elif stype == "file":
-        path = cols[1].text_input("Path (under an allowed input root)", key=f"path-{i}")
-        src["path"] = path.strip()
+        # Two ways to name a file, one concept. "From this device" uploads the
+        # bytes (ADR 0020) — Studio has no shared filesystem with the engine,
+        # so a path typed here would mean nothing on the other side. The user
+        # never meets the word "upload" in the contract sense.
+        where = cols[1].radio(
+            "Where is it?",
+            ["From this device", "On the server"],
+            key=f"floc-{i}",
+            horizontal=True,
+        )
+        if where == "On the server":
+            path = cols[1].text_input(
+                "Path (under an allowed input root)", key=f"path-{i}"
+            )
+            src["path"] = path.strip()
+        else:
+            picked = cols[1].file_uploader(
+                "Choose a file", key=f"upl-{i}", label_visibility="collapsed"
+            )
+            if picked is not None:
+                uploaded = _upload_once(i, picked)
+                if uploaded:
+                    src = {"id": sid, "type": "upload", "upload_id": uploaded}
     else:  # text
         content = cols[1].text_area("Text content", key=f"text-{i}", height=100)
         src["content"] = content
@@ -207,6 +252,7 @@ valid_sources = [
     for s in sources
     if (s["type"] == "url" and s.get("uri"))
     or (s["type"] == "file" and s.get("path"))
+    or (s["type"] == "upload" and s.get("upload_id"))
     or (s["type"] == "text" and s.get("content"))
 ]
 source_ids = [s["id"] for s in valid_sources]

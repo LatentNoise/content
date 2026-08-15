@@ -124,6 +124,13 @@ class ContentClient:
         record = self.upload(path, media_type=media_type)
         return upload_source(record["upload_id"], id=id)
 
+    def upload_bytes(
+        self, filename: str, data: bytes, media_type: str = ""
+    ) -> dict[str, Any]:
+        """Upload bytes that were never a file on disk — what a browser upload
+        arriving through a web UI actually is."""
+        return self._t.post_bytes("/uploads", filename, data, media_type)
+
     def get_upload(self, upload_id: str) -> dict[str, Any]:
         return self._t.get(f"/uploads/{upload_id}")
 
