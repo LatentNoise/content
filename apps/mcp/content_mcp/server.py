@@ -15,7 +15,8 @@ from mcp.server import MCPServer
 from . import service
 
 INSTRUCTIONS = (
-    "Content turns sources (a URL, a file) into artifacts (video, audio, "
+    "Content turns sources (a URL, a local file, text) into artifacts (video, "
+    "audio, "
     "subtitles, transcript, summary…). Typical flow: analyze_source to see what "
     "a source is and what can be produced, then generate with the returned "
     "analysis_id, then poll get_job until it is terminal and read its artifacts. "
@@ -38,7 +39,11 @@ INSTRUCTIONS = (
     "media outputs read as unavailable there. To produce something for every "
     "member, ask for the output with scope 'each_item' — the engine analyzes "
     "and plans each member on its own, and the job returns one artifact per "
-    "member, numbered in order."
+    "member, numbered in order. "
+    "A path you give analyze_source is a path on the machine running THIS "
+    "server: the file is read here and uploaded to the engine, which is the "
+    "only way a local file becomes usable by an engine running elsewhere. "
+    "Never assume the engine can see your paths."
 )
 
 
@@ -49,7 +54,13 @@ def build_server(client: ContentClient | None = None) -> MCPServer:
     # --- tools (intention-level) ---------------------------------------------
     @server.tool()
     def analyze_source(url: str, credential: str | None = None) -> dict[str, Any]:
-        """Analyze a source URL: report what it is and what can be produced."""
+        """Analyze a source and report what can be produced from it.
+
+        Accepts a URL, or **a path to a file on this machine** — the one this
+        MCP server runs on. A local file is read and uploaded to the engine,
+        which is the only way a file here becomes usable by an engine running
+        elsewhere; the path is never assumed to exist on the engine's side.
+        """
         return service.analyze_source(client, url, credential=credential)
 
     @server.tool()
