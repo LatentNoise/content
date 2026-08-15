@@ -13,6 +13,7 @@ import asyncio
 import os
 import time
 from dataclasses import dataclass
+from pathlib import Path
 
 import httpx
 
@@ -44,6 +45,15 @@ def _raise_for(resp: httpx.Response) -> None:
     except ValueError:
         body = resp.text
     raise error_for(resp.status_code, body)
+
+
+def _raise_for_stream(resp: httpx.Response) -> None:
+    """`_raise_for` for a streamed response: the body must be read first, since
+    a streaming response has none until asked, and an error body is small."""
+    if resp.is_success:
+        return
+    resp.read()
+    _raise_for(resp)
 
 
 def _attempts(method: str, retry: RetryConfig, idempotent: bool) -> int:
@@ -108,6 +118,38 @@ class SyncTransport:
 
     def content(self, path: str) -> bytes:
         return self.request("GET", path).content
+
+    def stream_to(self, path: str, destination: Path) -> int:
+        """Stream a response body into *destination*, returning bytes written.
+
+        Deliberately not `content()` + `write_bytes()`: artifacts are media
+        files, and holding a multi-gigabyte video in memory to copy it to disk
+        is the kind of thing that works until someone downloads a real film.
+
+        Written to a sibling `.part` and renamed on completion, so an
+        interrupted transfer never leaves a truncated file wearing the real
+        name. No retry: replaying a partial stream needs range requests, and
+        silently resuming into a half-written file would be worse than failing.
+        """
+        url = _api_url(self.base_url, path)
+        partial = destination.with_name(destination.name + ".part")
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        written = 0
+        try:
+            with self._client.stream("GET", url) as response:
+                _raise_for_stream(response)
+                with partial.open("wb") as handle:
+                    for chunk in response.iter_bytes(chunk_size=1024 * 256):
+                        handle.write(chunk)
+                        written += len(chunk)
+        except httpx.TransportError as exc:
+            partial.unlink(missing_ok=True)
+            raise TransportError(str(exc)) from exc
+        except BaseException:
+            partial.unlink(missing_ok=True)
+            raise
+        os.replace(partial, destination)
+        return written
 
 
 class AsyncTransport:

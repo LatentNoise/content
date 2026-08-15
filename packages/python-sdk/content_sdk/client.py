@@ -7,6 +7,7 @@ to typed exceptions. `analyze/get_capabilities/generate` accept **either** an
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any, Self
 
 from ._transport import DEFAULT_TIMEOUT, RetryConfig, SyncTransport, resolve_base_url
@@ -191,3 +192,21 @@ class ContentClient:
 
     def artifact_bytes(self, artifact_id: str) -> bytes:
         return self._t.content(f"/artifacts/{artifact_id}/content")
+
+    def download_artifact(self, artifact_id: str, destination: Path | str) -> Path:
+        """Save an artifact to a local file, streaming it.
+
+        ``destination`` may be a directory — the artifact's display name is
+        used inside it — or an explicit file path. Returns the path written.
+
+        This is the counterpart to delivery: delivery puts a copy in the
+        *engine's* library, this puts one on the *caller's* machine, which for
+        a remote engine is otherwise a manual scp.
+        """
+        target = Path(destination)
+        if target.is_dir():
+            artifact = self.get_artifact(artifact_id)
+            name = artifact.display_filename or artifact.filename
+            target = target / Path(name).name
+        self._t.stream_to(f"/artifacts/{artifact_id}/content", target)
+        return target

@@ -8,6 +8,8 @@ merely exposes them as MCP tools/resources.
 
 from __future__ import annotations
 
+import os
+from pathlib import Path
 from typing import Any
 
 from content_sdk import ContentClient, outputs
@@ -247,3 +249,63 @@ def job_resource(client: ContentClient, job_id: str) -> dict[str, Any]:
 
 def artifact_resource(client: ContentClient, artifact_id: str) -> dict[str, Any]:
     return client.get_artifact(artifact_id).model_dump()
+
+
+# --- bringing a file to the caller's machine ----------------------------------
+
+DOWNLOAD_DIR_ENV = "CONTENT_MCP_DOWNLOAD_DIR"
+DEFAULT_DOWNLOAD_DIR = "~/Downloads/Content"
+
+
+def download_root() -> Path:
+    """Where this MCP server is allowed to write, expanded and absolute."""
+    raw = os.getenv(DOWNLOAD_DIR_ENV, "").strip() or DEFAULT_DOWNLOAD_DIR
+    return Path(raw).expanduser().resolve()
+
+
+def _resolve_destination(root: Path, destination: str | None, filename: str) -> Path:
+    """A path inside *root*, or a refusal.
+
+    The MCP server writes to the user's own filesystem on an agent's say-so, so
+    the destination is confined to one directory the operator chose. Relative
+    paths resolve inside it; anything that escapes — an absolute path elsewhere,
+    a `..` climb, a symlink out — is refused rather than clamped, because
+    silently rewriting where a file went is worse than not writing it.
+    """
+    candidate = Path(destination).expanduser() if destination else root / filename
+    if not candidate.is_absolute():
+        candidate = root / candidate
+    if candidate.is_dir():
+        candidate = candidate / filename
+    resolved = (candidate.parent.resolve() / candidate.name).absolute()
+    if resolved != root and root not in resolved.parents:
+        raise ValueError(
+            f"destination is outside {DOWNLOAD_DIR_ENV} ({root}). Pass a path "
+            f"inside it, or set {DOWNLOAD_DIR_ENV} to widen what this server "
+            "may write to."
+        )
+    return resolved
+
+
+def download_artifact(
+    client: ContentClient, artifact_id: str, destination: str | None = None
+) -> dict[str, Any]:
+    """Copy an artifact from the engine onto the machine running this server."""
+    artifact = client.get_artifact(artifact_id)
+    # The engine sanitizes names, but this writes to a real filesystem on an
+    # agent's request — take the basename regardless of what came back.
+    filename = Path(artifact.display_filename or artifact.filename).name
+    root = download_root()
+    root.mkdir(parents=True, exist_ok=True)
+    target = _resolve_destination(root, destination, filename)
+    written = client.download_artifact(artifact_id, target)
+    return {
+        "path": str(written),
+        "filename": written.name,
+        "size_bytes": artifact.size_bytes,
+        "media_type": artifact.media_type,
+        "note": (
+            "Saved on the machine running this MCP server. The engine's own "
+            "copy in its library (delivered_path) is unaffected."
+        ),
+    }
