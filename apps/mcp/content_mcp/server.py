@@ -35,7 +35,7 @@ INSTRUCTIONS = (
 
 def build_server(client: ContentClient | None = None) -> MCPServer:
     client = client or ContentClient()
-    server = MCPServer(name="content", version="0.4.0", instructions=INSTRUCTIONS)
+    server = MCPServer(name="content", version="0.4.1", instructions=INSTRUCTIONS)
 
     # --- tools (intention-level) ---------------------------------------------
     @server.tool()
