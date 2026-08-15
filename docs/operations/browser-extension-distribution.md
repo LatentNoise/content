@@ -34,7 +34,29 @@ apart silently.
 "disable developer mode extensions" nag on some startups. Updates are manual —
 download, unzip, press ↻.
 
-## The Chrome Web Store: what it would take
+## The Chrome Web Store: the checklist
+
+Everything the submission needs is now written and reviewed:
+**[chrome-web-store-listing.md](chrome-web-store-listing.md)** holds the
+listing texts, the single-purpose statement, the per-permission
+justifications, the data-use declarations and the technical pass, and
+[extension-privacy-policy.md](extension-privacy-policy.md) is the policy the
+store requires a URL for.
+
+| # | Step | State |
+| --- | --- | --- |
+| 1 | Listing texts (name, short and full description) | **Done** — ready to paste |
+| 2 | Single-purpose statement | **Done** |
+| 3 | Per-permission justifications, including the broad optional hosts | **Done** — written at length, since it is the likeliest question |
+| 4 | Data-use declarations and certifications | **Done** — all "not collected" |
+| 5 | Privacy policy text | **Done**; its published URL still has to be decided |
+| 6 | Small promo tile 440×280 | **Done** — `media/store-promo-440x280.png` |
+| 7 | Icon 128×128 | **Done** — already store-compliant |
+| 8 | Screenshot 1280×800 of the popup on a real page | **Maintainer** — must be the real product, not a mock-up |
+| 9 | Manifest technical pass | **Done** — no store-specific variant needed |
+| 10 | Name-risk argument and an agreed fallback name | **Done** — fallback decided in advance |
+| 11 | Developer enrolment and the one-off fee | **Maintainer** |
+| 12 | Upload, submit, answer the review | **Maintainer** |
 
 Publishing is not hard, but it is not free of process either.
 
