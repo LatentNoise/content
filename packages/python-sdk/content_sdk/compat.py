@@ -81,6 +81,18 @@ class ContentClient:
     def folders(self) -> list[str]:
         return self._t.get("/folders").get("folders", [])
 
+    # --- uploads (ADR 0020) ------------------------------------------------------
+
+    def upload_bytes(self, filename: str, data: bytes, media_type: str = "") -> dict:
+        """Send bytes to the engine and return the upload record.
+
+        The UIs never have a file on disk to point at: a browser upload arrives
+        as bytes in the app's memory, and the Streamlit apps share no
+        filesystem with the engine. This is how a file on the *user's* device
+        becomes a source.
+        """
+        return self._t.post_bytes("/uploads", filename, data, media_type)
+
     # --- analysis / capabilities -----------------------------------------------
 
     def analyze(self, sources: list[dict]) -> dict:
