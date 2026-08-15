@@ -25,9 +25,23 @@ empty**: an existing library keeps its ownership, since rewriting the
 ownership of an operator's media collection would be worse than the failure it
 would avoid.
 
-If delivery fails on a library owned by another user, point
-`CONTENT_DELIVERY_DIR_HOST` at a directory you own, or set `user:` on the
-`content` service to match the library's uid/gid.
+If delivery fails on a library owned by another user, the simple remedy is to
+point `CONTENT_DELIVERY_DIR_HOST` at a directory you own.
+
+Setting `user:` on the `content` service to match the library's uid/gid also
+works, but **not on its own**: the startup step above only runs as root, so a
+container started with an explicit `user:` never adopts `/data` either. On a
+fresh install that leaves the engine unable to create its database — it exits
+with `sqlite3.OperationalError: attempt to write a readonly database` and the
+container never becomes healthy. If you take that route, pre-create the data
+directory with the same ownership:
+
+```bash
+mkdir -p data && sudo chown 1026:1026 data     # the uid/gid you set in `user:`
+```
+
+Which is the manual step the adoption logic exists to spare you, so prefer the
+first remedy unless the library's ownership is genuinely immovable.
 
 ## Topology
 
