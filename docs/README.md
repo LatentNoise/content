@@ -29,11 +29,10 @@ The map of everything documented, from intent to operations. The root
   library (ADR 0009/0018)
 - [repository-architecture.md](repository-architecture.md) — the monorepo: one
   engine, the SDK as the single door, every client thin (ADR 0011/0015/0016)
-- [architecture-decisions/](architecture-decisions/) — ADR 0001–0022; the three
-  proposed and awaiting a decision:
-  [0020 client-uploaded sources](architecture-decisions/0020-client-uploaded-sources.md),
-  [0021 a job does not succeed while a step failed](architecture-decisions/0021-a-job-does-not-succeed-with-a-failed-step.md),
-  [0022 `original` as a language token](architecture-decisions/0022-original-as-a-language-token.md)
+- [architecture-decisions/](architecture-decisions/) — ADR 0001–0024. Awaiting a
+  decision: [0022 `original` as a language token](architecture-decisions/0022-original-as-a-language-token.md),
+  [0023 retention and reclaiming disk](architecture-decisions/0023-retention-and-reclaiming-disk.md),
+  [0024 no authentication, and what would change that](architecture-decisions/0024-no-authentication-is-still-the-answer.md)
 - [hometube-reuse-audit.md](hometube-reuse-audit.md) — what was kept from
   HomeTube, component by component
 
