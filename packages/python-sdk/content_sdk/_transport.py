@@ -138,6 +138,44 @@ class SyncTransport:
         files = {"file": (filename, data, media_type or None)}
         return self.request("POST", path, files=files).json()
 
+    def stream_sse(self, path: str, params: dict | None = None):
+        """Yield parsed Server-Sent Events until the server closes the stream.
+
+        Two details make this work over a long job. The read timeout is
+        disabled for this request only — the client's default would sever a
+        stream that is merely quiet, which is exactly what a forty-minute
+        download looks like between progress ticks — and `:` comment lines
+        (the server's keep-alive) are skipped rather than parsed.
+
+        Yields `{"id", "type", "data"}` with `data` still a string; the caller
+        decides how to read it.
+        """
+        url = _api_url(self.base_url, path)
+        timeout = httpx.Timeout(connect=10.0, read=None, write=10.0, pool=10.0)
+        with self._client.stream("GET", url, params=params, timeout=timeout) as resp:
+            _raise_for_stream(resp)
+            event_type, data_lines, event_id = "message", [], None
+            for line in resp.iter_lines():
+                if line.startswith(":"):
+                    continue  # keep-alive
+                if not line:
+                    if data_lines:
+                        yield {
+                            "id": event_id,
+                            "type": event_type,
+                            "data": "\n".join(data_lines),
+                        }
+                    event_type, data_lines, event_id = "message", [], None
+                    continue
+                field, _, value = line.partition(":")
+                value = value.removeprefix(" ")
+                if field == "event":
+                    event_type = value
+                elif field == "data":
+                    data_lines.append(value)
+                elif field == "id":
+                    event_id = value
+
     def content(self, path: str) -> bytes:
         return self.request("GET", path).content
 

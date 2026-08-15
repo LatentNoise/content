@@ -44,8 +44,32 @@ def _print_job(job: dict) -> None:
 
 
 def _watch(client: ContentClient, job_id: str) -> str:
-    """Stream events until the job reaches a terminal state."""
+    """Follow a job's events until it reaches a terminal state.
+
+    Uses the engine's event stream rather than asking again on a timer: a
+    forty-minute download deserves a progress line that moves when something
+    moves. The stream ends by itself when the job does.
+
+    Falls back to polling if the stream cannot be established — an old engine,
+    or a proxy that buffers SSE — because watching a job must not depend on it.
+    """
     seen = 0
+    try:
+        for event in client.stream_events(job_id):
+            seen = event["sequence"]
+            print(f"  {seen:>3} {event['type']} {event['data'] or ''}")
+    except Exception as exc:  # noqa: BLE001 — any stream failure falls back below
+        # Say so rather than degrade silently: a user who sees updates arrive
+        # every two seconds instead of instantly deserves to know the stream
+        # was refused, and by what.
+        print(
+            f"note: event stream unavailable ({exc}); polling instead", file=sys.stderr
+        )
+    return _watch_by_polling(client, job_id, seen)
+
+
+def _watch_by_polling(client: ContentClient, job_id: str, seen: int = 0) -> str:
+    """The original loop, kept as the fallback and as the terminal read."""
     while True:
         for event in client.events(job_id, after_sequence=seen):
             seen = event.sequence
