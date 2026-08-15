@@ -29,9 +29,9 @@ The map of everything documented, from intent to operations. The root
   library (ADR 0009/0018)
 - [repository-architecture.md](repository-architecture.md) — the monorepo: one
   engine, the SDK as the single door, every client thin (ADR 0011/0015/0016)
-- [architecture-decisions/](architecture-decisions/) — ADR 0001–0019; the two
-  most recent: [0018 delivery by default](architecture-decisions/0018-default-delivery-policy.md),
-  [0019 collections orchestrate, they do not generate](architecture-decisions/0019-collections-orchestrate-single-resource-pipelines.md)
+- [architecture-decisions/](architecture-decisions/) — ADR 0001–0020; the two
+  most recent: [0019 collections orchestrate, they do not generate](architecture-decisions/0019-collections-orchestrate-single-resource-pipelines.md),
+  [0020 client-uploaded sources](architecture-decisions/0020-client-uploaded-sources.md) (proposed)
 - [hometube-reuse-audit.md](hometube-reuse-audit.md) — what was kept from
   HomeTube, component by component
 
