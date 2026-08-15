@@ -27,6 +27,10 @@ SOURCES_AND_ANALYSIS_ID_CONFLICT = "sources_and_analysis_id_conflict"
 # Analysis-resource codes (addressable analyses, ADR 0014)
 ANALYSIS_NOT_FOUND = "analysis_not_found"
 ANALYSIS_EXPIRED = "analysis_expired"
+# Uploads (ADR 0020). Told apart on purpose: "expired" means upload the file
+# again, "not found" means the reference itself is wrong.
+UPLOAD_NOT_FOUND = "upload_not_found"
+UPLOAD_EXPIRED = "upload_expired"
 
 # Feasibility codes
 SOURCE_TYPE_NOT_SUPPORTED = "source_type_not_supported"
