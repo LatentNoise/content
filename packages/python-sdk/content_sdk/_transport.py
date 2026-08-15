@@ -89,13 +89,16 @@ class SyncTransport:
         *,
         json: dict | None = None,
         params: dict | None = None,
+        files: dict | None = None,
         idempotent: bool = False,
     ) -> httpx.Response:
         url = _api_url(self.base_url, path)
         attempts = _attempts(method, self._retry, idempotent)
         for attempt in range(attempts + 1):
             try:
-                resp = self._client.request(method, url, json=json, params=params)
+                resp = self._client.request(
+                    method, url, json=json, params=params, files=files
+                )
             except httpx.TransportError as exc:
                 if attempt < attempts:
                     time.sleep(self._retry.backoff * (2**attempt))
@@ -115,6 +118,17 @@ class SyncTransport:
         self, path: str, json: dict | None = None, idempotent: bool = False
     ) -> object:
         return self.request("POST", path, json=json, idempotent=idempotent).json()
+
+    def post_file(self, path: str, source: Path, *, media_type: str = "") -> object:
+        """POST one file as multipart, streamed from disk.
+
+        Never retried, and it must not be: the body is a file handle the first
+        attempt would already have consumed, and re-sending an upload is a
+        decision for the caller, not for the transport.
+        """
+        with Path(source).open("rb") as handle:
+            files = {"file": (Path(source).name, handle, media_type or None)}
+            return self.request("POST", path, files=files).json()
 
     def content(self, path: str) -> bytes:
         return self.request("GET", path).content
@@ -176,13 +190,16 @@ class AsyncTransport:
         *,
         json: dict | None = None,
         params: dict | None = None,
+        files: dict | None = None,
         idempotent: bool = False,
     ) -> httpx.Response:
         url = _api_url(self.base_url, path)
         attempts = _attempts(method, self._retry, idempotent)
         for attempt in range(attempts + 1):
             try:
-                resp = await self._client.request(method, url, json=json, params=params)
+                resp = await self._client.request(
+                    method, url, json=json, params=params, files=files
+                )
             except httpx.TransportError as exc:
                 if attempt < attempts:
                     await asyncio.sleep(self._retry.backoff * (2**attempt))
@@ -204,6 +221,21 @@ class AsyncTransport:
         return (
             await self.request("POST", path, json=json, idempotent=idempotent)
         ).json()
+
+    async def post_file(
+        self, path: str, source: Path, *, media_type: str = ""
+    ) -> object:
+        """POST one file as multipart. Never retried — see the sync twin.
+
+        Unlike the sync twin this **buffers**: the bytes are read in a worker
+        thread (blocking file I/O must not run on the event loop) and sent from
+        memory, because handing httpx a blocking file handle would move the
+        same stall inside the send. For a large upload prefer the sync client,
+        which streams from disk and holds nothing.
+        """
+        payload = await asyncio.to_thread(Path(source).read_bytes)
+        files = {"file": (Path(source).name, payload, media_type or None)}
+        return (await self.request("POST", path, files=files)).json()
 
     async def content(self, path: str) -> bytes:
         return (await self.request("GET", path)).content
