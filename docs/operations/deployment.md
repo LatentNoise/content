@@ -142,6 +142,10 @@ console are not listed there because they always run.
 | `CONTENT_CACHE_ROOT` | `<data>/cache` | The cache root (reserved) |
 | `CONTENT_CACHE_ENABLED` | `false` (compose: `true`) | URL JSON cache + video reuse ([storage.md](../storage.md), ADR 0010) |
 | `CONTENT_ANALYSIS_TTL_HOURS` | `72` | How long a URL analysis is cached (3 days) |
+| `CONTENT_UPLOADS_ROOT` | `<data>/uploads` | Where client uploads land (ADR 0020) |
+| `CONTENT_MAX_UPLOAD_BYTES` | 2 GiB | Per-upload ceiling, counted while streaming rather than trusted from the header |
+| `CONTENT_UPLOADS_TOTAL_BYTES` | 20 GiB | Quota for the whole upload store |
+| `CONTENT_UPLOAD_TTL_HOURS` | `24` | Expiry, from an upload's last use |
 | **🗣️ Language preferences** | | |
 | `CONTENT_LANGUAGE_PRIMARY` | — | The language this installation speaks. Ordered first (after the original voice) and pre-selected in the UIs, for **audio and subtitles** |
 | `CONTENT_LANGUAGES_SECONDARIES` | — | Secondary languages `en,es` — offered and pre-selected after the primary (audio + subtitles) |
@@ -193,7 +197,18 @@ The REST API is **open by design** (no authentication in V1): any HTTP client �
 curl, the SDK, a script, another service — always reaches the backend directly,
 with no mandatory detour through the SDK or a UI. The existing guards never
 block access itself: SSRF (`ALLOW_PRIVATE_NETWORKS`) only concerns *source*
-URLs, `ALLOWED_INPUT_ROOTS` only `file` sources. The one special case: a
+URLs, `ALLOWED_INPUT_ROOTS` only `file` sources.
+
+**Uploads sharpen this.** `POST /api/v1/uploads` (ADR 0020) is the first
+endpoint that lets a caller write bytes to the engine's disk: before it, the
+worst an unauthenticated stranger on your network could do was make the engine
+*fetch* something; now they can make it *store* something. `MAX_UPLOAD_BYTES`,
+`UPLOADS_TOTAL_BYTES` and the TTL bound how much, and upload ids are random
+enough that enumeration is impractical — but an id is identity, not
+authorization: anyone who can reach the API can upload, and anyone holding an
+id can reference it. Treat it as one more reason for the reverse proxy below.
+
+The one special case: a
 **JavaScript client in a browser** on another origin needs CORS — opt-in through
 `CONTENT_CORS_ORIGINS` (disabled by default, which also blocks drive-by requests
 from arbitrary sites). To expose the instance outside the local network, put an
