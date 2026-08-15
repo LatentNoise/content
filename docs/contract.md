@@ -31,10 +31,44 @@ A union discriminated by `type` (the supply mode, not the nature of the content)
 | --- | --- | --- |
 | `url` | ✅ executed | `uri` |
 | `file` | ✅ executed (allowed roots required) | `path` |
-| `upload` | ⏳ validated, refused at feasibility (`source_type_not_supported`) | `upload_id` |
+| `upload` | ✅ executed — bytes a client sent to `POST /uploads` (ADR 0020) | `upload_id` |
 | `text` | ✅ executed for the text outputs (`markdown`, `document_text`, `summary`, `translation`); the media outputs and `metadata` refuse with `capability_unavailable` | `content`, `mime_type` |
 | `collection` | 🔒 reserved | `item_refs` (see D2) |
 | `connector` | 🔒 reserved | `connector_id`, `resource_reference` |
+
+### Uploading a file (`upload` sources)
+
+A `file` source names a path **the engine can already read**, under
+`CONTENT_ALLOWED_INPUT_ROOTS`. When the file is on the caller's machine instead
+— a laptop talking to a homelab engine — send it first:
+
+```
+POST /api/v1/uploads          multipart, one `file` part
+  → 201 {upload_id, filename, media_type, size_bytes, sha256, created_at}
+GET  /api/v1/uploads/{id}     the same record
+DELETE /api/v1/uploads/{id}   removes it early; idempotent
+```
+
+Then reference it: `{"id": "s1", "type": "upload", "upload_id": "upl_…"}`.
+
+The `upload_id` is the address. No filesystem path is ever returned, so clients
+cannot construct one, and the storage layout stays free to change.
+
+Once resolved, an uploaded file behaves **exactly** like the same file on the
+engine's disk — same analysis, same capabilities, same planning, same naming,
+delivery and provenance. Upload is an acquisition route, not a second pipeline.
+
+Refusals worth telling apart:
+
+| Code | Meaning |
+| --- | --- |
+| `upload_not_found` | No such id — the reference is wrong |
+| `upload_expired` | It existed and its bytes are gone — send the file again |
+| `upload_too_large` | Over `CONTENT_MAX_UPLOAD_BYTES` (HTTP 413) |
+| `upload_quota_exceeded` | The store is at `CONTENT_UPLOADS_TOTAL_BYTES` (HTTP 507) |
+
+An upload expires `CONTENT_UPLOAD_TTL_HOURS` after its **last use**, not after
+creation, so retrying a job still finds its input.
 
 Common fields: `id` (required, unique within the request, `[a-z0-9_-]{1,64}`), `role` (optional: `primary`, `context`, `reference`, `instruction`, `attachment`, `alternative` — a semantic hint, never a replacement for explicit dependencies), `hints` (optional, not guaranteed: `resource_type`, `language`… — may be wrong, ignored or corrected), `auth` (optional: `credential_id` **or** `session_id` — never a raw secret).
 

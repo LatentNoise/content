@@ -29,6 +29,7 @@ $CONTENT_DATA_DIR/
 ├── tmp/                             # incomplete, technical, disposable
 │   ├── <job_id>/<step_id>/          # per-step execution scratch
 │   └── analysis/<resource_key>/     # analysis probe scratch
+├── uploads/<upload_id>/             # bytes a client sent (ADR 0020)
 ├── cache/                           # reusable across jobs — DISABLED in V1
 └── delivery/                        # the user-facing library (CONTENT_DELIVERY_DIR)
 ```
@@ -42,7 +43,7 @@ off (the code default), only explicit `delivery` intent is honored — the V1
 behaviour. Mount the root wherever the library should appear
 (`CONTENT_DELIVERY_DIR_HOST` in compose).
 
-## The four families
+## The five families
 
 | Family | Role | Lifecycle |
 | --- | --- | --- |
@@ -50,6 +51,7 @@ behaviour. Mount the root wherever the library should appear
 | **`work`** | **Valid** intermediates specific to one job (audio extracted for a transcript, media shared between outputs). | Shareable between steps of the **same** job, never across jobs. Purged according to `retention.working_files` (default `24h`). |
 | **`artifacts`** | Business results (video, audio, subtitles, transcript, summary, thumbnail, metadata). | An `Artifact` row + provenance, exposed by the API. Its own retention. **Never** deleted by the `tmp`/`work` cleanup. |
 | **`cache`** | Validated results reusable across jobs. | **Disabled in V1** (`CONTENT_CACHE_ENABLED=false`). The directory is not created while the cache is off. |
+| **`uploads`** | Bytes a client supplied before any job exists (ADR 0020). Immutable, one directory per opaque id. | Swept `CONTENT_UPLOAD_TTL_HOURS` after the **last** job referenced it — not after creation, so a retry still finds its input. Untouched by `purge_work`/`purge_tmp`: an upload may outlive and feed several jobs. |
 
 ## Atomic publication
 
@@ -126,6 +128,10 @@ The analysis probe scratch stays distinct from the cache: it lives under
 | `CONTENT_CACHE_ENABLED` | `false` | Enables the cross-job cache/reuse |
 | `CONTENT_DELIVERY_DIR` | `<data>/delivery` | The user-facing library root |
 | `CONTENT_DELIVERY_DEFAULT` | `false` | Deliver every artifact by default (ADR 0018; `true` in compose) |
+| `CONTENT_UPLOADS_ROOT` | `<data>/uploads` | Where client uploads are stored |
+| `CONTENT_MAX_UPLOAD_BYTES` | 2 GiB | Per-upload ceiling, enforced while streaming — a `Content-Length` header is a claim, not a fact |
+| `CONTENT_UPLOADS_TOTAL_BYTES` | 20 GiB | Quota for the whole upload store; new uploads are refused rather than filling the disk the engine runs on |
+| `CONTENT_UPLOAD_TTL_HOURS` | `24` | Expiry, counted from the last reference |
 
 ## Adding the cache later
 

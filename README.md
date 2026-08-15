@@ -25,8 +25,8 @@ transcripts, summaries, translations, images, metadata, Markdown, PDF, and
 more. **Content Backend** analyzes each source, determines what it can produce,
 plans and runs the job, records its history, and delivers the results.
 
-Use **Content Studio** for general workflows with URLs, allowed server-side
-files, and inline text. Use **HomeTube** for the focused YouTube video and
+Use **Content Studio** for general workflows with URLs, files — from your own
+machine or already on the server — and inline text. Use **HomeTube** for the focused YouTube video and
 playlist experience. Both web apps are optional: the same backend powers the
 **Chromium browser extension** and is available directly through the **REST
 API, MCP server, CLI, and typed Python SDK**.
