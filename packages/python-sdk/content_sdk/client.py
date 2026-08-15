@@ -18,6 +18,7 @@ from .models import (
     CapabilitiesData,
     Event,
     JobData,
+    upload_source,
 )
 from .resources import Analysis, Job
 
@@ -99,6 +100,35 @@ class ContentClient:
 
     def folders(self) -> list[str]:
         return self._t.get("/folders").get("folders", [])
+
+    # --- uploads (ADR 0020) ------------------------------------------------------
+
+    def upload(self, path: Path | str, *, media_type: str = "") -> dict[str, Any]:
+        """Send a local file to the engine and return its upload record."""
+        return self._t.post_file("/uploads", Path(path), media_type=media_type)
+
+    def upload_file(
+        self, path: Path | str, *, id: str = "main", media_type: str = ""
+    ) -> dict[str, Any]:
+        """Upload a local file and return a **source ready to use**.
+
+        The ergonomic path, and the one callers should reach for:
+
+            source = client.upload_file("~/report.pdf")
+            analysis = client.analyze(source)
+
+        The upload id never has to be handled by hand. Note the direction: this
+        sends bytes *to* the engine, which is the only way a file on your
+        machine becomes usable by an engine running somewhere else.
+        """
+        record = self.upload(path, media_type=media_type)
+        return upload_source(record["upload_id"], id=id)
+
+    def get_upload(self, upload_id: str) -> dict[str, Any]:
+        return self._t.get(f"/uploads/{upload_id}")
+
+    def delete_upload(self, upload_id: str) -> None:
+        self._t.request("DELETE", f"/uploads/{upload_id}")
 
     # --- analysis / capabilities -----------------------------------------------
 

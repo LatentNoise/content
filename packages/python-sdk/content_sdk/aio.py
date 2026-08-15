@@ -8,6 +8,7 @@ manager so the underlying httpx client is closed cleanly.
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 from typing import Any, Self
 
 from ._transport import DEFAULT_TIMEOUT, AsyncTransport, RetryConfig, resolve_base_url
@@ -20,6 +21,7 @@ from .models import (
     CapabilitiesData,
     Event,
     JobData,
+    upload_source,
 )
 from .resources import TERMINAL_STATUSES
 
@@ -155,6 +157,26 @@ class AsyncContentClient:
 
     async def folders(self) -> list[str]:
         return (await self._t.get("/folders")).get("folders", [])
+
+    # --- uploads (ADR 0020) ------------------------------------------------------
+
+    async def upload(self, path: Path | str, *, media_type: str = "") -> dict[str, Any]:
+        """Send a local file to the engine and return its upload record."""
+        return await self._t.post_file("/uploads", Path(path), media_type=media_type)
+
+    async def upload_file(
+        self, path: Path | str, *, id: str = "main", media_type: str = ""
+    ) -> dict[str, Any]:
+        """Upload a local file and return a source ready to use — the async
+        twin of the sync client's helper."""
+        record = await self.upload(path, media_type=media_type)
+        return upload_source(record["upload_id"], id=id)
+
+    async def get_upload(self, upload_id: str) -> dict[str, Any]:
+        return await self._t.get(f"/uploads/{upload_id}")
+
+    async def delete_upload(self, upload_id: str) -> None:
+        await self._t.request("DELETE", f"/uploads/{upload_id}")
 
     # --- analysis / capabilities -----------------------------------------------
 
