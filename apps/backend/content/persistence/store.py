@@ -80,6 +80,20 @@ CREATE INDEX IF NOT EXISTS idx_artifacts_job ON artifacts(job_id);
 CREATE INDEX IF NOT EXISTS idx_artifacts_signature
     ON artifacts(step_signature, created_at);
 
+CREATE TABLE IF NOT EXISTS uploads (
+    id                  TEXT PRIMARY KEY,
+    filename            TEXT NOT NULL,
+    media_type          TEXT NOT NULL DEFAULT '',
+    size_bytes          INTEGER NOT NULL DEFAULT 0,
+    sha256              TEXT NOT NULL DEFAULT '',
+    path                TEXT NOT NULL,
+    created_at          TEXT NOT NULL,
+    -- The TTL runs from the last job that referenced this upload, not from
+    -- creation, so retrying a job never finds its input swept away.
+    last_referenced_at  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_uploads_referenced ON uploads(last_referenced_at);
+
 CREATE TABLE IF NOT EXISTS analyses (
     id            TEXT PRIMARY KEY,
     resource_key  TEXT NOT NULL,
@@ -150,6 +164,21 @@ _MIGRATIONS: list[list[str]] = [
     # (ADR 0018); '' = no delivered copy
     [
         "ALTER TABLE artifacts ADD COLUMN delivered_path TEXT NOT NULL DEFAULT ''",
+    ],
+    # 5: client uploads (ADR 0020). last_referenced_at, not created_at: the TTL
+    # counts from the last time a job used it, so a retry still finds its input.
+    [
+        "CREATE TABLE IF NOT EXISTS uploads ("
+        "  id TEXT PRIMARY KEY,"
+        "  filename TEXT NOT NULL,"
+        "  media_type TEXT NOT NULL DEFAULT '',"
+        "  size_bytes INTEGER NOT NULL DEFAULT 0,"
+        "  sha256 TEXT NOT NULL DEFAULT '',"
+        "  path TEXT NOT NULL,"
+        "  created_at TEXT NOT NULL,"
+        "  last_referenced_at TEXT NOT NULL)",
+        "CREATE INDEX IF NOT EXISTS idx_uploads_referenced "
+        "ON uploads(last_referenced_at)",
     ],
 ]
 
@@ -603,3 +632,51 @@ class Store:
             "created_at": row["created_at"],
             "expires_at": row["expires_at"],
         }
+
+    # --- uploads (ADR 0020) -----------------------------------------------------
+
+    def register_upload(self, row: dict) -> None:
+        """Record an upload that is fully written and addressable."""
+        now = utcnow()
+        with self._conn() as conn:
+            conn.execute(
+                "INSERT INTO uploads (id, filename, media_type, size_bytes, "
+                "sha256, path, created_at, last_referenced_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    row["id"],
+                    row["filename"],
+                    row.get("media_type", ""),
+                    row.get("size_bytes", 0),
+                    row.get("sha256", ""),
+                    str(row["path"]),
+                    now,
+                    now,
+                ),
+            )
+
+    def get_upload(self, upload_id: str) -> dict | None:
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT * FROM uploads WHERE id = ?", (upload_id,)
+            ).fetchone()
+        return dict(row) if row else None
+
+    def touch_upload(self, upload_id: str) -> None:
+        """Restart the expiry clock: this upload was just referenced by a job."""
+        with self._conn() as conn:
+            conn.execute(
+                "UPDATE uploads SET last_referenced_at = ? WHERE id = ?",
+                (utcnow(), upload_id),
+            )
+
+    def expired_uploads(self, before: str) -> list[dict]:
+        with self._conn() as conn:
+            rows = conn.execute(
+                "SELECT * FROM uploads WHERE last_referenced_at < ?", (before,)
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def delete_upload(self, upload_id: str) -> None:
+        with self._conn() as conn:
+            conn.execute("DELETE FROM uploads WHERE id = ?", (upload_id,))

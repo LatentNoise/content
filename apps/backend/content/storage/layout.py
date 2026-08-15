@@ -16,6 +16,7 @@ job directory so the tree can be relocated.
 
 import hashlib
 import json
+import os
 import shutil
 from pathlib import Path
 
@@ -129,6 +130,82 @@ def safe_relative_folder(folder: str) -> Path:
         if cleaned
     ]
     return Path(*parts) if parts else Path()
+
+
+class UploadStore:
+    """The fifth storage root: bytes a client supplied (ADR 0020).
+
+    Not tmp (that is per-job scratch), not work (per-job), not artifacts
+    (produced results), not cache. An upload exists *before* any job, may feed
+    several, and must survive a job's `purge_work`. Each lives alone under its
+    own id so the stored name can never collide with another's:
+
+        <uploads_root>/<upload_id>/<sanitized filename>
+
+    The id is the address; the path is never shown to a client, which keeps the
+    layout free to change and stops callers constructing their own.
+    """
+
+    def __init__(self, root: Path):
+        self.root = Path(root)
+
+    def directory_for(self, upload_id: str) -> Path:
+        return self.root / safe_segment(upload_id, "upload_id")
+
+    def path_for(self, upload_id: str, filename: str) -> Path:
+        return self.directory_for(upload_id) / sanitize_filename(filename)
+
+    def write_stream(
+        self, upload_id: str, filename: str, chunks, *, limit: int
+    ) -> dict:
+        """Stream *chunks* to disk under *upload_id*, enforcing *limit* as we go.
+
+        The size is checked against what has actually been written, never
+        against a declared Content-Length — a header is a claim, and this is
+        the one endpoint where a stranger chooses the number. The file is
+        written to `.part` and renamed only once the stream completed within
+        the limit, so a partial or oversized upload is never addressable.
+        """
+        directory = self.directory_for(upload_id)
+        directory.mkdir(parents=True, exist_ok=True)
+        target = self.path_for(upload_id, filename)
+        partial = target.with_name(target.name + ".part")
+        digest = hashlib.sha256()
+        written = 0
+        try:
+            with partial.open("wb") as handle:
+                for chunk in chunks:
+                    written += len(chunk)
+                    if limit and written > limit:
+                        raise UploadTooLarge(limit)
+                    digest.update(chunk)
+                    handle.write(chunk)
+        except BaseException:
+            partial.unlink(missing_ok=True)
+            shutil.rmtree(directory, ignore_errors=True)
+            raise
+        os.replace(partial, target)
+        return {
+            "path": target,
+            "size_bytes": written,
+            "sha256": f"sha256:{digest.hexdigest()}",
+        }
+
+    def total_bytes(self) -> int:
+        if not self.root.exists():
+            return 0
+        return sum(p.stat().st_size for p in self.root.rglob("*") if p.is_file())
+
+    def remove(self, upload_id: str) -> None:
+        shutil.rmtree(self.directory_for(upload_id), ignore_errors=True)
+
+
+class UploadTooLarge(Exception):
+    """Raised mid-stream when an upload exceeds the configured limit."""
+
+    def __init__(self, limit: int):
+        self.limit = limit
+        super().__init__(f"upload exceeds the {limit}-byte limit")
 
 
 def _same_content(left: Path, right: Path) -> bool:

@@ -13,7 +13,7 @@ import os
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
-from fastapi import FastAPI, HTTPException, Query, Request, Response
+from fastapi import FastAPI, HTTPException, Query, Request, Response, UploadFile
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import (
@@ -54,8 +54,9 @@ from content.domain.request import GenerationRequest, SourceDescriptor
 from content.execution.executor import JobExecutor
 from content.execution.worker import JobQueue
 from content.naming.engine import suggest_base_name
+from content.naming.sanitize import sanitize_filename
 from content.notifications import build_notifications
-from content.persistence.store import Store
+from content.persistence.store import Store, new_id
 from content.planning.transformations import build_registry
 from content.processors.chapters import ChaptersProcessor
 from content.processors.pdf import ReportLabPdfProcessor, TypstPdfProcessor
@@ -68,7 +69,12 @@ from content.providers.ollama import OllamaProvider
 from content.providers.webpage import WebPageProvider
 from content.providers.whisper import WhisperProcessor
 from content.providers.ytdlp import YtDlpProvider
-from content.storage.layout import DeliveryStore, JobStorage
+from content.storage.layout import (
+    DeliveryStore,
+    JobStorage,
+    UploadStore,
+    UploadTooLarge,
+)
 from content.storage.paths import storage_report
 
 
@@ -222,6 +228,41 @@ def _resolve_source_input(
                 detail={"code": codes.ANALYSIS_EXPIRED, "message": str(exc)},
             ) from exc
     return list(sources)
+
+
+def _drain_upload(uploads, upload_id: str, filename: str, source, settings) -> dict:
+    """Copy an uploaded file to the upload store, enforcing the size limit.
+
+    ``source`` is Starlette's `UploadFile.file` — a spooled temporary file, so
+    the read side is ordinary blocking I/O and this runs in a worker thread to
+    keep the event loop free while a large upload lands.
+
+    Honest about what the limit does: Starlette has already buffered the body
+    (to memory, then to a temp file past its threshold) before this runs, so
+    the check bounds what the engine *stores*, not what it receives. Refusing
+    earlier means a middleware reading Content-Length and the raw stream; worth
+    doing before this is exposed to anything untrusted, and out of scope here.
+    """
+    return uploads.write_stream(
+        upload_id,
+        filename,
+        iter(lambda: source.read(1024 * 256), b""),
+        limit=settings.max_upload_bytes,
+    )
+
+
+def _upload_view(row: dict) -> dict:
+    """The public shape of an upload. Never the stored path: the id is the
+    address, and a filesystem path would leak the layout and invite clients to
+    build their own."""
+    return {
+        "upload_id": row["id"],
+        "filename": row["filename"],
+        "media_type": row["media_type"],
+        "size_bytes": row["size_bytes"],
+        "sha256": row["sha256"],
+        "created_at": row["created_at"],
+    }
 
 
 def create_app(
@@ -480,6 +521,84 @@ def create_app(
         root = settings.delivery_dir or (settings.data_dir / "delivery")
         folders = [""] + DeliveryStore(root).list_folders()
         return {"folders": folders}
+
+    # --- uploads (ADR 0020) ------------------------------------------------------
+
+    @app.post("/api/v1/uploads", tags=["uploads"], status_code=201)
+    async def create_upload(file: UploadFile) -> dict:
+        """Store bytes a client supplied, and return the id that references them.
+
+        The one endpoint that lets a caller write to the engine's disk, so the
+        limits are enforced here rather than trusted: the size is counted while
+        streaming (never read from Content-Length), the quota is checked before
+        accepting, and the file only becomes addressable once it is complete.
+        The stored path is deliberately absent from the response — the id is
+        the address.
+        """
+        store_root = settings.uploads_dir or (settings.data_dir / "uploads")
+        uploads = UploadStore(store_root)
+        if settings.uploads_total_bytes:
+            used = uploads.total_bytes()
+            if used >= settings.uploads_total_bytes:
+                raise HTTPException(
+                    status_code=507,
+                    detail={
+                        "code": "upload_quota_exceeded",
+                        "message": (
+                            f"the upload store holds {used} bytes, at or over the "
+                            f"{settings.uploads_total_bytes}-byte quota"
+                        ),
+                    },
+                )
+        upload_id = new_id("upl")
+        filename = file.filename or "upload"
+
+        try:
+            written = await asyncio.to_thread(
+                _drain_upload, uploads, upload_id, filename, file.file, settings
+            )
+        except UploadTooLarge as exc:
+            raise HTTPException(
+                status_code=413,
+                detail={
+                    "code": "upload_too_large",
+                    "message": str(exc),
+                    "limit_bytes": exc.limit,
+                },
+            ) from exc
+        record = {
+            "id": upload_id,
+            "filename": sanitize_filename(filename),
+            # The client's declared type is recorded, never trusted: what a
+            # file *is* comes from analysis, exactly as for any other source.
+            "media_type": file.content_type or "",
+            "size_bytes": written["size_bytes"],
+            "sha256": written["sha256"],
+            "path": written["path"],
+        }
+        store.register_upload(record)
+        return _upload_view(store.get_upload(upload_id))
+
+    @app.get("/api/v1/uploads/{upload_id}", tags=["uploads"])
+    def get_upload(upload_id: str) -> dict:
+        row = store.get_upload(upload_id)
+        if row is None:
+            raise HTTPException(
+                status_code=404,
+                detail={"code": "not_found", "message": f"no upload {upload_id}"},
+            )
+        return _upload_view(row)
+
+    @app.delete("/api/v1/uploads/{upload_id}", tags=["uploads"], status_code=204)
+    def delete_upload(upload_id: str) -> Response:
+        """Remove an upload before its TTL. Idempotent: deleting an unknown id
+        succeeds, since the caller's intent — that it be gone — already holds."""
+        row = store.get_upload(upload_id)
+        if row is not None:
+            store_root = settings.uploads_dir or (settings.data_dir / "uploads")
+            UploadStore(store_root).remove(upload_id)
+            store.delete_upload(upload_id)
+        return Response(status_code=204)
 
     # --- analyses --------------------------------------------------------------
 

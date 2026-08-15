@@ -56,6 +56,14 @@ class ContentSettings:
     analysis_timeout_seconds: int = 120
     analysis_ttl_hours: float = 72.0  # 3 days — URL info is cached this long
     max_artifact_bytes: int = 0  # 0 = unlimited
+    # Client uploads (ADR 0020). uploads_dir None = <data_dir>/uploads.
+    # max_upload_bytes is enforced WHILE streaming, never from Content-Length,
+    # which is a claim; 0 = unlimited and is not a sane default for a network
+    # service with no authentication.
+    uploads_dir: Path | None = None
+    max_upload_bytes: int = 2 * 1024 * 1024 * 1024  # 2 GiB
+    uploads_total_bytes: int = 20 * 1024 * 1024 * 1024  # quota, 0 = unlimited
+    upload_ttl_hours: float = 24.0  # counted from LAST reference, not creation
     allow_private_networks: bool = False
     allowed_input_roots: tuple[Path, ...] = field(default_factory=tuple)
     ollama_url: str = "http://localhost:11434"
@@ -474,6 +482,8 @@ def settings_from_env() -> ContentSettings:
     tmp_dir = Path(tmp_raw).resolve() if tmp_raw else data_dir / "tmp"
     cache_raw = os.getenv("CONTENT_CACHE_ROOT")
     cache_dir = Path(cache_raw).resolve() if cache_raw else data_dir / "cache"
+    uploads_raw = os.getenv("CONTENT_UPLOADS_ROOT")
+    uploads_dir = Path(uploads_raw).resolve() if uploads_raw else data_dir / "uploads"
     roots = tuple(
         Path(p).resolve()
         for p in os.getenv("CONTENT_ALLOWED_INPUT_ROOTS", "").split(":")
@@ -499,6 +509,14 @@ def settings_from_env() -> ContentSettings:
         ),
         analysis_ttl_hours=_to_float(os.getenv("CONTENT_ANALYSIS_TTL_HOURS"), 72.0),
         max_artifact_bytes=_to_int(os.getenv("CONTENT_MAX_ARTIFACT_BYTES"), 0),
+        uploads_dir=uploads_dir,
+        max_upload_bytes=_to_int(
+            os.getenv("CONTENT_MAX_UPLOAD_BYTES"), 2 * 1024 * 1024 * 1024
+        ),
+        uploads_total_bytes=_to_int(
+            os.getenv("CONTENT_UPLOADS_TOTAL_BYTES"), 20 * 1024 * 1024 * 1024
+        ),
+        upload_ttl_hours=_to_float(os.getenv("CONTENT_UPLOAD_TTL_HOURS"), 24.0),
         allow_private_networks=_to_bool(
             os.getenv("CONTENT_ALLOW_PRIVATE_NETWORKS"), False
         ),
