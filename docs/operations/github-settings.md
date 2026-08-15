@@ -47,6 +47,7 @@ from a clone, which is why it is written down.
 | 10 | **Forking** | Allowed | GOVERNANCE.md calls forking the intended path — never restrict it |
 | 11 | **Repository visibility** | Public | AGPL §13: the source offer in the running UI must resolve (see below) |
 | 12 | **Sponsor button / social preview** | Off | No marketing surface is claimed |
+| 13 | **Environments → `pypi` (and `testpypi`)** | Exists, **no required reviewer** | The Trusted Publishing identity on PyPI is bound to the environment *name*, so it must exist and keep that name. A required reviewer, however, asks the maintainer to approve what they just approved: publishing the release is what triggers the upload, so the second prompt only delays it |
 
 ## The AGPL §13 chain
 

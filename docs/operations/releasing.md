@@ -5,7 +5,8 @@ The whole ceremony in order, written to be followed at 1 a.m. Three actors:
 YannOrieult, **[tag]** is what pushing the tag does on its own.
 
 A release is: merge everything → bump + notes on one branch → PR → tag on
-merged main → publish the draft → one PyPI run → verify. The expensive
+merged main → publish the draft → verify. Publishing the draft is the last
+decision; PyPI follows it on its own. The expensive
 property is that every guard here exists because its failure has already
 happened once; do the steps in order and none of them can happen again.
 
@@ -65,12 +66,17 @@ happened once; do the steps in order and none of them can happen again.
    release, read it once as a stranger, publish. This is the moment
    `releases/latest` starts pointing at the new version.
 
-7. **[browser] One PyPI run.** Actions → *Publish to PyPI* → Run workflow
-   with `version=<x.y.z>`, `repository=pypi`, `only=all`. The workflow checks
-   out the tag (never a branch), verifies the tree declares the requested
-   version, rebuilds the wheels, `twine check`s them, and publishes all three
-   packages via Trusted Publishing — no token exists to leak. If the
-   `pypi` environment has a required reviewer, approve it there.
+7. **[tag] PyPI follows the release, by itself.** Publishing the draft in
+   step 6 triggers *Publish to PyPI*: it checks out the tag (never a branch),
+   verifies the tree declares the same version, rebuilds the wheels,
+   `twine check`s them, and publishes all three packages via Trusted
+   Publishing — no token exists to leak. There is nothing to press.
+
+   Two cases still need a hand, both through *Actions → Publish to PyPI →
+   Run workflow*: a **pre-release**, which is skipped deliberately so a
+   candidate does not spend a version number, and a **half-finished publish**,
+   where PyPI already accepted some packages — re-run with `only=<package>`
+   for the missing one, since what uploaded cannot be replaced.
 
 8. **[shell] Verify.** Each check exercises a different artifact:
 

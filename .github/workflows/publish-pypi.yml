@@ -1,22 +1,40 @@
 # Publish content-sdk, content-cli and content-mcp to PyPI.
 #
-# Deliberately NOT triggered by a tag. Tagging already does enough on its own
-# (CI, the GHCR images, the draft release); a push to PyPI is irreversible —
-# a version number can never be reused, even after deletion — so it is the one
-# step that asks a human to press the button. `workflow_dispatch` with an
-# explicit version is that button.
+# Triggered by **publishing a GitHub release**, which is already the deliberate
+# human act of the release sequence: the draft is created by the tag, read, and
+# published on purpose. Making that one decision also publish to PyPI removes a
+# second button that asked the same person the same question — and removes the
+# gap where a release ships while PyPI silently stays a version behind.
+#
+# A push to PyPI is still irreversible: a version number can never be reused,
+# even after deletion. What protects it is the same thing that protects the
+# release itself — publishing the draft is not accidental — plus the checks
+# below, which refuse to upload a tree whose declared version disagrees with
+# the tag.
+#
+# `workflow_dispatch` remains, for the cases the trigger cannot serve: a
+# release published before this workflow existed, a publish that failed
+# halfway and needs one package re-sent, or a rehearsal on TestPyPI.
+#
+# Pre-releases are skipped: `v0.6.0-rc1` gets its GHCR images and its release
+# page, but not a PyPI version number spent on a candidate. Dispatch it by hand
+# if that is genuinely wanted.
 #
 # Authentication is PyPI Trusted Publishing (OIDC): GitHub mints a short-lived
 # token for this exact repository, workflow and environment. There is no API
-# token stored anywhere, so there is none to leak or rotate.
+# token stored anywhere, so there is none to leak or rotate. The environment
+# must keep its name — the trusted publisher on PyPI is bound to it — but it
+# needs no required reviewer: publishing the release was the approval.
 name: Publish to PyPI
 
 on:
+  release:
+    types: [published]
   workflow_dispatch:
     inputs:
       version:
-        description: "Version to publish (must match the tag and the packages, e.g. 0.1.0)"
-        required: true
+        description: "Version to publish (e.g. 0.5.0). Defaults to the release tag."
+        required: false
         type: string
       repository:
         description: "Which index to publish to"
@@ -26,11 +44,11 @@ on:
         options: [testpypi, pypi]
       only:
         description:
-          "Restrict the upload to one package. Bootstrap only: PyPI allows a
-          single *pending* (project-creating) publisher per workflow identity,
-          so brand-new projects are published one at a time — register the
-          pending publisher, run with only=<pkg>, repeat. Once the projects
-          exist they share the identity and publish together (all)."
+          "Restrict the upload to one package. Recovery and bootstrap: PyPI
+          allows a single *pending* (project-creating) publisher per workflow
+          identity, and a publish that uploaded some packages before failing
+          cannot simply be re-run — the uploaded ones are permanent. Re-send
+          the missing package alone."
         required: true
         default: all
         type: choice
@@ -40,8 +58,53 @@ permissions:
   contents: read
 
 jobs:
+  prepare:
+    name: Resolve what to publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # A pre-release publishes nothing automatically; a dispatch always runs.
+    if: >-
+      github.event_name == 'workflow_dispatch'
+      || github.event.release.prerelease == false
+    outputs:
+      version: ${{ steps.resolve.outputs.version }}
+      repository: ${{ steps.resolve.outputs.repository }}
+      only: ${{ steps.resolve.outputs.only }}
+    steps:
+      - name: Resolve the version and target index
+        id: resolve
+        env:
+          # Empty on a release event; empty on a dispatch that omitted them.
+          INPUT_VERSION: ${{ inputs.version }}
+          INPUT_REPOSITORY: ${{ inputs.repository }}
+          INPUT_ONLY: ${{ inputs.only }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          # The dispatch inputs win when given, so a recovery run can name a
+          # version the release event would not have supplied.
+          version="${INPUT_VERSION:-$RELEASE_TAG}"
+          version="${version#v}"
+          repository="${INPUT_REPOSITORY:-pypi}"
+          only="${INPUT_ONLY:-all}"
+
+          if [ -z "$version" ]; then
+            echo "::error::no version: dispatch without one, and no release tag"
+            exit 1
+          fi
+          case "$version" in
+            [0-9]*.[0-9]*.[0-9]*) ;;
+            *) echo "::error::'$version' does not look like x.y.z"; exit 1;;
+          esac
+
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "repository=$repository" >> "$GITHUB_OUTPUT"
+          echo "only=$only" >> "$GITHUB_OUTPUT"
+          echo "Publishing $version to $repository (packages: $only)"
+
   build:
     name: Build and check the distributions
+    needs: prepare
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -49,20 +112,22 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # Publish what was tagged and validated, never a moving branch.
-          ref: v${{ inputs.version }}
+          ref: v${{ needs.prepare.outputs.version }}
 
       - name: Install uv
         uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
 
-      # The tag, the pyproject files and the requested version must agree.
+      # The tag, the pyproject files and the resolved version must agree.
       # Publishing 0.1.0 from a tree that says 0.2.0 is unfixable afterwards.
       - name: Check the version agrees everywhere
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
         run: |
           set -euo pipefail
           make version
           declared=$(grep -m1 '^version = ' packages/python-sdk/pyproject.toml | sed 's/.*"\(.*\)"/\1/')
-          if [ "$declared" != "${{ inputs.version }}" ]; then
-            echo "::error::the tree declares $declared but publication asked for ${{ inputs.version }}"
+          if [ "$declared" != "$VERSION" ]; then
+            echo "::error::the tree declares $declared but publication asked for $VERSION"
             exit 1
           fi
 
@@ -78,15 +143,18 @@ jobs:
           path: dist/
 
   publish:
-    name: Publish to ${{ inputs.repository }}
-    needs: build
+    name: Publish to ${{ needs.prepare.outputs.repository }}
+    needs: [prepare, build]
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    # The environment is the gate: configure a required reviewer on it in the
-    # repository settings and this job waits for an approval before it runs.
+    # The environment carries the Trusted Publishing identity. It needs no
+    # required reviewer: publishing the release was the human decision, and
+    # asking again only delays it.
     environment:
-      name: ${{ inputs.repository }}
-      url: https://${{ inputs.repository == 'pypi' && 'pypi.org' || 'test.pypi.org' }}/p/content-cli
+      name: ${{ needs.prepare.outputs.repository }}
+      url: >-
+        https://${{ needs.prepare.outputs.repository == 'pypi'
+            && 'pypi.org' || 'test.pypi.org' }}/p/content-cli
     permissions:
       contents: read
       id-token: write # the OIDC token Trusted Publishing exchanges — no secret
@@ -96,19 +164,21 @@ jobs:
           name: distributions
           path: dist/
 
-      # Bootstrap mode (see the `only` input): drop every distribution except
-      # the requested package, so a first-time project can be created while
-      # its siblings' pending publishers do not exist yet.
-      - name: Restrict the upload to one package (bootstrap)
-        if: inputs.only != 'all'
+      # Recovery mode (see the `only` input): drop every distribution except
+      # the requested package, so a half-finished publish can be completed
+      # without re-uploading what PyPI already accepted.
+      - name: Restrict the upload to one package
+        if: needs.prepare.outputs.only != 'all'
+        env:
+          ONLY: ${{ needs.prepare.outputs.only }}
         run: |
-          find dist -type f ! -name "content_${{ inputs.only }}-*" -delete
+          find dist -type f ! -name "content_${ONLY}-*" -delete
           echo "uploading only:" && ls -1 dist
 
       - name: Publish
         uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
         with:
           repository-url: >-
-            ${{ inputs.repository == 'pypi'
+            ${{ needs.prepare.outputs.repository == 'pypi'
                 && 'https://upload.pypi.org/legacy/'
                 || 'https://test.pypi.org/legacy/' }}
