@@ -115,7 +115,7 @@ console are not listed there because they always run.
 | `COMPOSE_PROFILES` | `hometube,studio` | Which download UIs start (`hometube`, `studio`, or both); the engine and the console always run |
 | `CONTENT_PORT` / `HOMETUBE_PORT` / `STUDIO_PORT` / `CONSOLE_PORT` | 8010 / 8501 / 8502 / 8503 | Host ports |
 | `CONTENT_MAX_CONCURRENT_JOBS` | 2 | Worker concurrency |
-| `CONTENT_COLLECTION_MEMBER_CONCURRENCY` | 2 | Playlist members downloading at once — a politeness bound toward the provider, not a throughput dial; 1 = strictly sequential |
+| `CONTENT_COLLECTION_MEMBER_CONCURRENCY` | 2 | Playlist members downloading at once **within one job** — a politeness bound toward the provider, not a throughput dial; 1 = strictly sequential. It multiplies with `CONTENT_MAX_CONCURRENT_JOBS`: the defaults allow up to 4 simultaneous downloads from one host |
 | `CONTENT_STEP_TIMEOUT_SECONDS` | 3600 | Per-step timeout |
 | **🌐 Network & access** | | |
 | `CONTENT_ALLOW_PRIVATE_NETWORKS` | false | SSRF guard (URLs pointing at private IPs) |

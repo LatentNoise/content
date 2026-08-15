@@ -83,8 +83,9 @@ of (request, analysis). That holds per member.
   how long a playlist is.
 - **No eager whole-collection probing.** Analysis happens as each member enters
   execution, bounded by `CONTENT_COLLECTION_MEMBER_CONCURRENCY` (default 2,
-  1 = strictly sequential) — a politeness bound toward the provider, since two
-  concurrent members are two concurrent downloads from the same host. The
+  1 = strictly sequential) — a politeness bound toward the provider. The bound
+  is **per job**, so it multiplies with `CONTENT_MAX_CONCURRENT_JOBS`: the
+  shipped defaults permit up to four simultaneous downloads from one host. The
   analysis cache (`CONTENT_ANALYSIS_TTL_HOURS`) applies per resource, so
   re-submitting a playlist re-reads rather than re-probes.
 - **No duplicated planner logic.** A member is planned by `build_plan`, the
