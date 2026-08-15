@@ -49,6 +49,11 @@ OUTPUT_TYPES = [
     "pdf",
 ]
 SOURCE_TYPES = ["url", "file", "text"]
+# Streamlit buffers an upload in this app's memory before it ever reaches the
+# engine, so the ceiling here is lower than the API's on purpose: a 2 GiB file
+# would be held whole in a UI container. Measured default is 200 MB; keep the
+# widget's label honest by reading whatever is configured.
+MAX_UPLOAD_MB = int(os.getenv("STREAMLIT_SERVER_MAXUPLOADSIZE", "200"))
 
 SB_PRESETS: dict[str, dict | None] = {
     "disabled": None,
@@ -181,7 +186,7 @@ st.subheader("1 · Sources")
 n_sources = st.number_input("How many sources?", 1, 8, 1, key="n_sources")
 
 
-def _upload_once(index: int, picked) -> str:
+def _upload_once(index, picked) -> str:
     """Send the chosen file to the engine, at most once per selection.
 
     The de-duplication rule lives in the SDK (`content_sdk.uploads`) because
@@ -204,7 +209,7 @@ def _upload_once(index: int, picked) -> str:
         return ""
 
 
-def source_editor(i: int) -> dict:
+def source_editor(i: int) -> list[dict]:
     sid = f"s{i + 1}"
     cols = st.columns([1, 3])
     stype = cols[0].selectbox("Type", SOURCE_TYPES, key=f"stype-{i}")
@@ -233,20 +238,35 @@ def source_editor(i: int) -> dict:
             )
             src["path"] = path.strip()
         else:
+            # Several files at once become several sources — which composes
+            # with `each_item` for free rather than needing a multi-file
+            # pipeline of its own.
             picked = cols[1].file_uploader(
-                "Choose a file", key=f"upl-{i}", label_visibility="collapsed"
+                f"Choose file(s) — up to {MAX_UPLOAD_MB} MB each",
+                key=f"upl-{i}",
+                label_visibility="collapsed",
+                accept_multiple_files=True,
             )
-            if picked is not None:
-                uploaded = _upload_once(i, picked)
-                if uploaded:
-                    src = {"id": sid, "type": "upload", "upload_id": uploaded}
+            uploads = []
+            for n, one in enumerate(picked or []):
+                got = _upload_once(f"{i}-{n}", one)
+                if got:
+                    uploads.append(
+                        {
+                            "id": f"{sid}_{n + 1}" if n else sid,
+                            "type": "upload",
+                            "upload_id": got,
+                        }
+                    )
+            if uploads:
+                return uploads
     else:  # text
         content = cols[1].text_area("Text content", key=f"text-{i}", height=100)
         src["content"] = content
-    return src
+    return [src]
 
 
-sources = [source_editor(i) for i in range(int(n_sources))]
+sources = [s for i in range(int(n_sources)) for s in source_editor(i)]
 valid_sources = [
     s
     for s in sources

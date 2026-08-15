@@ -87,3 +87,24 @@ except ValidationError as exc:  # 422 / 409 idempotency
   key).
 
 The SDK never imports the engine and never depends on the CLI or MCP.
+
+## Sending a local file
+
+A `file` source names a path the **engine** can read. For a file on your own
+machine — a laptop talking to a homelab engine — upload it first:
+
+```python
+source = client.upload_file("~/report.pdf")  # returns a ready-to-use source
+analysis = client.analyze(source)
+job = client.generate(analysis.id, [{"id": "s", "type": "summary"}])
+```
+
+`upload_file` streams from disk and hands back `{"type": "upload", …}` — the
+upload id never has to be handled by hand. `upload_bytes(name, data, type)` does
+the same for bytes that were never a file, which is what a browser upload is.
+`upload()` returns the record itself (size, sha256) for callers who want it, and
+`get_upload` / `delete_upload` complete the endpoint.
+
+The async client mirrors all of it, with one deliberate difference: it buffers
+rather than streams, because handing httpx a blocking file handle inside an
+async send only relocates the stall. For a large upload, prefer the sync client.

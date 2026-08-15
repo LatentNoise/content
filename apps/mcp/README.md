@@ -130,3 +130,14 @@ Build the distributions with `make wheels` (they land in `dist/`).
 - The layering is enforced by tests: the MCP server may import `content_sdk`
   only — never an HTTP client, never backend internals
   (`tests/test_layering.py` at the repo root).
+
+## Local files, both directions
+
+A path you give `analyze_source` is a path on the machine running **this
+server**, never on the engine: the file is read here and uploaded, which is the
+only way a local file becomes usable by an engine running elsewhere. Identical
+path strings on two machines do not imply identical filesystems, so the path is
+never passed through untouched.
+
+`download_artifact` is the mirror image — it brings a finished artifact back to
+this machine, bounded by `CONTENT_MCP_DOWNLOAD_DIR` (see above).

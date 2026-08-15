@@ -34,6 +34,9 @@ USER appuser
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     STREAMLIT_SERVER_HEADLESS=true \
+    # Uploads are buffered in this app's memory before reaching the
+    # engine, so the UI ceiling is deliberately below the API's 2 GiB.
+    STREAMLIT_SERVER_MAXUPLOADSIZE=200 \
     STREAMLIT_BROWSER_GATHER_USAGE_STATS=false \
     CONTENT_API_URL=http://content:8000
 
