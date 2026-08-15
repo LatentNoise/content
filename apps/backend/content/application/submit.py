@@ -12,6 +12,7 @@ import json
 from dataclasses import dataclass
 
 from content.analysis.service import AnalysisService
+from content.application.uploads import resolve_request_uploads
 from content.config import ContentSettings
 from content.domain import errors as codes
 from content.domain.errors import (
@@ -85,6 +86,10 @@ def submit_generation(
     if key and store.find_job_by_idempotency_key(key) is not None:
         return replay_or_conflict()
 
+    # An `upload` source becomes the `file` it stands for before anything
+    # dispatches on source type, so analysis and planning both see one
+    # concrete file and neither learns that uploads exist (ADR 0020).
+    request = resolve_request_uploads(request, store, settings)
     analysis = analysis_service.analyze_sources(list(request.sources))
     plan: ExecutionPlan = build_plan(request, analysis, providers, settings)
 
