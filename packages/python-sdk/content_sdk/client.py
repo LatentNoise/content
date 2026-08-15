@@ -7,6 +7,7 @@ to typed exceptions. `analyze/get_capabilities/generate` accept **either** an
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any, Self
 
@@ -214,6 +215,34 @@ class ContentClient:
             f"/jobs/{job_id}/events", params={"after_sequence": after_sequence}
         )
         return [Event.model_validate(r) for r in rows]
+
+    def stream_events(self, job_id: str, after_sequence: int = 0):
+        """Yield a job's events as they happen, instead of asking repeatedly.
+
+        The engine keeps the same replayable journal `events()` reads, so this
+        is the live view of it: pass `after_sequence` to resume, and the
+        generator returns when the job is terminal (the server sends an
+        explicit `stream.end`).
+
+        Yields dicts — `{"sequence", "type", "data"}` — rather than `Event`
+        models, because the stream carries what changed and not the full
+        record; `events()` remains the way to fetch those.
+        """
+        stream = self._t.stream_sse(
+            f"/jobs/{job_id}/events/stream", params={"after_sequence": after_sequence}
+        )
+        for raw in stream:
+            if raw["type"] == "stream.end":
+                return
+            try:
+                data = json.loads(raw["data"]) if raw["data"] else {}
+            except ValueError:
+                data = {"raw": raw["data"]}
+            yield {
+                "sequence": int(raw["id"]) if (raw["id"] or "").isdigit() else 0,
+                "type": raw["type"],
+                "data": data,
+            }
 
     def logs(self, job_id: str, tail: int = 400) -> dict[str, Any]:
         return self._t.get(f"/jobs/{job_id}/logs", params={"tail": tail})
