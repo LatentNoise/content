@@ -24,6 +24,15 @@ INSTRUCTIONS = (
     "copied into the server's media library and each artifact reports its "
     "delivered_path there. An output spec may carry delivery "
     '{"mode": "inherit|deliver|none", "folder": …, "filename": …} to steer this. '
+    "Do steer it: get_config lists the library's existing folders, so choose "
+    "one that fits what the user asked for (or ask them which) rather than "
+    "letting everything pile up in the library root, and tell them the "
+    "delivered_path in your answer — 'saved to Tech/…' is the useful reply, an "
+    "artifact id is not. "
+    "Note that the engine's library lives on the *engine's* machine. When the "
+    "user wants the file on the machine you are running on — often the case "
+    "when the engine is a homelab or NAS — use download_artifact, which is the "
+    "only way bytes reach this side. "
     "A source whose resource_type is 'collection' (a playlist) is a special "
     "case worth knowing: its capabilities describe the collection itself, so "
     "media outputs read as unavailable there. To produce something for every "
@@ -85,6 +94,20 @@ def build_server(client: ContentClient | None = None) -> MCPServer:
         """Artifact metadata; small text artifacts are inlined, larger/binary
         ones return a download reference (never raw bytes over MCP)."""
         return service.get_artifact(client, artifact_id)
+
+    @server.tool()
+    def download_artifact(
+        artifact_id: str, destination: str | None = None
+    ) -> dict[str, Any]:
+        """Save an artifact onto the machine running this MCP server.
+
+        Use this when the user wants the file *here* rather than only in the
+        engine's library — typically when the engine runs on another machine.
+        `destination` is optional: omitted, the artifact keeps its own name in
+        the server's download directory (CONTENT_MCP_DOWNLOAD_DIR, default
+        ~/Downloads/Content). A path outside that directory is refused.
+        """
+        return service.download_artifact(client, artifact_id, destination)
 
     @server.tool()
     def get_config() -> dict[str, Any]:

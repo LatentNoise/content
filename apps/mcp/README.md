@@ -11,6 +11,19 @@ business logic**.
 any MCP client → content-mcp (this) → content_sdk → your Content engine (/api/v1)
 ```
 
+## Where downloaded files land
+
+`download_artifact` writes to the machine running this server — the counterpart
+to delivery, which writes to the engine's library. One variable bounds it:
+
+| Variable | Default | Role |
+| --- | --- | --- |
+| `CONTENT_MCP_DOWNLOAD_DIR` | `~/Downloads/Content` | The only directory this server may write to. Relative destinations resolve inside it; anything pointing outside is refused, not clamped |
+
+The refusal is deliberate. An MCP server writes to a real filesystem on an
+agent's say-so, so widening that is the operator's decision, taken once, rather
+than something a prompt can talk it into.
+
 ## Install
 
 The server is an ordinary Python application — nothing to clone:
