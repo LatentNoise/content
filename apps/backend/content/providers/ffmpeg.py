@@ -18,6 +18,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
+from content.config import uploads_root
 from content.domain import errors as codes
 from content.domain.analysis import (
     AnalysisError,
@@ -109,12 +110,36 @@ _CONTAINER_MIME = {
 }
 
 
-def check_path_allowed(path_str: str, allowed_roots: tuple[Path, ...]) -> Path:
-    """Resolve *path_str* (symlinks, ..) and require it under an allowed root.
+def check_path_allowed(
+    path_str: str,
+    allowed_roots: tuple[Path, ...],
+    *,
+    engine_roots: tuple[Path, ...] = (),
+) -> Path:
+    """Resolve *path_str* (symlinks, ..) and require it under a permitted root.
+
+    Two kinds of root, kept apart on purpose (ADR 0020):
+
+    * ``allowed_roots`` is **operator policy** — `CONTENT_ALLOWED_INPUT_ROOTS`.
+      Empty means the operator disabled `file` sources, and a path is then
+      refused as *valid but not supported* rather than as a bad path.
+    * ``engine_roots`` are directories the engine filled itself, today the
+      upload store. They are always readable, because refusing to read back
+      what a client just uploaded would make the feature useless — and they do
+      **not** switch `file` sources back on.
+
+    Merging the two would have quietly repealed the operator's policy, which a
+    test caught; keeping them separate is what lets uploads work on an
+    installation that allows no input roots at all.
 
     Raises AnalysisError with a normalized issue — the API must never expose
     arbitrary filesystem access (docs/architecture.md §8).
     """
+    resolved = Path(path_str).resolve()
+    # Both sides resolved before comparing: on macOS a data dir under /var is
+    # really /private/var, so an unresolved root never matches a resolved path.
+    if any(resolved.is_relative_to(root.resolve()) for root in engine_roots):
+        return _existing_file(resolved, path_str)
     if not allowed_roots:
         raise AnalysisError(
             ValidationIssue(
@@ -125,7 +150,6 @@ def check_path_allowed(path_str: str, allowed_roots: tuple[Path, ...]) -> Path:
                 ),
             )
         )
-    resolved = Path(path_str).resolve()
     if not any(resolved.is_relative_to(root) for root in allowed_roots):
         raise AnalysisError(
             ValidationIssue(
@@ -133,6 +157,11 @@ def check_path_allowed(path_str: str, allowed_roots: tuple[Path, ...]) -> Path:
                 message=f"Path '{path_str}' is outside the allowed input roots.",
             )
         )
+    return _existing_file(resolved, path_str)
+
+
+def _existing_file(resolved: Path, path_str: str) -> Path:
+    """The path exists and is a file — the last check both root kinds share."""
     if not resolved.is_file():
         raise AnalysisError(
             ValidationIssue(
@@ -196,7 +225,11 @@ class FfmpegProvider:
 
     def resource_key(self, source: SourceDescriptor, ctx: AnalysisContext) -> str:
         assert isinstance(source, FileSource)
-        resolved = check_path_allowed(source.path, ctx.settings.allowed_input_roots)
+        resolved = check_path_allowed(
+            source.path,
+            ctx.settings.allowed_input_roots,
+            engine_roots=(uploads_root(ctx.settings),),
+        )
         stat = resolved.stat()
         digest = hashlib.sha256(
             f"{resolved}:{stat.st_mtime_ns}:{stat.st_size}:{self.tool_version}".encode()
@@ -205,7 +238,11 @@ class FfmpegProvider:
 
     def analyze(self, source: SourceDescriptor, ctx: AnalysisContext) -> SourceAnalysis:
         assert isinstance(source, FileSource)
-        resolved = check_path_allowed(source.path, ctx.settings.allowed_input_roots)
+        resolved = check_path_allowed(
+            source.path,
+            ctx.settings.allowed_input_roots,
+            engine_roots=(uploads_root(ctx.settings),),
+        )
         raw = self._probe(resolved, ctx)
         return self._normalize(source.id, resolved, raw)
 

@@ -19,7 +19,8 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-from content.domain.errors import ValidationIssue, codes
+from content.domain import errors as codes
+from content.domain.errors import ValidationIssue
 from content.domain.request import FileSource, SourceDescriptor, UploadSource
 
 
@@ -89,3 +90,23 @@ def _is_expired(row: dict, settings) -> bool:
     if last.tzinfo is None:
         last = last.replace(tzinfo=timezone.utc)
     return datetime.now(timezone.utc) - last > timedelta(hours=ttl)
+
+
+def resolve_request_uploads(request, store, settings):
+    """Return *request* with every `upload` source replaced by its `file`.
+
+    Applied once at the boundary, before analysis and planning, so both see the
+    same concrete file and neither learns that uploads exist. Raises
+    RequestRejected when an upload cannot be resolved — the same shape any
+    other feasibility refusal takes.
+    """
+    from content.domain.errors import RequestRejected, ValidationResult
+
+    if not any(isinstance(s, UploadSource) for s in request.sources):
+        return request
+    resolved, issues = resolve_upload_sources(list(request.sources), store, settings)
+    if issues:
+        raise RequestRejected(
+            ValidationResult(valid=False, phase="feasibility", errors=issues)
+        )
+    return request.model_copy(update={"sources": resolved})
