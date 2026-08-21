@@ -118,9 +118,87 @@ def test_conference_acceptance_case():
     )
 
 
-def test_single_output_is_always_primary():
+def test_a_lone_output_is_bare_only_when_it_is_the_resource_itself():
+    """The rule is about what the artifact *is*, not about how many were asked
+    for. The media renderings of the resource carry the bare name; an artifact
+    *about* the resource says which one it is, even alone."""
     _, plan = _naming_plan([{"id": "audio_main", "type": "audio"}])
     assert _bound(plan, "audio_main", ".opus") == "My Conference.opus"
+
+    _, plan = _naming_plan([{"id": "tr", "type": "transcript"}])
+    assert _bound(plan, "tr", ".json", language="en") == (
+        "My Conference - transcript - en.json"
+    )
+
+
+@pytest.mark.parametrize(
+    "output, extension, language, expected",
+    [
+        (
+            {"id": "x", "type": "transcript"},
+            ".json",
+            "en",
+            "My Conference - transcript - en.json",
+        ),
+        ({"id": "x", "type": "summary"}, ".md", "", "My Conference - summary.md"),
+        (
+            {"id": "x", "type": "subtitles", "options": {"languages": ["en"]}},
+            ".srt",
+            "en",
+            "My Conference - subtitles - en.srt",
+        ),
+        ({"id": "x", "type": "metadata"}, ".json", "", "My Conference - metadata.json"),
+        ({"id": "x", "type": "thumbnail"}, ".jpg", "", "My Conference - thumbnail.jpg"),
+        ({"id": "x", "type": "keyframes"}, ".jpg", "", "My Conference - keyframes.jpg"),
+        ({"id": "x", "type": "chapters"}, ".json", "", "My Conference - chapters.json"),
+    ],
+)
+def test_an_artifact_about_the_resource_keeps_its_name_whatever_its_neighbours(
+    output, extension, language, expected
+):
+    """The regression this exists for: the same output type used to land in a
+    library under two different names depending on what else was in the
+    request — a transcript asked for alone was "My Conference - en.json",
+    unidentifiable beside anything else that is English and JSON, while the
+    same transcript beside a video was "My Conference - transcript - en.json".
+
+    Each type is requested twice here, once alone and once beside a video, and
+    the two names must agree.
+    """
+    _, alone = _naming_plan([output])
+    _, beside = _naming_plan([{"id": "vid", "type": "video"}, output])
+
+    assert _bound(alone, "x", extension, language=language) == expected
+    assert _bound(beside, "x", extension, language=language) == expected
+
+
+def test_which_rendering_of_the_resource_is_bare_still_depends_on_the_request():
+    """The counterpart, and not a contradiction: only one artifact can own the
+    unqualified name, so among the renderings *of the resource itself* the
+    precedence decides. Audio alone is the resource; audio beside a video is
+    the soundtrack of something the request already names."""
+    _, alone = _naming_plan([{"id": "aud", "type": "audio"}])
+    assert _bound(alone, "aud", ".opus") == "My Conference.opus"
+
+    _, beside = _naming_plan(
+        [{"id": "vid", "type": "video"}, {"id": "aud", "type": "audio"}]
+    )
+    assert _bound(beside, "vid", ".mkv") == "My Conference.mkv"
+    assert _bound(beside, "aud", ".opus") == "My Conference - audio.opus"
+
+
+def test_a_pdf_is_bare_only_when_it_presents_the_resource_itself():
+    """A PDF is judged by what it presents. Of a summary, it is a summary and
+    says so; of the page, it is the page. The bare-name rule and the qualifier
+    inheritance are the same judgement, so they cannot disagree."""
+    _, plan = _naming_plan(
+        [
+            {"id": "sum", "type": "summary"},
+            {"id": "pdf", "type": "pdf", "from_outputs": ["sum"]},
+        ]
+    )
+    assert _bound(plan, "sum", ".md") == "My Conference - summary.md"
+    assert _bound(plan, "pdf", ".pdf") == "My Conference - summary.pdf"
 
 
 def test_pdf_of_a_primary_output_stays_bare():
@@ -214,20 +292,19 @@ def test_numbering_only_when_cardinality_requires_it():
     _, plan = _naming_plan([{"id": "kf", "type": "keyframes"}])
     one = _bound(plan, "kf", ".jpg")
     many = [_bound(plan, "kf", ".jpg", item_index=i, item_count=3) for i in (1, 2, 3)]
-    assert one == "My Conference.jpg"
+    assert one == "My Conference - keyframes.jpg"
     assert many == [
-        "My Conference - 01.jpg",
-        "My Conference - 02.jpg",
-        "My Conference - 03.jpg",
+        "My Conference - keyframes - 01.jpg",
+        "My Conference - keyframes - 02.jpg",
+        "My Conference - keyframes - 03.jpg",
     ]
-    # Language-addressed siblings are already distinct — no numbers. (A
-    # subtitles-only request makes subtitles primary: bare base + language.)
+    # Language-addressed siblings are already distinct — no numbers.
     _, plan = _naming_plan(
         [{"id": "subs", "type": "subtitles", "options": {"languages": ["en"]}}]
     )
     assert (
         _bound(plan, "subs", ".srt", language="en", item_index=1, item_count=2)
-        == "My Conference - en.srt"
+        == "My Conference - subtitles - en.srt"
     )
 
 

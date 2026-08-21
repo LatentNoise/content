@@ -72,10 +72,15 @@ With base name `B` (e.g. `My Conference`):
 
 - **Primary output, no qualifier.** The primary output of a request is the
   first present in a fixed precedence list owned by the naming module
-  (`video, audio, markdown, document_text, transcript, summary, pdf`); a
-  single-output request is always primary. It binds as `B.<ext>`. `pdf` sits
-  *after* the text types so "summary + a PDF of it" binds `B.md` + `B.pdf`
-  rather than crowning the rendering.
+  (`video, audio, markdown, document_text, pdf`) — the renderings of *the
+  resource itself*. It binds as `B.<ext>`. `pdf` sits last so "the page + a
+  PDF of it" binds `B.md` + `B.pdf` rather than crowning the rendering, and a
+  PDF is only eligible when what it presents is eligible: a PDF of the summary
+  is a summary and keeps that word.
+
+  An artifact *about* the resource — transcript, summary, translation,
+  subtitles, chapters, metadata, thumbnail, keyframes — is never bare, **even
+  when it is the only output requested**. See the amendment below.
 - **Every other output carries its semantic qualifier**: `B - audio.opus`,
   `B - summary.md`. The qualifier names what the file *is*, not how it was
   made.
@@ -128,3 +133,35 @@ promise.
   audited before execution runs.
 - Delivery (ADR 0018) stops inventing names: it copies an artifact that
   already knows what it is called. Naming stays fully independent of delivery.
+
+## Amendment (2026-08-21) — a lone output is not automatically primary
+
+The first implementation carried two extra rules that the text above no longer
+has: a single-output request named its output bare whatever its type, and
+`transcript`/`summary` sat in the precedence list. Together they produced this,
+observed in a real delivery library:
+
+```text
+Random tour through the Blender Institute - en.json      ← a transcript
+twenty one pilots Stressed Out … - transcript - en.json  ← also a transcript
+```
+
+Both are transcripts. The first was asked for alone, the second beside a video.
+A user browsing the folder cannot tell the first from anything else that
+happens to be English and JSON — and the same type landing under two different
+names depending on its neighbours is the opposite of what this ADR is for.
+
+The rule is now about **what the artifact is**, not about how many were asked
+for: only a rendering of the resource itself can take the bare name, and among
+those the precedence decides (there can be only one). Everything else says what
+it is, always.
+
+Note that the ADR's own examples already assumed this — "a single thumbnail is
+`B - thumbnail.jpg`" was written here from the start, while the code named a
+lone thumbnail `B.jpg`. The implementation, not the decision, was the thing out
+of line.
+
+**Not retroactive.** Files already in a library keep their names; the library
+is the user's (ADR 0023). Anyone keying automation on a delivered filename of a
+transcript-, summary- or subtitles-only request will see the qualifier appear —
+`docs/releases/` carries it as a visible change.

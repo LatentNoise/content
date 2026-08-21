@@ -249,6 +249,17 @@ class DeliveryStore:
     def __init__(self, root: Path):
         self.root = Path(root).resolve()
 
+    def expected_name(self, filename: str) -> str:
+        """The name a delivery would use if nothing were in its way.
+
+        Delivery may land on a different one — the counter fires when the name
+        is taken by different content — and the caller has no other way to
+        tell a *collision* from ordinary sanitization ("a/b" becoming
+        "a - b"). Comparing against this answers exactly that question.
+        """
+        suffix = Path(filename).suffix
+        return f"{display_name(Path(filename).stem) or 'artifact'}{suffix}"
+
     def deliver(self, source: Path, folder: str, filename: str) -> Path:
         """Copy ``source`` under ``<root>/<folder>/<filename>``. Returns the
         actual target.
@@ -275,11 +286,9 @@ class DeliveryStore:
         if self.root != target_dir and self.root not in target_dir.parents:
             raise ValueError("delivery target escapes the delivery root")
         target_dir.mkdir(parents=True, exist_ok=True)
-        suffix = Path(filename).suffix
-        stem = display_name(Path(filename).stem) or "artifact"
         staged = stage_beside(Path(source), target_dir)
         try:
-            for target in _numbered_names(target_dir, f"{stem}{suffix}"):
+            for target in _numbered_names(target_dir, self.expected_name(filename)):
                 if target.exists() and _same_content(source, target):
                     return target
                 if claim_with(staged, target):

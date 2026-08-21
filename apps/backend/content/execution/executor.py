@@ -571,11 +571,27 @@ class JobExecutor:
                 )
                 state.count_artifact(output.id)
                 all_artifact_ids.append(artifact_id)
-                delivered = self._deliver_artifact(
+                delivered, collided_with = self._deliver_artifact(
                     plan, output, target, display_filename
                 )
                 if delivered:
                     self._store.set_artifact_delivered(artifact_id, delivered)
+                    # Delivery used to be invisible in the event stream: the
+                    # library gained a file and the only trace was a
+                    # `delivered_path` column nothing surfaced. It matters most
+                    # when the name was taken — two different videos sharing a
+                    # title leave a `…-1` the user meets weeks later, wondering
+                    # which job produced which.
+                    self._events.publish(
+                        job_id,
+                        "artifact.delivered",
+                        {
+                            "artifact_id": artifact_id,
+                            "artifact_request_id": output.id,
+                            "path": delivered,
+                            "renamed_from": collided_with,
+                        },
+                    )
                 if target is first_target:
                     materials.append(
                         Material(
@@ -590,11 +606,14 @@ class JobExecutor:
 
     def _deliver_artifact(
         self, plan: ExecutionPlan, output, target, display_filename: str
-    ) -> str:
+    ) -> tuple[str, str]:
         """Copy the artifact into the delivery library when the plan says so
         (ADR 0018), under its display name (ADR 0017) — the executor decides
-        nothing here. Returns the delivered path relative to the delivery
-        root, or ``""`` when no delivery happens."""
+        nothing here.
+
+        Returns the delivered path relative to the delivery root (``""`` when
+        no delivery happens), and the name that was wanted when delivery had
+        to rename around a collision (``""`` otherwise)."""
         decision = plan.delivery_for(output.id)
         if decision is None:
             # Plan snapshotted before ADR 0018: the historical rule (deliver
@@ -605,7 +624,7 @@ class JobExecutor:
         else:
             deliver, folder = decision.deliver, decision.folder
         if not deliver:
-            return ""
+            return "", ""
         root = self._settings.delivery_dir or (self._settings.data_dir / "delivery")
         store = DeliveryStore(root)
         try:
@@ -614,7 +633,11 @@ class JobExecutor:
             raise StepExecutionError(
                 "delivery_failed", f"could not deliver artifact: {exc}"
             ) from exc
-        return delivered.relative_to(store.root).as_posix()
+        wanted = store.expected_name(display_filename)
+        return (
+            delivered.relative_to(store.root).as_posix(),
+            "" if delivered.name == wanted else wanted,
+        )
 
     def _register_artifact(
         self,
