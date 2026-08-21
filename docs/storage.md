@@ -66,6 +66,35 @@ A result is never made partially visible (INV-STORAGE-007/008).
 `JobStorage.promote_artifact` publishes `work|tmp → artifacts/` that way
 **before** the DB insert (write-then-register, INV-005).
 
+### Claiming a name, not just finding one free
+
+Publication is atomic; *choosing* the name has to be too. Two jobs run
+concurrently with the shipped defaults (`CONTENT_MAX_CONCURRENT_JOBS=2`) and a
+collection's members run concurrently inside a job, so several writers can
+compute the same target in the same instant — and the delivery library is the
+shared destination of all of them.
+
+`if not target.exists(): write(target)` loses that race: between the look and
+the write another writer takes the name, and one file overwrites the other. So
+both the job store and the delivery library take a name in two steps:
+
+1. **stage** the bytes beside the destination under a private hidden name
+   (`stage_beside`) — the slow copy happens where nobody is looking;
+2. **claim** the first candidate name (`name`, then `name-1`, `name-2`…) with
+   `claim_with`, which hard-links the staged file into place. `os.link` fails
+   if the name exists, so the name and its content appear in one atomic step
+   and the loser of a race simply tries the next counter.
+
+Where hard links are unavailable (some network and FAT-family mounts) the name
+is claimed with an exclusive `O_CREAT | O_EXCL` create and filled by a rename:
+still exclusive, with a visible window the length of a rename rather than the
+length of a copy.
+
+This is why a media server watching the delivery folder never sees a zero-byte
+or half-written file appear. `DeliveryStore.deliver` keeps its dedup rule in
+front of the claim: a candidate name holding byte-identical content is returned
+as-is rather than cloned to `-1`.
+
 ## Cache (`CONTENT_CACHE_ENABLED`)
 
 The cross-job cache is **disabled by default** in the code (ADR 0009) and
