@@ -247,6 +247,14 @@ def classify_failure(stderr_text: str) -> str:
     # made this branch unreachable for the one message that produces it.
     if "bot" in lowered and ("sign in" in lowered or "confirm" in lowered):
         return "bot_detection"
+    # The quiet face of the same thing. When YouTube distrusts an anonymous
+    # client it does not always say so: it answers with a *degraded* format
+    # list holding nothing but storyboards, and yt-dlp then reports "Requested
+    # format is not available" — sending the user to look for the wrong
+    # problem. Observed on a video that downloads fine with cookies seconds
+    # later, so the answer is the cookie remedy, not a format one.
+    if "only images are available" in lowered:
+        return "bot_detection"
     if any(pattern in lowered for pattern in _AUTH_PATTERNS):
         return "authentication_required"
     if "requested format is not available" in lowered:
