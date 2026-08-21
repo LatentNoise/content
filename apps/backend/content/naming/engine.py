@@ -24,17 +24,25 @@ from content.domain.validation import resolve_inputs
 from content.naming.sanitize import display_name, item_slug
 
 # The output granted the unqualified base name, first type present wins; every
-# other output carries its semantic qualifier. A single-output request is
-# always primary regardless of type. Types absent from this list (metadata,
-# thumbnail, subtitles…) are never bare in a multi-output request: their names
-# should say what the file is.
+# other output carries its semantic qualifier.
+#
+# The list is exactly the types that *are the resource itself*, rendered: the
+# talk as a video, as audio, as readable text, as a PDF. Everything else —
+# transcript, summary, translation, subtitles, chapters, metadata, thumbnail —
+# is an artifact *about* the resource, and its name has to say so.
+#
+# The distinction used to be softer: a single-output request named its output
+# bare whatever its type, and transcript/summary sat in this list. Both made
+# the same output type land in a library under two different names depending
+# on what else had been asked for in the same request — "Talk - en.json" for a
+# transcript requested alone, "Talk - transcript - en.json" for the same
+# transcript requested beside a video. The first is unidentifiable in a folder,
+# and the pair is the inconsistency users actually reported.
 PRIMARY_PRECEDENCE = (
     "video",
     "audio",
     "markdown",
     "document_text",
-    "transcript",
-    "summary",
     "pdf",
 )
 
@@ -133,12 +141,27 @@ def _qualifier_for(output, primary_id, outputs_by_id, seen: frozenset = frozense
     return output.type
 
 
-def _primary_output_id(outputs) -> str | None:
-    if len(outputs) == 1:
-        return outputs[0].id
+def _bare_eligible(output, outputs_by_id) -> bool:
+    """Can this output legitimately carry the unqualified name?
+
+    Only if it *is* the resource. A presentation type (a PDF, a translation)
+    is judged by what it presents: a PDF of the page is the page, a PDF of the
+    summary is a summary and keeps that word — which is also what the
+    qualifier inheritance says, so the two rules cannot disagree.
+    """
+    root = _root_output(output, outputs_by_id)
+    if output.type in INHERIT_QUALIFIER_TYPES and root.id != output.id:
+        return root.type in PRIMARY_PRECEDENCE
+    return output.type in PRIMARY_PRECEDENCE
+
+
+def _primary_output_id(outputs, outputs_by_id) -> str | None:
+    """The one output named bare, or ``None`` when the request asked for
+    nothing that is the resource itself — in which case every artifact says
+    what it is, which is the honest answer for a transcript-only request."""
     for output_type in PRIMARY_PRECEDENCE:
         for output in outputs:
-            if output.type == output_type:
+            if output.type == output_type and _bare_eligible(output, outputs_by_id):
                 return output.id
     return None
 
@@ -245,7 +268,7 @@ def resolve_naming_plan(request, analysis: ResourceAnalysis | None) -> NamingPla
     resolved, _ = resolve_inputs(request)
     outputs_by_id = {output.id: output for output in request.outputs}
     sources_by_id = {source.id: source for source in request.sources}
-    primary_id = _primary_output_id(request.outputs)
+    primary_id = _primary_output_id(request.outputs, outputs_by_id)
 
     entries: list[OutputNaming] = []
     for output in request.outputs:

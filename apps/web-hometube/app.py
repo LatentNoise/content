@@ -869,7 +869,20 @@ if audio_on:
         )
 
 
-# --- 🧠 Summary (summary only) -------------------------------------------------
+# --- 📝 Transcript / 🧠 Summary -------------------------------------------------
+
+transcript_format = "json"
+if "transcript" in want:
+    with st.expander("📝 Transcript"):
+        transcript_format = st.selectbox(
+            "Transcript format",
+            ["json", "text"],
+            help="JSON is the canonical form and carries the timings. `text` "
+            "is the readable derivation — the better file to keep beside a "
+            "video in your library. Asking for `text` while also asking for a "
+            "summary makes the engine build its own timed transcript as well, "
+            "which on a source without subtitles means transcribing twice.",
+        )
 
 summary_len = "medium"
 if "summary" in want:
@@ -999,6 +1012,8 @@ def build_request() -> dict:
                 opts["sponsorblock"] = sb
         elif name == "subtitles":
             opts["languages"] = subs_langs
+        elif name == "transcript":
+            opts["format"] = transcript_format
         elif name == "summary":
             opts["length"] = summary_len
         if opts:

@@ -168,9 +168,11 @@ def test_subtitle_delivery_names_include_language(pipeline, store, settings):
 
     root = _delivery_root(settings) / "subs"
     names = sorted(p.name for p in root.iterdir())
-    # Display-style names (ADR 0017): the client base keeps its qualifier-free
-    # form because subtitles are this request's only output (primary).
-    assert names == ["talk - en.srt", "talk - fr.srt"]
+    # Display-style names (ADR 0017). The client filename replaces the *base*;
+    # the qualifier stays, because "talk - en.srt" in a folder does not say
+    # what it is — and would not say it consistently either, since the same
+    # request beside a video would have produced "talk - subtitles - en.srt".
+    assert names == ["talk - subtitles - en.srt", "talk - subtitles - fr.srt"]
 
 
 def test_delivery_without_filename_uses_the_display_name(pipeline, store, settings):
@@ -277,6 +279,62 @@ def test_running_the_same_job_twice_delivers_one_file(policy_on, store):
     root = _delivery_root(settings)
     assert (root / "Fake conference.m4a").is_file()
     assert not (root / "Fake conference-1.m4a").exists()
+
+
+def _delivery_events(store, job_id) -> list[dict]:
+    return [e for e in store.list_events(job_id) if e["type"] == "artifact.delivered"]
+
+
+def test_delivery_is_recorded_in_the_event_stream(policy_on, store):
+    """Delivery used to leave no trace anywhere a user looks: the library
+    gained a file and the only record was a `delivered_path` column nothing
+    surfaced."""
+    pipeline, _ = policy_on
+    job_id = pipeline(minimal_payload())
+    events = _delivery_events(store, job_id)
+    assert len(events) == 1
+    assert events[0]["data"]["path"] == "Fake conference.m4a"
+    assert events[0]["data"]["renamed_from"] == "", "nothing was in the way"
+
+
+def test_a_delivery_collision_is_announced_rather_than_silent(
+    policy_on, store, settings
+):
+    """Two different videos can share a title, so the `-1` counter is right —
+    but it used to fire silently. The user met the clone weeks later with no
+    way to tell which job produced which."""
+    pipeline, settings = policy_on
+    root = _delivery_root(settings)
+    root.mkdir(parents=True, exist_ok=True)
+    (root / "Fake conference.m4a").write_bytes(b"a different video, same title")
+
+    job_id = pipeline(minimal_payload())
+
+    event = _delivery_events(store, job_id)[0]
+    assert event["data"]["path"] == "Fake conference-1.m4a"
+    assert event["data"]["renamed_from"] == "Fake conference.m4a"
+    assert store.list_artifacts(job_id)[0]["delivered_path"] == "Fake conference-1.m4a"
+
+
+def test_sanitizing_a_name_is_not_reported_as_a_collision(policy_on, store):
+    """`renamed_from` answers "was the name taken?", not "was the name
+    cleaned?". A slash becoming " - " is ordinary display naming and must not
+    look like a clash."""
+    pipeline, _ = policy_on
+    job_id = pipeline(
+        minimal_payload(
+            outputs=[
+                {
+                    "id": "audio_main",
+                    "type": "audio",
+                    "delivery": {"filename": "AC/DC live"},
+                }
+            ]
+        )
+    )
+    event = _delivery_events(store, job_id)[0]
+    assert event["data"]["path"] == "AC - DC live.m4a"
+    assert event["data"]["renamed_from"] == ""
 
 
 def test_resolved_delivery_is_visible_in_the_plan_snapshot(policy_on, store):

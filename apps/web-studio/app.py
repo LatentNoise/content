@@ -413,9 +413,10 @@ def output_options(otype: str, idx: int, media: dict | None = None) -> dict:
     elif otype == "transcript":
         c = st.columns(2)
         opts["language"] = c[0].text_input("language", "auto", key=f"tl-{idx}")
-        opts["format"] = c[1].selectbox(
-            "format", ["text", "json", "srt", "vtt"], key=f"tfm-{idx}"
-        )
+        # `json` and `text` are the whole contract (TranscriptOptions). "srt"
+        # and "vtt" were offered here and refused by the engine with a 422:
+        # a subtitle file is a `subtitles` output, not a transcript format.
+        opts["format"] = c[1].selectbox("format", ["json", "text"], key=f"tfm-{idx}")
     elif otype == "summary":
         c = st.columns(2)
         opts["length"] = c[0].selectbox(
