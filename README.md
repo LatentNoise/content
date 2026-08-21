@@ -5,44 +5,45 @@
 
 ## Turn URLs, files, and text into media, knowledge, and documents.
 
-**One self-hosted engine, with Content Studio for general workflows and HomeTube for YouTube.**
+**One self-hosted engine. HomeTube for YouTube, Content Studio for everything else — plus a browser extension, an MCP server, a CLI, a typed SDK, and the REST API underneath them all.**
 
 [![Latest release](https://img.shields.io/github/v/release/LatentNoise/content?sort=semver&display_name=tag)](https://github.com/LatentNoise/content/releases/latest)
 [![CI](https://github.com/LatentNoise/content/actions/workflows/ci.yml/badge.svg)](https://github.com/LatentNoise/content/actions/workflows/ci.yml)
 [![Docker](https://img.shields.io/badge/Docker-amd64%20%C2%B7%20arm64-2496ED.svg?logo=docker&logoColor=white)](docs/operations/deployment.md)
 [![License](https://img.shields.io/badge/License-AGPL--3.0--or--later-green.svg)](LICENSE)
 
-[Start with Content](#quick-start) ·
-[Use HomeTube](#hometube-for-youtube) ·
-[Connect an agent](#agents-and-mcp) ·
-[Choose your interface](#choose-your-interface) ·
+[Quick start](#quick-start) ·
+[HomeTube](#hometube--youtube-focused) ·
+[All the clients](#the-clients) ·
+[Connect an agent](#mcp-server--for-agents-and-ides) ·
 [Read the docs](docs/README.md)
 
 </div>
 
 Content is a self-hosted engine that turns supported sources into media,
 transcripts, summaries, translations, images, metadata, Markdown, PDF, and
-more. **Content Backend** analyzes each source, determines what it can produce,
-plans and runs the job, records its history, and delivers the results.
+more. The **backend** analyzes each source, determines what it can actually
+produce, plans and runs the job, records its history, and delivers the results.
 
-Use **Content Studio** for general workflows with URLs, files — from your own
-machine or already on the server — and inline text. Use **HomeTube** for the focused YouTube video and
-playlist experience. Both web apps are optional: the same backend powers the
-**Chromium browser extension** and is available directly through the **REST
-API, MCP server, CLI, and typed Python SDK**.
+Everything else is a **client of one public contract**: **HomeTube** for the
+focused YouTube experience, **Content Studio** for general workflows, a
+**Chromium extension** for the tab you are already on, the **`content-mcp`**
+server for agents, a **CLI** for terminals and cron, a **typed Python SDK** for
+applications, the **REST API** for every other language, and **Content
+Console** to watch the engine work. Pick one or several — none of them is a
+layer the others have to pass through, and none of them holds business logic of
+its own.
 
-## HomeTube for YouTube
-
-When the source is a YouTube video or playlist, HomeTube is probably the
-interface you want: paste the URL, choose the media and related artifacts, and
-follow the job into your library.
+**HomeTube** is the quickest way to see what that means: paste a YouTube URL,
+pick what you want out of it, and watch the files land in your library.
 
 <div align="center">
   <img src="https://github.com/LatentNoise/content/releases/download/v0.1.0/2026-08-09-hometube-demo.gif"
        alt="HomeTube demo — paste a YouTube URL, choose the outputs, watch the job deliver into the library"
-       width="75%">
+       width="80%">
   <br>
-  <sub><b>HomeTube in Content</b> — paste a YouTube URL, choose what you want, follow the job.</sub>
+  <sub><b>HomeTube in Content</b> — paste a YouTube URL, choose what you want,
+  follow the job into your library. <a href="#hometube--youtube-focused">More about HomeTube ↓</a></sub>
 </div>
 
 <!-- Visuals are produced in media/ (untracked) and attached to releases —
@@ -53,68 +54,64 @@ see media/README.md. -->
 > container has passed **300,000 package downloads on GitHub Container
 > Registry** and remains maintained during the transition. Content carries
 > that familiar workflow forward and is designed to become its successor.
+>
+> The standalone HomeTube project remains separate; it has not been retrofitted
+> to run on Content. This repository contains a new HomeTube UI built on the
+> Content engine.
 
-The standalone HomeTube project remains separate; it has not been retrofitted
-to run on Content. This repository contains a new HomeTube UI built on the
-Content engine.
+## Quick start
 
-With HomeTube in Content, you can:
-
-- download a video or playlist as video or audio, with quality, codec,
-  container, audio-language, and subtitle choices;
-- remove or mark sponsored segments with SponsorBlock, cut clips, use
-  server-side cookie credentials, and embed subtitles, chapters, thumbnails,
-  and metadata;
-- give every artifact a readable name and deliver it into a filesystem library
-  watched by Plex, Jellyfin, or Emby;
-- ask the same source for a transcript, summary, thumbnail, or metadata—not
-  just the downloaded media—when the required runners are available.
-
-HomeTube is deliberately focused: it does not accept file or inline-text
-sources, and it does not expose the broader document workflow or PDF output.
-For those workflows, use Content Studio, the API, CLI, or SDK. **HomeTube is a
-Content client, not a layer every Content user must pass through.**
-
-### Configuring HomeTube
-
-HomeTube has no settings of its own: it reads the engine's configuration, so
-everything below goes in the `.env` next to your `docker-compose.yml`. These
-are the ones that change what you see; the
-[full table](docs/operations/deployment.md#configuration-a-root-env-not-versioned)
-lists every variable.
-
-| Variable | Default | What it changes in HomeTube |
-| --- | --- | --- |
-| `CONTENT_DELIVERY_DIR_HOST` | `./playground/output` | Where finished files land. Point it at your Plex/Jellyfin/Emby library and its sub-folders become the destination choices in the form |
-| `CONTENT_LANGUAGE_PRIMARY` | — | The language you speak: first in the audio order and pre-selected |
-| `CONTENT_LANGUAGES_SECONDARIES` | — | `en,es` — offered and pre-selected after the primary |
-| `CONTENT_VO_FIRST` | `true` | Put the original voice ahead of your own language |
-| `CONTENT_LANGUAGE_PRIMARY_INCLUDED_IN_SUBTITLES` | `true` (the shipped `.env` sets `false`) | Whether your primary language is also pre-checked in the subtitle list |
-| `CONTENT_CREDENTIALS` | — | `youtube=/config/cookies.txt` — a cookie file for age-restricted or members-only videos. The file never leaves the server; HomeTube only shows its id |
-| `COMPOSE_PROFILES` | `hometube,studio` | Which UIs start. `hometube` alone runs HomeTube only |
-| `HOMETUBE_PORT` | `8501` | The host port HomeTube listens on |
-
-**What the language settings actually do**, since the effect is easier to read
-than the rule. With:
+Docker Compose is the only runtime prerequisite. Install from the published
+images — nothing to clone or build:
 
 ```bash
-CONTENT_LANGUAGE_PRIMARY=fr
-CONTENT_LANGUAGES_SECONDARIES=en,es
-CONTENT_VO_FIRST=true
-CONTENT_LANGUAGE_PRIMARY_INCLUDED_IN_SUBTITLES=false
+mkdir content && cd content
+curl -fsSLO https://raw.githubusercontent.com/LatentNoise/content/main/deploy/docker-compose.yml
+curl -fsSL -o .env https://raw.githubusercontent.com/LatentNoise/content/main/.env.example
+docker compose up -d
 ```
 
-on a Japanese talk that offers `ja`/`en` audio and `ja`/`fr`/`en`/`de`
-subtitles, HomeTube shows **audio** ordered `ja, en` — the original voice
-first because `VO_FIRST` is on, then your languages — with both pre-selected.
-For **subtitles** it pre-checks `en` only: the original voice never applies to
-subtitles, `de` is not one of your languages, and `fr` is left out because
-`…_INCLUDED_IN_SUBTITLES=false` — someone fluent in French does not need French
-subtitles but still wants the English ones. Set it to `true` and `fr, en` are
-both pre-checked.
+The default `.env` starts the complete local stack:
 
-Nothing is ever pre-selected that the source does not actually offer, and every
-default remains editable in the form before you launch the job.
+| Service | Default URL | Purpose |
+| --- | --- | --- |
+| **Content Studio** | <http://localhost:8502> | General requests across URL, file, upload, and inline-text sources |
+| **HomeTube** | <http://localhost:8501> | Focused YouTube video and playlist workflow |
+| **Content Console** | <http://localhost:8503> | Health, configuration, storage, jobs, events, and logs |
+| **Content API** | <http://localhost:8010/docs> | REST API, OpenAPI, and embedded worker |
+
+Open **Content Studio** for the general workflow, or **HomeTube** if your
+source is YouTube. You can also skip both web apps entirely and drive the same
+engine from the [MCP server, CLI, SDK, extension, or REST API](#the-clients).
+
+Everything stays in the installation folder: `./data` holds the database, jobs,
+and artifacts; finished files are delivered to `./playground/output`. Set
+`CONTENT_DELIVERY_DIR_HOST` in `.env` to point at your own NAS or media library
+instead — its sub-folders then become the destination choices offered in the
+clients.
+
+Update later with:
+
+```bash
+docker compose pull && docker compose up -d
+```
+
+<details>
+<summary><b>Build from source instead</b> — for development or to include the
+optional speech-to-text runner</summary>
+
+```bash
+git clone https://github.com/LatentNoise/content.git
+cd content
+cp .env.example .env
+docker compose up -d --build
+```
+
+The repository's `docker-compose.yml` adds local `build:` definitions beside
+the same images. [`deploy/docker-compose.yml`](deploy/docker-compose.yml) is
+the build-free deployment file used above; a test keeps the two aligned.
+
+</details>
 
 ## One source, many artifacts
 
@@ -140,69 +137,143 @@ Content resolves what is possible, plans the work, runs the available tools,
 and records where every artifact came from. No yt-dlp flags, ffmpeg pipelines,
 transcription glue, or LLM orchestration in the client.
 
-## Quick start
+## The clients
 
-Docker Compose is the only runtime prerequisite. Install from the published
-images—nothing to clone or build:
+One engine, one contract, several independent front doors. Every client below
+speaks the same `GenerationRequest`, sees the same resolved capabilities, and
+produces the same artifacts — they differ in ergonomics, not in what they can
+ask for. HomeTube is entirely optional; so is every other row.
 
-```bash
-mkdir content && cd content
-curl -fsSLO https://raw.githubusercontent.com/LatentNoise/content/main/deploy/docker-compose.yml
-curl -fsSL -o .env https://raw.githubusercontent.com/LatentNoise/content/main/.env.example
-docker compose up -d
-```
-
-Open **Content Studio at <http://localhost:8502>** for the general URL, file,
-and inline-text workflow. If your source is YouTube, open the focused
-**HomeTube interface at <http://localhost:8501>**. You can also skip both web
-apps and use the API, MCP server, CLI, or SDK directly.
-
-The default `.env` starts the complete local stack:
-
-| Service | Default URL | Purpose |
+| Client | Best for | Start here |
 | --- | --- | --- |
-| **Content Studio** | <http://localhost:8502> | General requests across URL, allowed-file, and inline-text sources |
-| HomeTube | <http://localhost:8501> | Focused YouTube video and playlist workflow |
-| Content Console | <http://localhost:8503> | Health, configuration, storage, jobs, events, and logs |
-| Content API | <http://localhost:8010/docs> | REST API, OpenAPI, and embedded worker |
+| **[HomeTube](#hometube--youtube-focused)** | The simplest YouTube video or playlist → library experience | Included in Docker Compose at `:8501` |
+| **[Content Studio](#content-studio--the-whole-contract-in-a-form)** | General capability-driven requests from URLs, uploads, server files, and inline text | Included in Docker Compose at `:8502` |
+| **[Chromium extension](#chromium-extension--the-tab-you-are-already-on)** | Sending the current Chrome, Brave, Edge, or Vivaldi tab to Content | Download the release zip, unzip, *Load unpacked* |
+| **[MCP server](#mcp-server--for-agents-and-ides)** | Giving Claude, an IDE, or another MCP agent real artifacts instead of talk | `uv tool install content-mcp` |
+| **[CLI](#cli--terminals-scripts-and-cron)** | Terminals, scripts, cron jobs, and raw request files | `uv tool install content-cli` |
+| **[Python SDK](#python-sdk--typed-sync-and-async)** | Typed sync and async application integration | `pip install content-sdk` |
+| **[REST API](#rest-api--every-other-language)** | Any language or integration that speaks HTTP | `/api/v1`, Swagger at `:8010/docs` |
+| **[Content Console](#content-console--observe-and-pilot-the-engine)** | Observing and operating the engine | Included in Docker Compose at `:8503` |
 
-Studio's file source is a path the server can read under a configured allowed
-input root. With this Compose setup, put files in `./playground/input`; direct
-browser upload is not implemented yet.
+### HomeTube — YouTube, focused
 
-Everything stays in the installation folder: `./data` holds the database,
-jobs, and artifacts; finished files are delivered to `./playground/output`.
-Set `CONTENT_DELIVERY_DIR_HOST` in `.env` to point at your own NAS or media
-library instead. Its subfolders become destination choices in the web apps.
+<http://localhost:8501> · [README](apps/web-hometube/README.md)
 
-Update later with:
+Paste a URL, choose the media and related artifacts, and follow the job into
+your library — the workflow demonstrated at the top of this page.
 
-```bash
-docker compose pull && docker compose up -d
-```
+With HomeTube in Content, you can:
 
-<details>
-<summary><b>Build from source instead</b> — for development or to include the
-optional speech-to-text runner</summary>
+- download a video or playlist as video or audio, with quality, codec,
+  container, audio-language, and subtitle choices;
+- remove or mark sponsored segments with SponsorBlock, cut clips, use
+  server-side cookie credentials, and embed subtitles, chapters, thumbnails,
+  and metadata;
+- give every artifact a readable name and deliver it into a filesystem library
+  watched by Plex, Jellyfin, or Emby;
+- ask the same source for a transcript, summary, thumbnail, or metadata — not
+  just the downloaded media — when the required runners are available.
 
-```bash
-git clone https://github.com/LatentNoise/content.git
-cd content
-cp .env.example .env
-docker compose up -d --build
-```
+HomeTube is deliberately focused: it does not accept file, upload, or
+inline-text sources, and it does not expose the broader document workflow or
+PDF output. For those, use Content Studio, the API, CLI, or SDK. **HomeTube is
+a Content client, not a layer every Content user must pass through.**
 
-The repository's `docker-compose.yml` adds local `build:` definitions beside
-the same images. [`deploy/docker-compose.yml`](deploy/docker-compose.yml) is
-the build-free deployment file used above; a test keeps the two aligned.
+**It has no settings of its own.** It reads the engine's configuration, so what
+changes HomeTube lives in the `.env` beside your `docker-compose.yml`: the
+delivery library whose sub-folders become the destination choices
+(`CONTENT_DELIVERY_DIR_HOST`), the languages pre-selected for audio and
+subtitles (`CONTENT_LANGUAGE_PRIMARY`, `CONTENT_LANGUAGES_SECONDARIES`,
+`CONTENT_VO_FIRST`, `CONTENT_LANGUAGE_PRIMARY_INCLUDED_IN_SUBTITLES`), and the
+server-side cookie file that unlocks age-restricted or members-only videos
+(`CONTENT_CREDENTIALS` — HomeTube only ever shows its id; the file never leaves
+the server). Nothing is ever pre-selected that the source does not offer, and
+no default is final.
 
-</details>
+[HomeTube's README](apps/web-hometube/README.md#configuration) documents each
+variable and works the language rules through a concrete example — a Japanese
+talk, a French speaker, and exactly what ends up pre-checked. The
+[full variable table](docs/operations/deployment.md#configuration-a-root-env-not-versioned)
+lists everything the engine accepts.
 
-## Agents and MCP
+### Content Studio — the whole contract, in a form
+
+<http://localhost:8502> · [README](apps/web-studio/README.md)
+
+The general-purpose web app: several sources in one request, every output type
+the engine can resolve, with their options, preferences, and constraints. The
+form is **capability-driven** — it renders what `/capabilities` answers for
+your source, so a capability the engine gains appears without a UI release, and
+what cannot be produced is shown with the server's reason instead of silently
+disappearing.
+
+<div align="center">
+  <img src="https://github.com/LatentNoise/content/releases/download/v0.1.0/2026-08-09-studio.png"
+       alt="Content Studio — the general-purpose request builder" width="80%">
+  <br>
+  <sub><b>Content Studio</b> — build general URL, file, upload and text requests</sub>
+</div>
+
+Studio takes a file two ways, and the distinction matters when the engine runs
+on another machine:
+
+- **From this device** — the bytes are sent to the engine and become an
+  `upload` source ([ADR 0020](docs/architecture-decisions/0020-client-uploaded-sources.md)).
+  Several files at once become several sources. Streamlit buffers the upload in
+  the UI container, so the ceiling here is deliberately lower than the API's
+  (200 MB by default, and the picker states the current value rather than
+  letting you discover it by failing).
+- **On the server** — a path the *engine* can already read, under a configured
+  allowed input root. With this Compose setup that root is `./playground/input`.
+
+For genuinely large files, skip the browser: the SDK streams from disk with
+`client.upload_file(path)`.
+
+### Chromium extension — the tab you are already on
+
+[README](apps/browser-extension-chromium/README.md) ·
+[latest release](https://github.com/LatentNoise/content/releases/latest)
+
+Send the page you are watching to your engine without opening a UI. Manifest
+V3, Chromium only (Chrome, Brave, Edge, Vivaldi, Opera, Arc…), no build step —
+what the browser loads is exactly the files in the zip:
+
+1. download `content-browser-extension-chromium-v<version>.zip` from the latest
+   release and **unzip it** (Chromium loads a folder, not a zip);
+2. open `chrome://extensions`, turn on **Developer mode**, **Load unpacked**,
+   select the folder;
+3. open a video and click the extension.
+
+It normalizes the tab's URL (`youtu.be`, Shorts, and embeds become the
+canonical watch URL; a `list=` on a watch URL means *that video*, not the
+playlist), asks the engine what the source can produce and offers only that,
+prefills the name with the naming engine's own proposal, offers the library's
+existing folders plus *new folder…*, then follows the job and shows where each
+file landed. Every network call happens in the service worker — the engine
+sends no CORS headers by default, and that is what lets the extension work
+against a stock instance with nothing to configure
+([ADR 0016](docs/architecture-decisions/0016-first-non-python-client.md)).
+
+<div align="center">
+  <img src="https://github.com/LatentNoise/content/releases/download/v0.2.0/2026-08-10-browser_extension.jpg"
+       alt="HomeTube for Content — the Chromium extension popup on a video page" width="380">
+  <br>
+  <sub><b>Browser extension</b> — send the current tab to Content, from the tab itself</sub>
+</div>
+
+The popup's footer always names the engine it is talking to, so "where is this
+sending my video?" is answered on screen. Its README also carries an honest
+path-by-path **verification table** — what has actually been driven in a
+browser, and what has not.
+
+### MCP server — for agents and IDEs
+
+[README](apps/mcp/README.md) ·
+[`content-mcp` on PyPI](https://pypi.org/project/content-mcp/)
 
 Content gives an MCP-compatible agent a controlled way to turn URLs into real
-artifacts, not just talk about them. The official **`content-mcp`** server exposes
-intention-level tools to:
+artifacts, not just talk about them. The official **`content-mcp`** server
+exposes intention-level tools — not one per endpoint — to:
 
 - analyze a URL and discover what it can produce;
 - request one or several outputs and choose a library destination;
@@ -211,10 +282,7 @@ intention-level tools to:
 - read small text artifacts inline while keeping large media out of the model
   context.
 
-The agent never needs shell access, yt-dlp syntax, or backend internals. MCP,
-the web apps, and the CLI all reach the same engine and the same contract.
-
-Install the server and connect it to a running Content instance:
+The agent never needs shell access, yt-dlp syntax, or backend internals.
 
 ```bash
 uv tool install content-mcp
@@ -246,61 +314,47 @@ Then ask naturally:
 > every artifact landed.
 
 The normal tool journey is
-`get_config → analyze_source → generate → get_job → get_artifact`. See the
-[MCP guide](apps/mcp/README.md) for every tool, resource, installation option,
-and verified behavior.
+`get_config → analyze_source → generate → get_job → get_artifact`. Downloads to
+the agent's own machine are bounded by a single variable
+(`CONTENT_MCP_DOWNLOAD_DIR`, `~/Downloads/Content` by default): a destination
+pointing outside it is refused, not clamped — widening that is the operator's
+decision, not something a prompt can talk the server into. See the
+[MCP guide](apps/mcp/README.md) for every tool, resource, and verified
+behavior.
 
-## Choose your interface
+### CLI — terminals, scripts, and cron
 
-One engine, several independent clients. Pick the one that fits the job;
-HomeTube is entirely optional.
-
-| Interface | Best for | Start here |
-| --- | --- | --- |
-| **[Content Studio](apps/web-studio/README.md)** | General capability-driven requests from URLs, allowed local files, and inline text | Included in Docker Compose at `:8502` |
-| **[HomeTube](apps/web-hometube/README.md)** | The simplest YouTube video or playlist → library experience | Included in Docker Compose at `:8501` |
-| **[MCP server](apps/mcp/README.md)** | Giving Claude, an IDE, or another MCP-compatible agent access to Content | `uv tool install content-mcp` |
-| **[Chromium extension](apps/browser-extension-chromium/README.md)** | Sending the current supported Chrome, Brave, Edge, or Chromium tab to Content | Download the release zip, unzip it, then *Load unpacked* |
-| **[CLI](apps/cli/README.md)** | Terminals, scripts, cron jobs, and raw request files | `uv tool install content-cli` |
-| **[Python SDK](packages/python-sdk/README.md)** | Typed sync and async application integration | `pip install content-sdk` |
-| **[REST API](docs/contract.md)** | Any language or integration that speaks HTTP | `/api/v1`, Swagger at `:8010/docs` |
-| **[Content Console](apps/web-admin/README.md)** | Observing and operating the engine | Included in Docker Compose at `:8503` |
-
-<div align="center">
-<table>
-  <tr>
-    <td align="center" width="50%">
-      <img src="https://github.com/LatentNoise/content/releases/download/v0.1.0/2026-08-09-studio.png"
-           alt="Content Studio — the general-purpose request builder" width="100%"><br>
-      <sub><b>Content Studio</b> — build general URL, file, and text requests</sub>
-    </td>
-    <td align="center" width="50%">
-      <img src="https://github.com/LatentNoise/content/releases/download/v0.1.0/2026-08-09-console.png"
-           alt="Content Console — jobs, runners, storage and configuration, live" width="100%"><br>
-      <sub><b>Content Console</b> — observe and control the engine</sub>
-    </td>
-  </tr>
-  <tr>
-    <td colspan="2" align="center">
-      <img src="https://github.com/LatentNoise/content/releases/download/v0.2.0/2026-08-10-browser_extension.jpg"
-           alt="HomeTube for Content — the Chromium extension popup on a video page" width="420"><br>
-      <sub><b>Browser extension</b> — send the current tab to Content</sub>
-    </td>
-  </tr>
-</table>
-</div>
-
-### CLI
+[README](apps/cli/README.md) ·
+[`content-cli` on PyPI](https://pypi.org/project/content-cli/)
 
 ```bash
+uv tool install content-cli
+export CONTENT_API_URL=http://nas.local:8010
+
 content analyze "https://www.youtube.com/watch?v=…"
 content video "https://…" --height 1080 --subs en,fr --watch
 content audio "https://…" --format opus --playlist --watch
-content submit request.json --watch
-content jobs
+content submit request.json --watch          # a raw GenerationRequest, or -
+content jobs ; content job <id> ; content artifacts <id>
+content download <artifact_id> -o out.mkv
 ```
 
-### Python SDK
+`--watch` follows the job's **event stream** rather than re-asking for its
+status, and the exit code carries the outcome so a script can chain on it
+([ADR 0021](docs/architecture-decisions/0021-a-job-does-not-succeed-with-a-failed-step.md)):
+`0` succeeded, `2` partially succeeded, `1` failed or cancelled. `2` is
+deliberately distinct — a playlist that yielded five videos of six is not a
+failure, but a script that treats it as a success will quietly move on with
+missing files.
+
+### Python SDK — typed, sync and async
+
+[README](packages/python-sdk/README.md) ·
+[`content-sdk` on PyPI](https://pypi.org/project/content-sdk/)
+
+The **one** official API client: the CLI, the MCP server, and the web apps all
+speak through it, so the engine's rules are never duplicated. Python 3.11+,
+`httpx` and `pydantic` only.
 
 ```python
 from content_sdk import ContentClient, outputs
@@ -312,6 +366,51 @@ with ContentClient("http://localhost:8010") as client:
     for artifact in job.artifacts:
         print(artifact.display_filename, artifact.delivered_path)
 ```
+
+`AsyncContentClient` mirrors the whole surface. Analyses are addressable, so
+every call accepts either an `analysis_id` or inline sources
+([ADR 0014](docs/architecture-decisions/0014-addressable-analyses.md));
+`client.upload_file(path)` streams a local file to the engine and hands back a
+ready-to-use source; and every non-2xx becomes a typed exception carrying the
+stable error codes (`NotFound`, `Gone`, `ValidationError`).
+
+### REST API — every other language
+
+[Public contract](docs/contract.md) · Swagger at <http://localhost:8010/docs>
+
+`/api/v1` is the contract every client above is built on, and it is stable
+enough to build a ninth client against: requests describe desired outputs
+rather than technical operations, error codes are machine identifiers that do
+not change (only their human messages do), and *"valid but not implemented"* is
+a different, explicit answer from *"invalid"*. Reserved fields are refused
+rather than silently ignored. The V1 API has **no built-in authentication** —
+see [deployment and security](#deployment-and-security).
+
+### Content Console — observe and pilot the engine
+
+<http://localhost:8503> · [README](apps/web-admin/README.md)
+
+The operations console: strictly observability and control, and deliberately
+**not** a way to create downloads (that is Studio and HomeTube).
+
+<div align="center">
+  <img src="https://github.com/LatentNoise/content/releases/download/v0.1.0/2026-08-09-console.png"
+       alt="Content Console — jobs, runners, storage and configuration, live" width="80%">
+  <br>
+  <sub><b>Content Console</b> — observe and control the engine</sub>
+</div>
+
+- **Overview** — version, cache, concurrency, analysis TTL, a live jobs pulse,
+  the installed runners with their availability, storage paths.
+- **Environment** — every `CONTENT_*` variable with its *effective* value,
+  whether it was set or fell back to a default, and a one-line description.
+  Secrets are never shown — only their presence and length.
+- **Jobs** — a filterable list plus full detail: steps, the submitted
+  `GenerationRequest`, artifacts with their provenance, ordered events,
+  per-step logs, cancel and retry, with an opt-in 5-second auto-refresh that
+  polls only while jobs are in flight.
+- **Storage & cache**, and a **contract & API** tab with the schemas, Swagger,
+  ReDoc, and a raw API tester.
 
 ## What Content can produce
 
@@ -420,7 +519,9 @@ release check makes an outbound request unless you configure one.
 The V1 API has no built-in authentication. Keep it on a trusted network or put
 an authenticating reverse proxy in front of any externally reachable instance.
 See [deployment](docs/operations/deployment.md) for configuration, health
-checks, data layout, authenticated sources, and production guidance.
+checks, data layout, authenticated sources, and production guidance, and
+[ADR 0024](docs/architecture-decisions/0024-no-authentication-is-still-the-answer.md)
+for why that is the V1 answer.
 
 ## Development
 
