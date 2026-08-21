@@ -69,15 +69,33 @@ WORKDIR /app
 # Project metadata first for layer caching.
 COPY apps/backend/pyproject.toml ./
 
+# The runtime dependencies come from the pyproject — the file above — rather
+# than from a list repeated here.
+#
+# This used to be a hand-copied list, and that is exactly how the published
+# image shipped broken for four releases: 0.5.0 added the uploads route, whose
+# UploadFile parameter makes FastAPI require python-multipart at *registration*
+# time, the pyproject was not updated either, and the image's list certainly
+# was not. `create_app()` then raised on boot, so every tag from 0.5.0 to 0.6.3
+# had an API that could not start. Two lists could disagree; one cannot.
+#
+# `pdf` (reportlab, writing) and `read` (pypdf, reading) ship by default: both
+# are pure-Python wheels that install on musl with no toolchain, and a feature
+# that only works for whoever added an extra is not a feature you can announce.
+# `stt` stays optional below — those wheels are heavy.
+#
 # --only-binary forces prebuilt wheels (pydantic-core on musl) so the build
 # fails fast instead of compiling Rust.
-# reportlab (writing PDFs) and pypdf (reading them) are both pure-Python
-# wheels, so they install on musl without a toolchain; both are small enough to
-# ship by default, unlike the speech-to-text extra below. Shipping the reader
-# by default is what makes "summarize this PDF" work on a stock install rather
-# than only for whoever thought to add an extra.
-RUN pip install --no-cache-dir --only-binary=:all: --no-compile \
-    fastapi uvicorn pydantic "reportlab>=4.0" "pypdf>=5.1"
+RUN python3 -c "\
+import tomllib;\
+p = tomllib.load(open('pyproject.toml','rb'))['project'];\
+extras = p.get('optional-dependencies', {});\
+deps = p['dependencies'] + extras.get('pdf', []) + extras.get('read', []);\
+open('/tmp/requirements.txt','w').write(chr(10).join(deps))" \
+    && cat /tmp/requirements.txt \
+    && pip install --no-cache-dir --only-binary=:all: --no-compile \
+        -r /tmp/requirements.txt \
+    && rm /tmp/requirements.txt
 
 # Optional speech-to-text runner (audio.transcribe → transcript/summary from
 # audio). Off by default — the wheels are heavy (ctranslate2). Enable with:

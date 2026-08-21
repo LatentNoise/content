@@ -146,6 +146,38 @@ jobs:
           echo "tags=$tags" >> "$GITHUB_OUTPUT"
           echo "Publishing: $tags"
 
+      # The image is BUILT and RUN before anything is pushed, because a unit
+      # test cannot see this class of defect: it lives in the shipped artifact,
+      # not in the code. Between 0.5.0 and 0.6.3 the published backend image
+      # could not boot at all — FastAPI needs python-multipart to *register*
+      # the uploads route, the image did not have it, and `create_app()` raised
+      # on start. `make validate` stayed green throughout, because the dev
+      # environment installs the MCP server too, which happens to depend on
+      # python-multipart. Constructing the app inside the real image is the
+      # only check that would have caught it.
+      #
+      # amd64 only and `--load`: buildx cannot load a multi-arch manifest into
+      # the local daemon, and the missing-dependency class is architecture
+      # independent. The multi-arch build below reuses these layers from cache.
+      - name: Build the image for a boot check
+        if: matrix.image == 'content'
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          platforms: linux/amd64
+          load: true
+          tags: boot-check:${{ github.sha }}
+          provenance: false
+          sbom: false
+
+      - name: The app must actually build inside the image
+        if: matrix.image == 'content'
+        run: |
+          set -euo pipefail
+          docker run --rm boot-check:${{ github.sha }} \
+            python3 -c "from content.api.app import create_app; create_app(); print('app builds')"
+
       # Both architectures are really compiled — the arm64 half is the one that
       # breaks, since it needs musl wheels — and now they are pushed as a single
       # multi-arch manifest, so `docker pull` picks the right one by itself.
