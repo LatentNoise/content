@@ -19,6 +19,7 @@ from typing import Annotated, Literal, Union
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from content.domain.languages import ORIGINAL
 from content.naming.sanitize import display_name
 
 SCHEMA_VERSION = "1.0"
@@ -253,6 +254,21 @@ class VideoCodecPreference(StrictModel):
     value: Literal["h264", "av1", "vp9"]
 
 
+def _reject_original(value: list[str] | str, field: str) -> None:
+    """``original`` means "the source's own audio language" (ADR 0022) and is
+    reserved *inside audio language lists only*. Asking for the original
+    subtitle track, or translating *into* "original", has no defined meaning —
+    and silently treating the word as an ISO code would produce a confusing
+    "language not offered" warning instead of an answer. Invalid is a
+    different answer from unsupported, so this is a refusal."""
+    languages = [value] if isinstance(value, str) else value
+    if ORIGINAL in languages:
+        raise ValueError(
+            f"'{ORIGINAL}' is reserved for audio language lists (ADR 0022) and "
+            f"has no meaning in {field}; name a language code."
+        )
+
+
 class AudioCodecPreference(StrictModel):
     mode: Literal["prefer", "require"] = "prefer"
     value: Literal["aac", "opus"]
@@ -265,7 +281,9 @@ class VideoSelection(StrictModel):
     audio_codec: AudioCodecPreference | None = None
     # Ordered audio languages to include as tracks (empty = engine default: the
     # best single track). More than one embeds a multi-audio file, in this
-    # order. Crossed at feasibility with what the source offers.
+    # order. Crossed at feasibility with what the source offers. Accepts the
+    # reserved token "original" — the source's own audio language, resolved
+    # per resource at plan time (ADR 0022).
     audio_languages: list[str] = Field(default_factory=list)
 
     @field_validator("audio_languages")
@@ -294,6 +312,12 @@ class VideoProcessing(StrictModel):
     # feasibility with what the source actually offers; unavailable languages
     # are dropped with a warning.
     embed_subtitles: list[str] = Field(default_factory=list)
+
+    @field_validator("embed_subtitles")
+    @classmethod
+    def _no_original_token(cls, value: list[str]) -> list[str]:
+        _reject_original(value, "embed_subtitles")
+        return value
 
     @field_validator("embed_subtitles")
     @classmethod
@@ -418,6 +442,7 @@ class AudioOptions(StrictModel):
     format: Literal["source", "opus", "mp3", "m4a"] = "source"
     # Ordered preferred audio languages: the first available wins (empty =
     # engine default track). Crossed at feasibility with the source's offer.
+    # Accepts the reserved token "original" (ADR 0022).
     languages: list[str] = Field(default_factory=list)
     sponsorblock: SponsorBlockOptions = Field(default_factory=SponsorBlockOptions)
 
@@ -564,6 +589,12 @@ class SubtitlesOptions(StrictModel):
     )
     format: Literal["srt", "vtt"] = "srt"
 
+    @field_validator("languages")
+    @classmethod
+    def _no_original_token(cls, value: list[str]) -> list[str]:
+        _reject_original(value, "a subtitles output's languages")
+        return value
+
 
 class SubtitlesOutput(BaseOutput):
     type: Literal["subtitles"]
@@ -577,7 +608,7 @@ class TranscriptOptions(StrictModel):
     `text` is a derivation. `speech_to_text` is a valid mode the current
     installation may not implement (option_not_supported)."""
 
-    language: str = "auto"
+    language: str = "auto"  # "auto" — not "original", which is an audio token
     source: Literal[
         "auto",
         "prefer_existing_subtitles",
@@ -616,6 +647,12 @@ class TranslationOptions(StrictModel):
 
     target_language: str = Field(min_length=2, max_length=16)
     source_language: str = "auto"  # auto = detected from the material
+
+    @field_validator("target_language", "source_language")
+    @classmethod
+    def _no_original_token(cls, value: str) -> str:
+        _reject_original(value, "a translation's languages")
+        return value
 
 
 class TranslationOutput(BaseOutput):

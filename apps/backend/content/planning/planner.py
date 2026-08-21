@@ -25,6 +25,7 @@ from content.domain.errors import (
     ValidationIssue,
     ValidationResult,
 )
+from content.domain.languages import ORIGINAL, expand_original
 from content.domain.plan import ExecutionPlan, OutputDelivery
 from content.domain.request import (
     EXECUTABLE_OUTPUT_TYPES,
@@ -265,6 +266,7 @@ def _plan_video_params(
         capability.status,
         f"{path}.options.selection.audio_languages",
         warnings,
+        original=details.get("original_audio_language", ""),
     )
 
     return {
@@ -504,18 +506,47 @@ def _resolve_audio_languages(
     status: str,
     path: str,
     warnings: list[ValidationIssue],
+    original: str = "",
 ) -> list[str]:
     """Keep the requested audio languages that the source offers, in the
     requested order. Unavailable ones are dropped with a warning; an empty
-    request (or an inconclusive analysis) is passed through unchanged."""
+    request (or an inconclusive analysis) is passed through unchanged.
+
+    This is also where the reserved ``original`` token is resolved (ADR 0022),
+    and it is resolved *here* on purpose: the single-resource path. A
+    collection reaches it by planning each member from that member's own
+    analysis, so the token expands per member without the collection knowing
+    anything about languages (INV-018).
+    """
     if not requested:
         return []
+    expanded = expand_original(requested, original)
+    if ORIGINAL in requested and not original:
+        # Degrade to the next preference rather than fail — but say so. A
+        # playlist asking for "each video in its own voice" quietly returning
+        # the default track for one member is exactly the kind of silence
+        # that gets discovered in the library a week later.
+        warnings.append(
+            ValidationIssue(
+                code=codes.PARTIAL_OUTPUT,
+                path=path,
+                message=(
+                    "The source declares no original audio language, so "
+                    f"'{ORIGINAL}' was dropped"
+                    + (
+                        f"; falling back to {expanded}."
+                        if expanded
+                        else " and the engine's default track is used."
+                    )
+                ),
+            )
+        )
     available_set = set(available)
     if status != "available" or not available_set:
-        return requested  # inconclusive — let the provider attempt it
-    matching = [lang for lang in requested if lang in available_set]
-    if len(matching) != len(requested):
-        missing = [lang for lang in requested if lang not in available_set]
+        return expanded  # inconclusive — let the provider attempt it
+    matching = [lang for lang in expanded if lang in available_set]
+    if len(matching) != len(expanded):
+        missing = [lang for lang in expanded if lang not in available_set]
         warnings.append(
             ValidationIssue(
                 code=codes.PARTIAL_OUTPUT,
@@ -2367,6 +2398,7 @@ def _build_plan(
                 capability.status,
                 f"{path}.options.languages",
                 warnings,
+                original=(capability.details or {}).get("original", ""),
             )
             if audio_langs:
                 params["audio_languages"] = audio_langs

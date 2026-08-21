@@ -293,15 +293,21 @@ def test_hometube_playlist_still_asks_for_languages(run_app):
     to offer — the selectors used to vanish and the request went out with no
     `audio_languages` and no `embed_subtitles` at all: every downloaded item
     silently lost its subtitles and its extra audio tracks. The preferences now
-    stand in as intent (server prefs: primary fr, secondaries en/es, primary
-    excluded from subtitles)."""
+    stand in as intent (server prefs: primary fr, secondaries en/es, VO first,
+    primary excluded from subtitles)."""
     at = run_app("hometube", "https://x/playlist?list=1")
     assert not at.exception, at.exception
     ms = {m.label: m for m in at.multiselect}
     assert "Audio languages" in ms, "a playlist must still let you ask for audio"
-    assert ms["Audio languages"].value == ["fr", "en", "es"]
+    # VO leads, as an unresolved token: the engine expands "original" against
+    # each member's own analysis when that member is planned (ADR 0022). This
+    # list used to start at "fr", because a playlist had no way to ask for the
+    # original voice at all.
+    assert ms["Audio languages"].value == ["original", "fr", "en", "es"]
     assert "Subtitles" in ms, "a playlist must still let you ask for subtitles"
     # primary_include_subtitles=false → fr excluded, the secondaries remain.
+    # No token here: a subtitle list refuses "original" (it has no meaning for
+    # a translated track), which is why the subtitle caller leaves VO off.
     assert ms["Subtitles"].value == ["en", "es"]
 
 

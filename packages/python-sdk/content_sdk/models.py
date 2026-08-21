@@ -122,6 +122,21 @@ class JobData(_Model):
 # validated by the engine, so the SDK does not re-encode every option schema.
 
 
+# --- contract vocabulary --------------------------------------------------------
+
+# The one reserved word inside an audio language list (ADR 0022): "the source's
+# own audio language", resolved by the engine per resource at plan time. A
+# client sends it instead of resolving it, which is the only way to say "each
+# video in its own language" about a playlist — members are not analyzed at
+# submission, so the answer does not exist client-side.
+#
+#     outputs.video_output(options={"selection": {"audio_languages": [ORIGINAL, "fr"]}})
+#
+# Audio language lists accept it; subtitle lists refuse it (422), because "the
+# original" has no defined meaning for a translated track.
+ORIGINAL = "original"
+
+
 def url_source(
     uri: str,
     *,
