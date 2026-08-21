@@ -11,7 +11,8 @@ explicit decision (PO/architect). The non-goals are as firm as the goals.
 - **Outputs**: `video`, `audio`, `metadata`, `thumbnail`, `subtitles`,
   `transcript` (from existing subtitles), `summary` (local Ollama LLM, from
   subtitles, audio or extracted text), `document_text`, `markdown`.
-- **Cardinality scope**: `single` only.
+- **Cardinality scope**: `single` and `each_item` (a collection fans out into
+  one member step per entry, inside one job — ADR 0019).
 - **Execution**: asynchronous jobs, a SQLite queue, an embedded worker, ordered
   events + SSE, cancellation, retry (a new, linked job), content-based reuse
   (`reuse_existing`), resumption of `running` jobs on restart.
@@ -24,8 +25,11 @@ explicit decision (PO/architect). The non-goals are as firm as the goals.
   fallback, SponsorBlock, cut (trim), chapters/description/comments,
   multi-audio, merged/separate mode, `delivery` (folder + naming), a web UI
   dedicated to URLs.
-- **Collections**: `each_item` scope (playlists → one job per item), playlist
-  sync.
+- **Collections**: playlist **synchronization** — keeping a local folder in step
+  with a playlist over time (plan/apply diff, rename detection, archiving or
+  deleting removed entries, relocation). The `each_item` fan-out it was listed
+  beside is **executed** (above); sync is the half still targeted, and the one
+  standalone-HomeTube feature with no equivalent here.
 - **Hardening**: observability, effective retention, intra-job resumption,
   finishing the contract's honesty.
 
