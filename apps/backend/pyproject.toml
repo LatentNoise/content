@@ -10,6 +10,12 @@ dependencies = [
     "fastapi>=0.115",
     "uvicorn>=0.30",
     "pydantic>=2.7",
+    # Required by FastAPI to *register* a route taking an UploadFile — which
+    # `POST /api/v1/uploads` does (ADR 0020). Nothing in this codebase imports
+    # it, so no import-vs-declaration check can find it missing; FastAPI raises
+    # at route-registration time, meaning the app object cannot even be built.
+    # The bound is FastAPI's own (its `standard` extra pins the same).
+    "python-multipart>=0.0.18",
 ]
 
 [project.optional-dependencies]
