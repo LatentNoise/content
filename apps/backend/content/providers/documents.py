@@ -43,9 +43,83 @@ MAX_BYTES = 10 * 1024 * 1024
 
 MARKDOWN_SUFFIXES = {".md", ".markdown"}
 TEXT_SUFFIXES = {".txt", ".text"}
+PDF_SUFFIXES = {".pdf"}
 READABLE_SUFFIXES = MARKDOWN_SUFFIXES | TEXT_SUFFIXES
 # Recognised, understood, and honestly refused until a real reader is warranted.
-DEFERRED_SUFFIXES = {".pdf", ".docx", ".epub", ".odt", ".rtf"}
+DEFERRED_SUFFIXES = {".docx", ".epub", ".odt", ".rtf"}
+
+
+def pdf_reader():
+    """``pypdf``'s PdfReader when it is installed, else ``None``.
+
+    An installation fact, resolved at call time rather than at import: the same
+    shape every optional runner in this engine uses (the Whisper runner, the
+    PDF renderer). Without it, ``.pdf`` keeps the refusal it always had — the
+    message already said "by this installation", which is now literally true
+    rather than a polite way of saying "never".
+    """
+    try:
+        from pypdf import PdfReader
+    except ImportError:  # pragma: no cover - exercised by the no-pypdf test
+        return None
+    return PdfReader
+
+
+def extract_pdf_text(path: Path) -> str:
+    """The text a PDF carries, page by page, joined by blank lines.
+
+    Text *layer* only. A scanned page holds an image of words and no words, so
+    it legitimately yields nothing — and that is reported as its own answer
+    rather than as an empty document, because "this PDF is a scan, you want
+    OCR" and "this PDF is empty" send the reader to different places.
+    """
+    reader = pdf_reader()
+    if reader is None:  # pragma: no cover - guarded by the caller
+        raise RuntimeError("pypdf is not installed")
+    try:
+        document = reader(str(path))
+        if getattr(document, "is_encrypted", False):
+            # An empty user password is common and decrypts silently; a real
+            # one cannot be guessed, and saying so beats returning no text.
+            try:
+                document.decrypt("")
+            except Exception as exc:
+                raise AnalysisError(
+                    ValidationIssue(
+                        code=codes.ANALYSIS_FAILED,
+                        message=(
+                            "This PDF is password-protected, so its text "
+                            "cannot be read."
+                        ),
+                        details={"provider": "document"},
+                    )
+                ) from exc
+        pages = [(page.extract_text() or "").strip() for page in document.pages]
+    except AnalysisError:
+        raise
+    except Exception as exc:
+        raise AnalysisError(
+            ValidationIssue(
+                code=codes.ANALYSIS_FAILED,
+                message=f"This PDF could not be read: {exc}.",
+                details={"provider": "document"},
+            )
+        ) from exc
+    body = "\n\n".join(page for page in pages if page)
+    if not body.strip():
+        raise AnalysisError(
+            ValidationIssue(
+                code=codes.SOURCE_TYPE_NOT_SUPPORTED,
+                message=(
+                    f"This PDF carries no extractable text across its "
+                    f"{len(pages)} page(s) — it is most likely a scan. Reading "
+                    "one needs OCR, which this engine does not implement."
+                ),
+                details={"provider": "document", "pages": len(pages)},
+            ),
+            terminal=True,
+        )
+    return body
 
 
 def _title_from(markdown: str, fallback: str) -> str:
@@ -79,7 +153,11 @@ class DocumentProvider:
             suffix = Path(source.path).suffix.lower()
             # Deferred formats are claimed on purpose: refusing them here with a
             # reason beats letting them fall through to "no provider at all".
-            return suffix in READABLE_SUFFIXES or suffix in DEFERRED_SUFFIXES
+            return (
+                suffix in READABLE_SUFFIXES
+                or suffix in PDF_SUFFIXES
+                or suffix in DEFERRED_SUFFIXES
+            )
         return False
 
     def resource_key(self, source: SourceDescriptor, ctx: AnalysisContext) -> str:
@@ -123,6 +201,19 @@ class DocumentProvider:
             engine_roots=(uploads_root(ctx.settings),),
         )
         suffix = path.suffix.lower()
+        if suffix in PDF_SUFFIXES and pdf_reader() is None:
+            raise AnalysisError(
+                ValidationIssue(
+                    code=codes.SOURCE_TYPE_NOT_SUPPORTED,
+                    message=(
+                        "PDF reading needs the 'pypdf' package, which is not "
+                        "installed here. Install content-backend[read], or use "
+                        "the published image, which ships it."
+                    ),
+                    details={"provider": self.name, "suffix": suffix},
+                ),
+                terminal=True,
+            )
         if suffix in DEFERRED_SUFFIXES:
             # Terminal: without it the chain fell through to ffmpeg, which
             # answered "ffprobe could not analyze the file" — technically true,
@@ -159,6 +250,8 @@ class DocumentProvider:
                         details={"provider": self.name, "limit_bytes": MAX_BYTES},
                     )
                 )
+            if path.suffix.lower() in PDF_SUFFIXES:
+                return extract_pdf_text(path)
             return path.read_text(encoding="utf-8", errors="replace")
         except OSError as exc:
             raise AnalysisError(
@@ -217,7 +310,20 @@ class DocumentProvider:
                 ctx.settings.allowed_input_roots,
                 engine_roots=(uploads_root(ctx.settings),),
             )
-            body = path.read_text(encoding="utf-8", errors="replace")
+            # Through `_read`, not `read_text`: a PDF has to go through the
+            # extractor here exactly as it does at analysis time. Reading it
+            # directly returned the file's own bytes as "text" — the analysis
+            # said the document was readable and the artifact then contained
+            # `%PDF-1.3 ... /BaseFont /Helvetica`, which is worse than a
+            # refusal because nothing failed.
+            try:
+                body = self._read(path)
+            except AnalysisError as exc:
+                # Same translation ffmpeg's `_input_path` does: a reader problem
+                # met during execution is a step failure, and it keeps the
+                # reason (a scan needing OCR, a password, a file that changed
+                # under us) instead of becoming a bare traceback.
+                raise StepExecutionError(exc.issue.code, exc.issue.message) from exc
             title = (
                 _title_from(body, path.stem)
                 if path.suffix.lower() in MARKDOWN_SUFFIXES

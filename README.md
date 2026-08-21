@@ -464,7 +464,7 @@ and failing halfway through a job.
 | **Chapters** | Chapters declared by the source, or chapters derived from a transcript through an LLM |
 | **Thumbnail and keyframes** | Published artwork or frames extracted from video |
 | **Metadata** | Normalized, provider-independent resource information |
-| **Markdown and plain text** | Readable web pages, text files, Markdown files, and inline text |
+| **Markdown and plain text** | Readable web pages, text and Markdown files, **PDFs** (their text layer), and inline text |
 | **PDF** | Readable sources or outputs such as summaries, transcripts, and translations |
 
 Media acquisition works with YouTube and the

@@ -71,10 +71,13 @@ COPY apps/backend/pyproject.toml ./
 
 # --only-binary forces prebuilt wheels (pydantic-core on musl) so the build
 # fails fast instead of compiling Rust.
-# reportlab is a pure-Python wheel, so it installs on musl without a toolchain;
-# it is small enough to ship by default, unlike the speech-to-text extra below.
+# reportlab (writing PDFs) and pypdf (reading them) are both pure-Python
+# wheels, so they install on musl without a toolchain; both are small enough to
+# ship by default, unlike the speech-to-text extra below. Shipping the reader
+# by default is what makes "summarize this PDF" work on a stock install rather
+# than only for whoever thought to add an extra.
 RUN pip install --no-cache-dir --only-binary=:all: --no-compile \
-    fastapi uvicorn pydantic "reportlab>=4.0"
+    fastapi uvicorn pydantic "reportlab>=4.0" "pypdf>=5.1"
 
 # Optional speech-to-text runner (audio.transcribe → transcript/summary from
 # audio). Off by default — the wheels are heavy (ctranslate2). Enable with:

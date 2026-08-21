@@ -6,8 +6,9 @@ explicit decision (PO/architect). The non-goals are as firm as the goals.
 ## In scope (today, executed)
 
 - **Sources**: `url` (media through yt-dlp, web pages through the reader),
-  `file` (media through ffmpeg, `.txt`/`.md` through the document reader, both
-  under allowed roots), `text` (inline).
+  `file` (media through ffmpeg, `.txt`/`.md`/`.pdf` through the document
+  reader — a PDF's text layer, not a scan, which would need OCR — all under
+  allowed roots), `text` (inline), `upload` (bytes a client sent, ADR 0020).
 - **Outputs**: `video`, `audio`, `metadata`, `thumbnail`, `subtitles`,
   `transcript` (from existing subtitles), `summary` (local Ollama LLM, from
   subtitles, audio or extracted text), `document_text`, `markdown`.
@@ -35,8 +36,8 @@ explicit decision (PO/architect). The non-goals are as firm as the goals.
 
 ## Considered later (hypotheses, not committed)
 
-- `upload` sources, PDF text extraction (recognised and refused today, since
-  doing it well needs a real dependency), connectors.
+- `.docx`/`.epub`/`.odt`/`.rtf` text extraction — recognised and refused today,
+  each needing its own reader. OCR for a scanned PDF, same reason. Connectors.
 - `keyframes`, `ocr`, `pdf`, `embeddings`, `semantic_index`, `archive`,
   `collection` outputs.
 - `each_source`, `all_sources`, `collection`, `group` scopes.
