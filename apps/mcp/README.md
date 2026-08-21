@@ -119,9 +119,39 @@ Build the distributions with `make wheels` (they land in `dist/`).
 - The full journey — MCP service → SDK → real FastAPI engine → executor →
   delivery library, including `delivery` intent and `mode: "none"`:
   **verified in-process** (`tests/test_end_to_end.py`, in `make validate`).
-- The installed wheel driven over stdio by an MCP client session against a
-  running engine: **verified** at packaging time (see the repository's
-  release notes); re-run it after any transport change.
+- The **published wheel** (`uv tool install content-mcp`, 0.6.0 from PyPI)
+  driven **over stdio by an MCP client session** against a **running 0.6.0
+  engine**: **verified 2026-08-21**. What was actually run, end to end:
+
+  | Path | Result |
+  | --- | --- |
+  | stdio handshake, `tools/list`, `resources/templates/list` | 9 tools, the three `content://` templates |
+  | `get_config` → `analyze_source` → `list_capabilities` → `generate` → `get_job` → `get_artifact` | a web page produced a delivered `markdown` artifact, inlined as text |
+  | A real YouTube download | `audio` (opus), 7.5 MB, delivered under its display name |
+  | A binary artifact through `get_artifact` | **not** inlined — reference only, as designed |
+  | `download_artifact` into `CONTENT_MCP_DOWNLOAD_DIR` | file written on this side |
+  | `download_artifact` to a path **outside** it | refused, with the variable named |
+  | A playlist with `scope: "each_item"` | 19 entries → 19 artifacts, numbered `001 - …`, one delivered file each |
+  | Engine unreachable / wrong port | actionable message (see below) — this is what the run *fixed* |
+
+  Re-run it after any transport change; the in-process suites above never reach
+  a closed socket, which is exactly how the error-message defect survived.
+
+## When something goes wrong
+
+Every tool translates the SDK's exceptions into something an agent can act on,
+because the alternative is what this server used to say when the engine was not
+running: `[Errno 61] Connection refused`. It names neither what failed nor what
+to do, and it is the **first** thing a new user meets — the engine listens on
+`8010` on the host and `8000` only inside its container, so pointing at the
+wrong one is the ordinary mistake.
+
+| Situation | What the caller is told |
+| --- | --- |
+| The engine is not reachable | Which URL was tried, that `docker compose up -d` starts it, that `CONTENT_API_URL` moves it, and the 8010/8000 distinction |
+| An analysis has expired | That analyses are kept for a limited time, and to call `analyze_source` again |
+| The engine refused the request | The stable error codes (`output_type_not_supported`, …) and the body |
+| An output spec is malformed | Caught *before* the round trip, with an example of a correct one |
 
 ## Design
 
