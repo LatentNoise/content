@@ -208,8 +208,14 @@ class DocumentProvider:
         if inline is not None:
             body, title = inline, ""
         else:
+            # engine_roots, like every other call: an uploaded file lives in
+            # the engine's own uploads directory, which is deliberately not an
+            # allowed *input* root (ADR 0020). Omitting it here let an upload
+            # analyse fine and then fail at execution.
             path = check_path_allowed(
-                step.params.get("path", ""), ctx.settings.allowed_input_roots
+                step.params.get("path", ""),
+                ctx.settings.allowed_input_roots,
+                engine_roots=(uploads_root(ctx.settings),),
             )
             body = path.read_text(encoding="utf-8", errors="replace")
             title = (

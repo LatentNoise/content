@@ -405,8 +405,14 @@ class FfmpegProvider:
 
     def _input_path(self, step: PlanStep, ctx: ExecutionContext) -> Path:
         try:
+            # engine_roots as everywhere else: an uploaded file sits in the
+            # engine's uploads directory, which is not an allowed *input* root
+            # (ADR 0020). Without it, every upload analysed fine and then died
+            # in its first step.
             return check_path_allowed(
-                step.params["path"], ctx.settings.allowed_input_roots
+                step.params["path"],
+                ctx.settings.allowed_input_roots,
+                engine_roots=(uploads_root(ctx.settings),),
             )
         except AnalysisError as exc:
             # The file changed/vanished between planning and execution.

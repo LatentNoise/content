@@ -119,6 +119,47 @@ def test_an_uploaded_file_can_be_submitted_as_a_job(client):
     assert response.status_code == 201, response.text
 
 
+def test_an_uploaded_file_runs_to_a_finished_artifact(client, settings):
+    """The test above stops at 201 — the job is *accepted*. That gap hid a real
+    defect: an upload analysed fine and then failed in its first step with
+    "File sources are disabled", because the execution-time path check forgot
+    the engine's own uploads directory while the analysis-time one remembered
+    it. An upload that cannot be executed is not an upload feature.
+
+    Found by driving the published MCP server against a real engine, which is
+    the only place a job actually runs to completion from an uploaded file.
+    """
+    from content.execution.executor import JobExecutor
+    from content.persistence.store import Store
+
+    upload_id = _upload(client)
+    response = client.post(
+        "/api/v1/jobs",
+        json={
+            "schema_version": "1.0",
+            "sources": [{"id": "s", "type": "upload", "upload_id": upload_id}],
+            "outputs": [{"id": "m", "type": "markdown"}],
+        },
+    )
+    assert response.status_code == 201, response.text
+    job_id = response.json()["job_id"]
+
+    store = Store(settings.db_path)
+    executor = JobExecutor(
+        store=store,
+        settings=settings,
+        providers=ProviderRegistry(
+            [DocumentProvider()], processors=[TranscriptProcessor()]
+        ),
+    )
+    executor.execute(store.claim_next_queued())
+
+    job = store.get_job(job_id)
+    assert job["status"] == "succeeded", job.get("error")
+    artifacts = store.list_artifacts(job_id)
+    assert artifacts, "the upload produced no artifact"
+
+
 def test_capabilities_answer_for_an_upload(client):
     upload_id = _upload(client)
     response = client.post(
