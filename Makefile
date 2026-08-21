@@ -117,7 +117,8 @@ version:  ## Show every version declaration and fail if they disagree
 	  grep -o 'version="[0-9][^"]*"' apps/mcp/content_mcp/server.py | sed 's/.*"\(.*\)"/\1/'; \
 	  grep -o 'org.opencontainers.image.version="[^"]*"' apps/backend/Dockerfile | sed 's/.*"\(.*\)"/\1/'; \
 	  grep -m1 '"version"' $(EXT_DIR)/manifest.json | sed 's/.*"\([0-9][^"]*\)".*/\1/'; \
-	  grep -ho 'content-sdk==[0-9][0-9.]*' $(SDK_PIN_MANIFESTS) | sed 's/.*==//' \
+	  grep -ho 'content-sdk==[0-9][0-9.]*' $(SDK_PIN_MANIFESTS) | sed 's/.*==//'; \
+	  grep -o '"version": "[0-9][^"]*"' server.json | sed 's/.*: "\(.*\)"/\1/' \
 	); \
 	distinct=$$(echo "$$versions" | sort -u); \
 	count=$$(echo "$$distinct" | wc -l | tr -d ' '); \
@@ -132,6 +133,7 @@ version:  ## Show every version declaration and fail if they disagree
 	  grep -n 'org.opencontainers.image.version=' apps/backend/Dockerfile; \
 	  grep -n '"version"' $(EXT_DIR)/manifest.json | head -1; \
 	  grep -n 'content-sdk==' $(SDK_PIN_MANIFESTS); \
+	  grep -n '"version": "[0-9]' server.json; \
 	  exit 1; \
 	fi
 
@@ -167,6 +169,8 @@ version-update:  ## Set the version everywhere (asks when VERSION= is omitted)
 	for f in $(SDK_PIN_MANIFESTS); do \
 	  sed -i.bak "s/content-sdk==[0-9][0-9.]*/content-sdk==$$v/" $$f && rm $$f.bak; \
 	done; \
+	sed -i.bak "s/\"version\": \"[0-9][^\"]*\"/\"version\": \"$$v\"/g" \
+	  server.json && rm server.json.bak; \
 	$(MAKE) --no-print-directory version; \
 	echo "next: review with 'git diff', commit, then 'make version-tag'"
 

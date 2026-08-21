@@ -62,6 +62,9 @@ One engine, one official SDK, thin clients — each documents itself:
   — the release zip, and what publishing on the Chrome Web Store would involve
 - [releases/](releases/) — the authored release notes, one `vX.Y.Z.md` per
   release; `release-draft.yml` uses the matching file as the draft's body.
+- [operations/mcp-registry.md](operations/mcp-registry.md) — publishing
+  `content-mcp` to the official MCP registry: `server.json`, the PyPI
+  ownership marker, and what being listed does (and does not) buy
 - [operations/release-readiness.md](operations/release-readiness.md) — what
   "releasable" means · [operations/github-settings.md](operations/github-settings.md)
   — the hosting settings the governance model assumes

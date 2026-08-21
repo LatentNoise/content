@@ -27,6 +27,11 @@
 !apps/browser-extension-chromium/**/*.svg
 !apps/browser-extension-chromium/**/*.png
 !pyproject.toml
+# The MCP registry's manifest for `content-mcp` (apps/mcp): one file at the
+# repository root, published by `mcp-publisher` from exactly this copy. It is
+# named here rather than allowing *.json repo-wide, which would sweep in
+# caches, lockfiles and downloaded fixtures.
+!server.json
 !Dockerfile
 !docker-compose.yml
 !.dockerignore
