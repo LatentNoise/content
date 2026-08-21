@@ -1,3 +1,3 @@
 """Content — declarative resource-to-artifact generation engine."""
 
-__version__ = "0.6.2"
+__version__ = "0.6.3"
