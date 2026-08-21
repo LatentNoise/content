@@ -122,6 +122,42 @@ A union discriminated by `type` (a logical result, never a tool):
 
 `ocr`, `embeddings`, `semantic_index`, `archive`, `collection` — recognized by the schema (hence reserved, a client cannot redefine them), rejected at **feasibility** time with `output_type_not_supported` (valid ≠ implemented, see §6).
 
+### Reserved language token: `original` (ADR 0022)
+
+Audio language lists — `video.options.selection.audio_languages` and
+`audio.options.languages` — accept one reserved word beside the ISO codes:
+
+```json
+{"selection": {"audio_languages": ["original", "fr"]}}
+```
+
+`original` means **the source's own audio language**, whatever the analysis
+says it is. It reads: *the original voice if this resource has one, otherwise
+French*.
+
+- **Resolved per resource, at plan time.** For `scope: "each_item"` each member
+  expands the token against **its own** analysis, so one request returns a
+  five-language playlist each in its own voice. Nothing collection-specific is
+  involved: the expansion happens in the single-resource path, so a lone video
+  behaves identically (INV-018).
+- **It is a position in the ordered list**, not a flag. `["original", "fr"]`
+  and `["fr", "original"]` are different requests, and a language that the
+  token resolves to is not repeated if it is also listed by name.
+- **It degrades, and says so.** A source declaring no original audio language
+  drops the token and falls through to the next preference, with a
+  `partial_output` warning. When nothing is left, the engine's default track is
+  used — the request is not rejected.
+- **A provider never sees it.** What reaches an execution step is always
+  language codes.
+- **It is refused where it has no meaning**: a `subtitles` output's `languages`,
+  `processing.embed_subtitles`, and a `translation`'s languages all reject it
+  with `schema_violation`. "The original" is undefined for a translated track,
+  and *invalid* is a different answer from *not implemented* (§6).
+
+`original` is not an ISO 639 code, which is what makes it safe to reserve —
+and this paragraph is the reservation: a future language code spelled
+`original` would not be accepted as one.
+
 ### Input resolution rules (deterministic, D3)
 
 1. `from_sources` and `from_outputs` list existing ids; otherwise `unknown_source_reference` / `unknown_output_reference`.
@@ -285,7 +321,9 @@ parts a client may build on and which parts may move under it.
   "errors": [{"code", "path", "message", "details"}]}}`. There is exactly one
   422 shape, including for malformed JSON bodies (`schema_violation`).
 - **Field names and meanings** in `GenerationRequest`, and the meaning of the
-  job states in [domain.md](domain.md).
+  job states in [domain.md](domain.md). This includes the reserved value
+  `original` inside an audio language list (§3): its meaning is part of the
+  contract, not an implementation detail.
 - **The four core concepts** and their separation (request, plan, job,
   artifact). A v2 would be a different decomposition, not a renamed field.
 

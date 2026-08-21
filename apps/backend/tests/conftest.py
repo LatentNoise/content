@@ -122,6 +122,18 @@ def _hermetic_network(request, monkeypatch):
     yield
 
 
+def _language_facts(uri: str) -> dict:
+    """The audio-language facts a URI models. Default: a Japanese original with
+    an English dub. ``lang-fr`` makes it a French original (so a playlist can
+    have members that differ), and ``noorig`` a source that declares no
+    original at all — the degradation path of the ``original`` token."""
+    if "noorig" in uri:
+        return {"audio_languages": ["en"], "original_audio_language": ""}
+    if "lang-fr" in uri:
+        return {"audio_languages": ["en", "fr"], "original_audio_language": "fr"}
+    return {"audio_languages": ["en", "ja"], "original_audio_language": "ja"}
+
+
 class FakeProvider:
     """A deterministic provider: URLs containing "fail-audio" fail the audio
     step; subtitles produce one artifact per requested language present in
@@ -151,6 +163,23 @@ class FakeProvider:
     def analyze(self, source: SourceDescriptor, ctx: AnalysisContext) -> SourceAnalysis:
         assert isinstance(source, UrlSource)
         if "playlist" in source.uri:
+            # "multilang" models the case ADR 0022 exists for: members whose
+            # original audio language genuinely differs from each other.
+            entries = (
+                [
+                    CollectionEntry(
+                        id="ja", title="Tokyo talk", url="https://x/lang-ja"
+                    ),
+                    CollectionEntry(
+                        id="fr", title="Paris talk", url="https://x/lang-fr"
+                    ),
+                ]
+                if "multilang" in source.uri
+                else [
+                    CollectionEntry(id="v1", title="First", url="https://x/v1"),
+                    CollectionEntry(id="v2", title="Second", url="https://x/v2"),
+                ]
+            )
             return SourceAnalysis(
                 source_id=source.id,
                 resource=NormalizedResource(
@@ -159,10 +188,7 @@ class FakeProvider:
                     canonical_url=source.uri,
                     detected_provider=self.name,
                 ),
-                entries=[
-                    CollectionEntry(id="v1", title="First", url="https://x/v1"),
-                    CollectionEntry(id="v2", title="Second", url="https://x/v2"),
-                ],
+                entries=entries,
             )
         return SourceAnalysis(
             source_id=source.id,
@@ -196,8 +222,7 @@ class FakeProvider:
                 video_heights=[360, 720, 1080],
                 video_codecs=["h264", "vp9"],
                 audio_codecs=["aac", "opus"],
-                audio_languages=["en", "ja"],
-                original_audio_language="ja",
+                **_language_facts(source.uri),
             ),
             # URIs containing "chapters" model a source that DECLARES chapters.
             chapters=(

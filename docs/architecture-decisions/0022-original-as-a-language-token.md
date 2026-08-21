@@ -1,7 +1,8 @@
 # ADR 0022 — `original` as a language token
 
-Status: proposed (2026-08-15) · Completes ADR 0019 for per-member audio ·
-Constrained by INV-018 (a collection invents no rule of its own)
+Status: **accepted** (2026-08-15) · implemented 2026-08-21 · Completes ADR 0019
+for per-member audio · Constrained by INV-018 (a collection invents no rule of
+its own)
 
 ## Context
 
@@ -86,3 +87,21 @@ for a translated track).
 symptom that prompted this. Its per-video behaviour is unchanged in effect: it
 sends a token instead of a resolved code, and the engine reaches the same
 answer.
+
+## Implementation notes (2026-08-21)
+
+Built as written. Three details the decision did not have to settle, recorded
+here because the next reader will wonder:
+
+- **Where the token is refused.** The ADR named a `subtitles` output's language
+  list; the same reasoning covers `processing.embed_subtitles` and a
+  `translation`'s `target_language`/`source_language`, so all four refuse it.
+  The refusal is a schema-level `ValueError`, which the API reports as
+  `schema_violation` — invalid, not unsupported.
+- **HomeTube emits the token for a collection only.** For a single video the
+  form shows the source's real tracks, and pre-selecting the concrete code the
+  user can see is better than showing them a word. The client is not resolving
+  a rule there — the user is ticking a track. The token exists for the case
+  where no client can resolve it, and that is where it is sent.
+- **`content_sdk.ORIGINAL`** carries the word, so no client hardcodes a string
+  literal from the contract.

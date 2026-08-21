@@ -16,7 +16,7 @@ import os
 import shlex
 
 import streamlit as st
-from content_sdk import legal, notifications
+from content_sdk import ORIGINAL, legal, notifications
 from content_sdk.compat import ApiError, ContentClient
 from content_sdk.status import ago, better_status, display, is_producible
 
@@ -246,7 +246,9 @@ def preferred_langs(
     return out
 
 
-def wanted_langs(*, include_primary: bool = True) -> list[str]:
+def wanted_langs(
+    *, include_primary: bool = True, include_vo: bool = False
+) -> list[str]:
     """The server's wanted languages as *intent*, with nothing to intersect.
 
     `preferred_langs` keeps only what a source actually offers, which needs an
@@ -254,18 +256,32 @@ def wanted_langs(*, include_primary: bool = True) -> list[str]:
     probed (ADR 0019 keeps discovery flat by design). So a playlist expresses
     the preferences as intent, and the engine intersects them against each
     member's real tracks when that member is analyzed and planned by the
-    canonical single-video pipeline. VO is absent on purpose: "original" is a
-    per-video fact, not a language code, so it cannot be requested for a whole
-    playlist.
+    canonical single-video pipeline.
+
+    `include_vo` puts the reserved `original` token first when the server
+    prefers the original voice (ADR 0022). It is a token, not a code: the
+    engine expands it against *each member's own* analysis, at the moment that
+    member is planned — which is the only moment the answer exists. Audio
+    lists accept it; subtitle lists refuse it, so the subtitle caller leaves
+    it off.
     """
     primary = lang_prefs.get("primary") or ""
+    vo = [ORIGINAL] if include_vo and lang_prefs.get("vo_first", True) else []
     out: list[str] = []
-    for lang in ([primary] if include_primary else []) + list(
-        lang_prefs.get("secondaries") or []
+    for lang in (
+        vo
+        + ([primary] if include_primary else [])
+        + list(lang_prefs.get("secondaries") or [])
     ):
         if lang and lang not in out:
             out.append(lang)
     return out
+
+
+def language_label(code: str) -> str:
+    """`original` is a request the user makes, not a track they can see — say
+    so in the widget rather than showing a word that looks like a typo."""
+    return "original — each video's own voice" if code == ORIGINAL else code
 
 
 def _language_policy_caption() -> str:
@@ -656,25 +672,24 @@ elif (video_on or audio_on) and is_collection:
     # preferred languages rather than offering the source's. Without it the
     # request carried no `audio_languages` at all and every downloaded item
     # silently got a single default track — the bug this branch fixes.
-    choices = wanted_langs()
+    choices = wanted_langs(include_vo=True)
     if choices:
         audio_languages = st.multiselect(
             "Audio languages",
             choices,
             default=choices,
+            format_func=language_label,
             key=f"audio-coll-{wk}",
             help="Applied to every video in the playlist. Items are not "
             "probed beforehand, so this is a preference: a video keeps the "
             "tracks it has, and falls back to its best audio otherwise.",
         )
-        # Not `_language_policy_caption()`: that one starts with "VO", and VO
-        # is exactly what a playlist cannot ask for — "original" is a fact
-        # about one video, not a language code. Printing it here would promise
-        # an ordering the request does not carry.
+        # VO is expressible here now (ADR 0022). It used to be omitted because
+        # "the original language" is a per-video fact and a playlist has no
+        # single answer — but the request can carry the *question*, and the
+        # engine answers it per member.
         st.caption(
-            "🌐 From your server preference, minus VO: a playlist is not "
-            "probed, so each video keeps the tracks it has (and its best "
-            "audio if it has none of these)."
+            _language_policy_caption() or "🌐 From your server language preference."
         )
 
 

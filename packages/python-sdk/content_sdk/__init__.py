@@ -30,6 +30,7 @@ from .errors import (
     ValidationError,
 )
 from .models import (
+    ORIGINAL,
     AnalysisData,
     AnalyzedSource,
     ArtifactData,
@@ -44,6 +45,7 @@ from .resources import Analysis, Job
 __version__ = "0.5.0"
 
 __all__ = [
+    "ORIGINAL",
     "APIError",
     "Analysis",
     # data models
