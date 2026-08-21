@@ -229,7 +229,10 @@ the missing file — with instructions — until it exists. The whole recipe:
 
 1. Export a Netscape `cookies.txt` from a signed-in browser and save it as
    `config/youtube_cookies.txt` (the engine reads it at `/config/…`, the
-   container side of the mount).
+   container side of the mount). From a clone,
+   `make cookies FILE=~/Downloads/cookies.txt` does the copy — it checks the
+   file looks like a Netscape export, keeps any previous one as
+   `.previous`, and prints the next step.
 2. `make docker-update`.
 
 HomeTube's "🍪 Cookie Management" then shows "✅ ready" with the file's path
@@ -244,6 +247,29 @@ The backend **copies** the cookie file to a writable location before passing it
 to yt-dlp: yt-dlp rewrites the cookie jar on exit, so a `:ro` mount would cause
 an error. The mount therefore stays read-only and your export is never
 modified.
+
+### When a download fails for want of cookies
+
+Cookies expire, and an export made months ago stops working without
+announcing itself. yt-dlp answers with "Sign in to confirm you're not a
+bot", "This video is private" or an age-restriction refusal; Content
+classifies those as `bot_detection` or `authentication_required` and — this is
+the part worth knowing — **says which of three situations it is in**, in the
+failure message on the step (and in the analysis error, if the URL fails
+before a job even starts):
+
+| Situation | What the message says |
+| --- | --- |
+| No credential configured at all | How to export a `cookies.txt` and point `CONTENT_CREDENTIALS` at it |
+| A credential declared, but its file is not readable | That the download **ran anonymously**, and where the file was expected |
+| Cookies were used and still refused | That they have most likely expired — export them again |
+
+The middle row is the quiet one: `prepare_cookies` returns nothing when the
+declared file is absent, so the attempt proceeds without cookies and fails
+looking like an ordinary refusal. The UIs flag that state before you launch;
+the message now says it at failure time too, which is what an API, CLI or MCP
+caller sees. The analysis error also carries `details.cookies` as
+`none | missing | used`, so a client can react without reading prose.
 
 ## yt-dlp freshness (important)
 

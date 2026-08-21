@@ -242,13 +242,75 @@ def check_url_allowed(uri: str, allow_private_networks: bool) -> None:
 
 def classify_failure(stderr_text: str) -> str:
     lowered = stderr_text.lower()
+    # Bot detection first: YouTube's "Sign in to confirm you're not a bot" also
+    # matches the generic auth patterns, so testing them in the other order
+    # made this branch unreachable for the one message that produces it.
+    if "bot" in lowered and ("sign in" in lowered or "confirm" in lowered):
+        return "bot_detection"
     if any(pattern in lowered for pattern in _AUTH_PATTERNS):
         return "authentication_required"
     if "requested format is not available" in lowered:
         return "format_unavailable"
-    if "sign in" in lowered and "bot" in lowered:
-        return "bot_detection"
     return "provider_error"
+
+
+# Failures a cookie file answers. Both mean the same thing to a user — "this
+# needs an account" — and the same three states decide what to tell them.
+COOKIE_ANSWERABLE = ("authentication_required", "bot_detection")
+
+
+def cookie_state(credential_id: str | None, settings) -> str:
+    """What the engine can say about cookies for this attempt: ``"none"`` (no
+    credential named), ``"missing"`` (one named, but its file is not readable
+    — so the attempt ran anonymously), or ``"used"``."""
+    if not credential_id:
+        return "none"
+    configured = getattr(settings, "credentials", {}).get(credential_id)
+    if not configured or not Path(configured).is_file():
+        return "missing"
+    return "used"
+
+
+def failure_remedy(reason: str, credential_id: str | None, settings) -> str:
+    """The sentence that turns "yt-dlp exited with code 1" into something the
+    user can act on.
+
+    A missing cookie file is the single most common reason a YouTube download
+    fails in Docker — there is no browser in a container to borrow a session
+    from — and the engine knows exactly which of the three situations it is
+    in. Saying so costs nothing and saves the user the log dive that would
+    otherwise be their only route to the answer.
+    """
+    if reason not in COOKIE_ANSWERABLE:
+        return ""
+    state = cookie_state(credential_id, settings)
+    if state == "used":
+        return (
+            f"The '{credential_id}' cookies were used and still refused: they "
+            "have most likely expired. Export them again from a browser signed "
+            "in to that site and replace the file."
+        )
+    if state == "missing":
+        configured = getattr(settings, "credentials", {}).get(credential_id)
+        return (
+            f"The credential '{credential_id}' is declared but no file is "
+            f"readable at {configured}, so this ran without cookies. Drop your "
+            "cookies export there and retry — see config/README.md."
+        )
+    if getattr(settings, "credentials", {}):
+        available = ", ".join(sorted(settings.credentials))
+        return (
+            "This source needs an authenticated session. The server has "
+            f"cookies configured ({available}) but this request did not ask "
+            "for any: set auth.credential_id on the source (in HomeTube, the "
+            "🍪 Cookie Management selector)."
+        )
+    return (
+        "This source needs an authenticated session, and no cookie credential "
+        "is configured on the server. Export a Netscape cookies.txt from a "
+        "signed-in browser, drop it in ./config, and point CONTENT_CREDENTIALS "
+        "at it — config/README.md walks through it."
+    )
 
 
 # Marker prefixing the one --print line that smuggles the SponsorBlock
@@ -457,13 +519,19 @@ class YtDlpProvider:
                 cookie_file.unlink(missing_ok=True)
         if not result.ok:
             stderr_text = stderr_log.read_text() if stderr_log.exists() else ""
+            reason = classify_failure(stderr_text)
+            remedy = failure_remedy(reason, credential_id, ctx.settings)
             raise AnalysisError(
                 ValidationIssue(
                     code=codes.ANALYSIS_FAILED,
-                    message="Resource analysis failed.",
+                    message="Resource analysis failed."
+                    + (f" {remedy}" if remedy else ""),
                     details={
-                        "reason": classify_failure(stderr_text),
+                        "reason": reason,
                         "provider": self.name,
+                        # The cookie situation, so a client can react without
+                        # parsing prose: none | missing | used.
+                        "cookies": cookie_state(credential_id, ctx.settings),
                     },
                 )
             )
@@ -667,7 +735,19 @@ class YtDlpProvider:
             )
         return operations[step.operation](step, ctx)
 
-    def _run(self, args: list[str], ctx: ExecutionContext) -> None:
+    def _run(
+        self,
+        args: list[str],
+        ctx: ExecutionContext,
+        credential_id: str | None = None,
+    ) -> None:
+        """Run yt-dlp and turn a non-zero exit into a classified failure.
+
+        *credential_id* is what the step asked for, and it is only used to
+        explain the failure: which of "no cookies configured", "declared but
+        absent" and "used and still refused" the user is looking at.
+        """
+
         def on_line(line: str) -> None:
             match = DOWNLOAD_PROGRESS_PATTERN.search(line)
             if match:
@@ -688,9 +768,12 @@ class YtDlpProvider:
             raise StepExecutionError("timeout", "Step timed out.")
         if result.returncode != 0:
             stderr_text = ctx.stderr_log.read_text() if ctx.stderr_log.exists() else ""
+            reason = classify_failure(stderr_text)
+            remedy = failure_remedy(reason, credential_id, ctx.settings)
             raise StepExecutionError(
-                classify_failure(stderr_text),
-                f"{self.binary} exited with code {result.returncode}.",
+                reason,
+                f"{self.binary} exited with code {result.returncode}."
+                + (f" {remedy}" if remedy else ""),
             )
 
     # --- fast SponsorBlock cut (INV-019) --------------------------------------
@@ -888,7 +971,11 @@ class YtDlpProvider:
         for profile_index, selector in enumerate(profiles):
             for client in clients:
                 try:
-                    self._run(args_for(selector, client), ctx)
+                    self._run(
+                        args_for(selector, client),
+                        ctx,
+                        step.params.get("credential_id"),
+                    )
                 except StepExecutionError as exc:
                     if exc.code in ("cancelled", "timeout"):
                         raise
@@ -962,7 +1049,7 @@ class YtDlpProvider:
         last_error: StepExecutionError | None = None
         for attempt, client in enumerate(attempts):
             try:
-                self._run(args_for(client), ctx)
+                self._run(args_for(client), ctx, step.params.get("credential_id"))
             except StepExecutionError as exc:
                 # A cancelled or timed-out step is a decision, not a hiccup.
                 if exc.code in ("cancelled", "timeout"):
@@ -1018,7 +1105,7 @@ class YtDlpProvider:
             prepare_cookies(step.params.get("credential_id"), ctx.settings, ctx.workdir)
         )
         args.append(step.params["uri"])
-        self._run(args, ctx)
+        self._run(args, ctx, step.params.get("credential_id"))
         produced = _find_by_ext(ctx.workdir, base, IMAGE_EXTS)
         if not produced:
             raise StepExecutionError("no_output", "No thumbnail was available.")
@@ -1066,7 +1153,7 @@ class YtDlpProvider:
 
         produced: list[ProducedFile] = []
         for flags in passes:
-            self._run(command(*flags), ctx)
+            self._run(command(*flags), ctx, step.params.get("credential_id"))
             for path in sorted(ctx.workdir.glob(f"{base}*")):
                 if path.suffix.lower() not in SUBTITLE_EXTS:
                     continue

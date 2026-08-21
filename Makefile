@@ -29,7 +29,7 @@ VERSION_MODULES    := apps/backend/content/__init__.py \
 .PHONY: help install hooks format lint test test-all ui-venv test-ui test-ui-live \
         validate validate-all validate-release clean run \
         version version-update version-tag wheels deploy-compose extension-zip docker-up docker-update docker-down \
-        docker-logs
+        docker-logs cookies
 
 help:  ## List the available targets
 	@grep -hE '^[a-zA-Z][a-zA-Z0-9_-]*:.*##' $(MAKEFILE_LIST) \
@@ -278,6 +278,33 @@ docker-update:  ## Rebuild images from the working tree and refresh running cont
 	docker compose up -d --build --remove-orphans
 	@echo "stack refreshed — running now:"
 	@docker compose ps --format "  {{.Service}}  {{.Status}}"
+
+# The one manual step a Docker install of HomeTube really has. Doing it by
+# hand means knowing the exact filename the default CONTENT_CREDENTIALS points
+# at, which is precisely the detail people get wrong — and a cookie file in
+# the wrong place fails at download time as an ordinary "sign in" refusal.
+cookies:  ## Install a cookies.txt export for YouTube (FILE=~/Downloads/cookies.txt)
+	@test -n "$(FILE)" || { \
+	  echo "usage: make cookies FILE=~/Downloads/cookies.txt"; \
+	  echo "       export it from a browser signed in to YouTube"; \
+	  echo "       (any \"cookies.txt\" extension does it — Netscape format)"; \
+	  exit 2; }
+	@test -f "$(FILE)" || { echo "no such file: $(FILE)"; exit 2; }
+	@head -1 "$(FILE)" | grep -qi "netscape\|http cookie" \
+	  || echo "⚠️  $(FILE) does not look like a Netscape cookies.txt — installing it anyway."
+	@grep -qi "youtube\|google" "$(FILE)" \
+	  || echo "⚠️  no youtube.com/google.com cookie in that export — is it the right site?"
+	@mkdir -p config
+	@if [ -f config/youtube_cookies.txt ]; then \
+	  cp -p config/youtube_cookies.txt config/youtube_cookies.txt.previous; \
+	  chmod 600 config/youtube_cookies.txt.previous; \
+	  echo "↩︎  previous export kept as config/youtube_cookies.txt.previous"; \
+	fi
+	@cp "$(FILE)" config/youtube_cookies.txt
+	@chmod 600 config/youtube_cookies.txt
+	@echo "✅ installed config/youtube_cookies.txt ($$(wc -l < config/youtube_cookies.txt | tr -d ' ') lines)"
+	@echo "   the engine reads it at /config/youtube_cookies.txt (CONTENT_CREDENTIALS)"
+	@echo "   now: make docker-update   — then HomeTube's 🍪 card shows ✅ ready"
 
 docker-down:  ## Stop and remove the compose stack
 	docker compose down

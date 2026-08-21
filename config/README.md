@@ -35,6 +35,13 @@ close it:
    same file, two addresses: `./config` is the folder on your machine, and
    the compose mount grafts it into the container at `/config`.
 
+   From a clone, `make cookies FILE=~/Downloads/cookies.txt` does this step
+   for you: it warns if the file is not a Netscape export or carries no
+   YouTube cookie, keeps any previous export as `youtube_cookies.txt.previous`,
+   and tells you what to run next. Getting the *filename* wrong is the classic
+   failure — the default `CONTENT_CREDENTIALS` looks for exactly
+   `youtube_cookies.txt` — and that is the mistake the target removes.
+
 2. **Refresh the stack**: `make docker-update`.
 
 The flag turns into "✅ ready · updated …". To turn the feature off entirely,
@@ -50,6 +57,29 @@ selector, and API clients pass it per source:
 The mount stays read-only on purpose: yt-dlp rewrites cookie jars on exit, so
 the engine copies the file to its own writable location before every use —
 your export is never modified.
+
+## When they stop working
+
+Cookies expire. Nothing warns you in advance, so the way you find out is a
+download that fails, and the engine's failure message names the cause rather
+than leaving you to read a yt-dlp log: it distinguishes "no credential
+configured", "declared but the file is not there, so this ran anonymously"
+and "the cookies were used and still refused — they have expired". Re-run
+`make cookies FILE=…` with a fresh export and `make docker-update`.
+
+Refreshing is also the answer to a subtler symptom: YouTube increasingly
+challenges anonymous clients, so a video that used to download and now fails
+with a "sign in to confirm you're not a bot" is usually stale cookies rather
+than a broken engine.
+
+## Why cookies are not uploaded through the UI
+
+It would be the obvious convenience, and it is deliberately absent. The V1 API
+has no authentication (ADR 0024), so an upload endpoint for credentials would
+let anyone who can reach the port install a cookie jar — and the mount is
+read-only precisely so the engine cannot write to this folder. Dropping a file
+into a directory you own is a step the operator takes once, with the
+permissions they already have.
 
 ## More than one credential
 
