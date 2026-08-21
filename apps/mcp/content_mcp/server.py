@@ -108,7 +108,7 @@ def _friendly(fn, client: ContentClient):
 
 def build_server(client: ContentClient | None = None) -> MCPServer:
     client = client or ContentClient()
-    server = MCPServer(name="content", version="0.6.1", instructions=INSTRUCTIONS)
+    server = MCPServer(name="content", version="0.6.2", instructions=INSTRUCTIONS)
 
     def tool():
         """`server.tool()`, with SDK errors translated on the way out."""
