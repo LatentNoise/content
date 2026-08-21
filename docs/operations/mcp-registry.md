@@ -77,10 +77,9 @@ It is skipped for TestPyPI and for a recovery publish that did not include the
 MCP package, because announcing a version whose wheel did not go out would be a
 lie the registry then serves.
 
-**By hand**, if that job has to be replayed — note that the CLI's `login github`
-is a **browser action for the maintainer**, since the `gh` CLI on the
-development machine is authenticated as the wrong account and must never be
-used for writes (AGENTS.md):
+**By hand**, if that job has to be replayed — `mcp-publisher login github`
+opens a browser, so it is the maintainer who completes it. Make sure the
+identity it proves is `YannOrieult` (AGENTS.md, *Public identity*):
 
 ```bash
 brew install mcp-publisher     # or the tarball from the registry's releases
@@ -114,4 +113,5 @@ likely return:
 | Glama | crawls repositories; check whether it already knows us |
 | Smithery | submission |
 
-Each of those is a **write action performed as `YannOrieult`**, in a browser.
+Each of those is a **write action performed as `YannOrieult`** — check
+`gh api user --jq .login` first if any of them is done from the CLI.

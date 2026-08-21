@@ -7,9 +7,18 @@ no business logic here. stdio transport (HTTP can come later).
 
 from __future__ import annotations
 
+from functools import wraps
 from typing import Any
 
 from content_sdk import ContentClient
+from content_sdk.errors import (
+    APIError,
+    ContentError,
+    Gone,
+    NotFound,
+    TransportError,
+    ValidationError,
+)
 from mcp.server import MCPServer
 
 from . import service
@@ -47,12 +56,76 @@ INSTRUCTIONS = (
 )
 
 
+def _actionable(exc: ContentError, base_url: str) -> str:
+    """Turn an SDK exception into a sentence the agent — and the person reading
+    over its shoulder — can act on.
+
+    Without this, an engine that is not running answers `[Errno 61] Connection
+    refused`. That is the first thing a new user meets when they get the port
+    wrong (the container listens on 8000 inside and 8010 on the host), and it
+    names neither what failed nor what to do. The failure is not the engine's;
+    the unusable message is ours.
+    """
+    if isinstance(exc, TransportError):
+        return (
+            f"The Content engine is not reachable at {base_url}. Start it "
+            "(`docker compose up -d`), or set CONTENT_API_URL to where it runs "
+            "— note the engine listens on port 8010 on the host, 8000 only "
+            f"inside its container. ({exc})"
+        )
+    if isinstance(exc, Gone):
+        return (
+            f"That reference has expired ({base_url}): analyses are kept for a "
+            "limited time. Call analyze_source again to get a fresh "
+            f"analysis_id. ({'; '.join(exc.codes) or exc})"
+        )
+    if isinstance(exc, NotFound):
+        return f"The engine has no such record. ({'; '.join(exc.codes) or exc})"
+    if isinstance(exc, ValidationError):
+        codes = "; ".join(exc.codes)
+        return (
+            "The engine refused this request"
+            + (f" ({codes})" if codes else "")
+            + f". {exc.body}"
+        )
+    if isinstance(exc, APIError):
+        return f"The engine answered HTTP {exc.status}. {exc.body}"
+    return str(exc)
+
+
+def _friendly(fn, client: ContentClient):
+    """Wrap one tool so SDK errors surface as guidance rather than errno."""
+
+    @wraps(fn)
+    def wrapper(*args: Any, **kwargs: Any) -> Any:
+        try:
+            return fn(*args, **kwargs)
+        except ContentError as exc:
+            raise RuntimeError(_actionable(exc, client.base_url)) from exc
+
+    return wrapper
+
+
 def build_server(client: ContentClient | None = None) -> MCPServer:
     client = client or ContentClient()
     server = MCPServer(name="content", version="0.6.0", instructions=INSTRUCTIONS)
 
+    def tool():
+        """`server.tool()`, with SDK errors translated on the way out."""
+
+        def register(fn):
+            return server.tool()(_friendly(fn, client))
+
+        return register
+
+    def resource(uri: str):
+        def register(fn):
+            return server.resource(uri)(_friendly(fn, client))
+
+        return register
+
     # --- tools (intention-level) ---------------------------------------------
-    @server.tool()
+    @tool()
     def analyze_source(url: str, credential: str | None = None) -> dict[str, Any]:
         """Analyze a source and report what can be produced from it.
 
@@ -63,12 +136,12 @@ def build_server(client: ContentClient | None = None) -> MCPServer:
         """
         return service.analyze_source(client, url, credential=credential)
 
-    @server.tool()
+    @tool()
     def list_capabilities(analysis_id: str) -> dict[str, Any]:
         """Resolve the public capabilities available for an analyzed source."""
         return service.list_capabilities(client, analysis_id)
 
-    @server.tool()
+    @tool()
     def generate(analysis_id: str, outputs: list[Any]) -> dict[str, Any]:
         """Start a job producing the requested outputs from an analyzed source.
 
@@ -85,28 +158,28 @@ def build_server(client: ContentClient | None = None) -> MCPServer:
         """
         return service.generate(client, analysis_id, outputs)
 
-    @server.tool()
+    @tool()
     def get_job(job_id: str) -> dict[str, Any]:
         """Get a job's status and, once terminal, its produced artifacts."""
         return service.get_job(client, job_id)
 
-    @server.tool()
+    @tool()
     def cancel_job(job_id: str) -> dict[str, Any]:
         """Request cooperative cancellation of a running job."""
         return service.cancel_job(client, job_id)
 
-    @server.tool()
+    @tool()
     def list_jobs(limit: int = 20) -> dict[str, Any]:
         """List recent jobs (most recent first)."""
         return service.list_jobs(client, limit)
 
-    @server.tool()
+    @tool()
     def get_artifact(artifact_id: str) -> dict[str, Any]:
         """Artifact metadata; small text artifacts are inlined, larger/binary
         ones return a download reference (never raw bytes over MCP)."""
         return service.get_artifact(client, artifact_id)
 
-    @server.tool()
+    @tool()
     def download_artifact(
         artifact_id: str, destination: str | None = None
     ) -> dict[str, Any]:
@@ -120,7 +193,7 @@ def build_server(client: ContentClient | None = None) -> MCPServer:
         """
         return service.download_artifact(client, artifact_id, destination)
 
-    @server.tool()
+    @tool()
     def get_config() -> dict[str, Any]:
         """Server-side context for building requests: credential ids for
         authenticated sources, whether delivery-by-default is on, and the
@@ -128,15 +201,15 @@ def build_server(client: ContentClient | None = None) -> MCPServer:
         return service.get_config(client)
 
     # --- resources (read-only, single content:// namespace) -------------------
-    @server.resource("content://analyses/{analysis_id}")
+    @resource("content://analyses/{analysis_id}")
     def analysis_resource(analysis_id: str) -> dict[str, Any]:
         return service.analysis_resource(client, analysis_id)
 
-    @server.resource("content://jobs/{job_id}")
+    @resource("content://jobs/{job_id}")
     def job_resource(job_id: str) -> dict[str, Any]:
         return service.job_resource(client, job_id)
 
-    @server.resource("content://artifacts/{artifact_id}")
+    @resource("content://artifacts/{artifact_id}")
     def artifact_resource(artifact_id: str) -> dict[str, Any]:
         return service.artifact_resource(client, artifact_id)
 
