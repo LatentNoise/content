@@ -17,6 +17,7 @@ filename)`` relative to ``data_root``, so the tree can be relocated.
 import os
 import re
 import shutil
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -60,6 +61,84 @@ def publish_file(source: Path, destination: Path, *, overwrite: bool = False) ->
             staged.unlink(missing_ok=True)
         source.unlink(missing_ok=True)
         return destination
+
+
+def claim_path(destination: Path) -> bool:
+    """Reserve *destination* by creating it, exclusively. ``True`` when this
+    caller created it, ``False`` when someone else already holds the name.
+
+    This is the answer to check-then-act: ``if not path.exists(): write(path)``
+    leaves a window between the look and the write in which another writer can
+    take the same name, and the loser is silently overwritten. ``O_CREAT |
+    O_EXCL`` is one atomic syscall — the name is claimed by the act of creating
+    it, so two racers cannot both win.
+    """
+    destination = Path(destination)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        handle = os.open(destination, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+    except FileExistsError:
+        return False
+    os.close(handle)
+    return True
+
+
+def stage_beside(source: Path, directory: Path, *, move: bool = False) -> Path:
+    """Put *source*'s bytes in *directory* under a private, hidden name.
+
+    Staging first is what lets a name be claimed with its content already in
+    place: the slow part (the copy) happens somewhere nobody is looking, and
+    taking the final name is then a single atomic step. The staging name is
+    unique per caller, so concurrent writers never stage over each other.
+    ``move=True`` consumes the source (a produced file being promoted);
+    otherwise it is left alone (an artifact copied under a second name).
+    """
+    directory = Path(directory)
+    directory.mkdir(parents=True, exist_ok=True)
+    handle, name = tempfile.mkstemp(
+        dir=directory, prefix=".staging-", suffix=".partial"
+    )
+    os.close(handle)
+    staged = Path(name)
+    try:
+        if move:
+            publish_file(Path(source), staged, overwrite=True)
+        else:
+            shutil.copy2(Path(source), staged)
+    except BaseException:
+        staged.unlink(missing_ok=True)
+        raise
+    return staged
+
+
+def claim_with(staged: Path, destination: Path) -> bool:
+    """Give the staged file the name *destination*, but only if it is free.
+
+    ``True`` when the name is now ours and holds the staged content, ``False``
+    when another writer holds it — the caller moves to the next candidate.
+
+    A hard link publishes name and content in the same atomic step, so nothing
+    incomplete is ever visible at *destination*: it does not exist, then it is
+    the finished file. That matters because the delivery library is watched by
+    Plex, Jellyfin or Emby, and a zero-byte file appearing there is a broken
+    library entry. Where hard links are unavailable — some network and
+    FAT-family mounts a NAS user may well have — the name is claimed empty and
+    filled by a rename, which reduces the visible window to a rename rather
+    than the length of a copy.
+    """
+    staged, destination = Path(staged), Path(destination)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        os.link(staged, destination)
+    except FileExistsError:
+        return False
+    except OSError:
+        if not claim_path(destination):
+            return False
+        os.replace(staged, destination)
+        return True
+    staged.unlink(missing_ok=True)
+    return True
 
 
 def _dir_stats(path: Path) -> dict:

@@ -23,7 +23,7 @@ from pathlib import Path
 # Canonical home is content.naming.sanitize (ADR 0017); sanitize_filename is
 # re-exported here for the storage-side callers that predate the naming module.
 from content.naming.sanitize import display_name, sanitize_filename
-from content.storage.paths import publish_file, safe_segment
+from content.storage.paths import claim_with, safe_segment, stage_beside
 
 
 def checksum_sha256(path: Path) -> str:
@@ -32,6 +32,19 @@ def checksum_sha256(path: Path) -> str:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return f"sha256:{digest.hexdigest()}"
+
+
+def _numbered_names(directory: Path, filename: str, clean=lambda name: name):
+    """The candidate names for *filename*, in order: the name itself, then
+    ``name-1``, ``name-2``… Yields forever; callers stop at the first free
+    one. One generator so the job store and the delivery library number
+    collisions identically."""
+    base = Path(clean(filename))
+    yield directory / base.name
+    counter = 1
+    while True:
+        yield directory / clean(f"{base.stem}-{counter}{base.suffix}")
+        counter += 1
 
 
 class JobStorage:
@@ -80,30 +93,35 @@ class JobStorage:
     def step_log_path(self, step_id: str, stream: str) -> Path:
         return self.logs / f"{sanitize_filename(step_id)}.{stream}.log"
 
-    def _free_target(self, filename: str) -> Path:
-        target = self.artifacts / sanitize_filename(filename)
-        counter = 1
-        while target.exists():
-            target = self.artifacts / sanitize_filename(
-                f"{target.stem}-{counter}{target.suffix}"
-            )
-            counter += 1
-        return target
+    def _publish(self, source: Path, filename: str, *, move: bool) -> Path:
+        """Stage the bytes in artifacts/, then take the first free name.
+
+        The name is taken by *creating* it with its content, not by looking
+        first and writing after: two jobs run concurrently with the shipped
+        defaults (``CONTENT_MAX_CONCURRENT_JOBS``) and members run
+        concurrently inside a job, so several writers can compute the same
+        target in the same instant. Whoever creates the name owns it; the
+        others move to the next counter (INV-STORAGE-007/008).
+        """
+        staged = stage_beside(Path(source), self.artifacts, move=move)
+        try:
+            for target in _numbered_names(self.artifacts, filename, sanitize_filename):
+                if claim_with(staged, target):
+                    return target
+        finally:
+            staged.unlink(missing_ok=True)
+        raise AssertionError("unreachable: the candidate names never run out")
 
     def promote_artifact(self, produced: Path, filename: str) -> Path:
         """Publish a produced file into artifacts/ (write-then-register: the
         caller registers the DB row only after this succeeded). Atomic so a
         partial file is never visible as an artifact (INV-STORAGE-007/008)."""
-        target = self._free_target(filename)
-        publish_file(Path(produced), target)
-        return target
+        return self._publish(produced, filename, move=True)
 
     def promote_artifact_copy(self, existing: Path, filename: str) -> Path:
         """Copy an already-promoted artifact under another name (a mutualized
         step bound to several outputs promotes once, then copies)."""
-        target = self._free_target(filename)
-        shutil.copy2(str(existing), str(target))
-        return target
+        return self._publish(existing, filename, move=False)
 
     def purge_work(self) -> None:
         """Idempotent working-files cleanup (V1 retention behavior). Scoped to
@@ -245,6 +263,13 @@ class DeliveryStore:
         * **the name collides but the content differs** — two different videos
           that share a title — so the deterministic ``-1``, ``-2``… counter
           keeps both, which is the reason the counter exists.
+
+        The name is *claimed with its content* rather than merely found free:
+        the library is the shared destination of every job and every member
+        running at once, so between "this name is free" and the copy there is
+        a window in which another writer takes it. The loser of that race
+        moves to the next counter instead of overwriting the winner, and a
+        watching media server never sees an incomplete file appear.
         """
         target_dir = (self.root / safe_relative_folder(folder)).resolve()
         if self.root != target_dir and self.root not in target_dir.parents:
@@ -252,15 +277,16 @@ class DeliveryStore:
         target_dir.mkdir(parents=True, exist_ok=True)
         suffix = Path(filename).suffix
         stem = display_name(Path(filename).stem) or "artifact"
-        target = target_dir / f"{stem}{suffix}"
-        counter = 1
-        while target.exists():
-            if _same_content(source, target):
-                return target
-            target = target_dir / f"{stem}-{counter}{suffix}"
-            counter += 1
-        shutil.copy2(str(source), str(target))
-        return target
+        staged = stage_beside(Path(source), target_dir)
+        try:
+            for target in _numbered_names(target_dir, f"{stem}{suffix}"):
+                if target.exists() and _same_content(source, target):
+                    return target
+                if claim_with(staged, target):
+                    return target
+        finally:
+            staged.unlink(missing_ok=True)
+        raise AssertionError("unreachable: the candidate names never run out")
 
     def list_folders(self) -> list[str]:
         """Existing sub-folders under the root, as sorted relative posix paths."""
