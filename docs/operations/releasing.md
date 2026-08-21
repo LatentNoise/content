@@ -78,11 +78,23 @@ happened once; do the steps in order and none of them can happen again.
    where PyPI already accepted some packages — re-run with `only=<package>`
    for the missing one, since what uploaded cannot be replaced.
 
+   The same event also announces the server to the **MCP registry**: a
+   `registry` job runs after the PyPI upload, checks `server.json` names the
+   version going out, waits for the `mcp-name` ownership marker to be readable
+   in that version's PyPI description, and publishes with GitHub OIDC. It is
+   skipped for TestPyPI and for a recovery run that did not include the MCP
+   package. Details and the by-hand path: [mcp-registry.md](mcp-registry.md).
+
+   > The first release this can succeed on is **0.6.0** — the marker reached
+   > `apps/mcp/README.md` after 0.5.0 was published, and the registry reads
+   > what is already on PyPI.
+
 8. **[shell] Verify.** Each check exercises a different artifact:
 
    ```bash
    docker pull ghcr.io/latentnoise/content:<x.y.z>   # the images exist
    uv tool install --reinstall content-mcp           # PyPI serves the new version
+   curl -s "https://registry.modelcontextprotocol.io/v0/servers?search=io.github.LatentNoise" | jq
    curl -s http://<engine>:8010/api/v1/health        # after compose pull: version matches
    ```
 

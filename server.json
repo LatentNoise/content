@@ -1,0 +1,39 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.LatentNoise/content",
+  "title": "Content",
+  "description": "Turn URLs, files and text into media, transcripts, summaries, translations and PDF.",
+  "version": "0.5.0",
+  "websiteUrl": "https://github.com/LatentNoise/content/blob/main/apps/mcp/README.md",
+  "repository": {
+    "url": "https://github.com/LatentNoise/content",
+    "source": "github"
+  },
+  "packages": [
+    {
+      "registryType": "pypi",
+      "registryBaseUrl": "https://pypi.org",
+      "identifier": "content-mcp",
+      "version": "0.5.0",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "CONTENT_API_URL",
+          "description": "Base URL of your running Content engine (the REST API this server drives).",
+          "default": "http://localhost:8010",
+          "isRequired": false,
+          "isSecret": false
+        },
+        {
+          "name": "CONTENT_MCP_DOWNLOAD_DIR",
+          "description": "The only directory this server may write downloaded artifacts to.",
+          "default": "~/Downloads/Content",
+          "isRequired": false,
+          "isSecret": false
+        }
+      ]
+    }
+  ]
+}

@@ -182,3 +182,91 @@ jobs:
             ${{ needs.prepare.outputs.repository == 'pypi'
                 && 'https://upload.pypi.org/legacy/'
                 || 'https://test.pypi.org/legacy/' }}
+
+  # --- the MCP registry -------------------------------------------------------
+  #
+  # `content-mcp` is on PyPI and documented, and until it is in the registry the
+  # only way to discover it is to already know this repository exists. The entry
+  # pins a version, so a stale one is worse than none: it would tell people 0.5.0
+  # is current while 0.6.0 is on PyPI. That is why this runs here, on the same
+  # release event, rather than as a step someone remembers.
+  #
+  # It `needs: publish` on purpose. The registry verifies ownership by reading
+  # the **published** PyPI description for an `mcp-name:` marker, so the version
+  # named in server.json must already exist on PyPI when this runs. Ordering is
+  # not a nicety here; it is the difference between working and 404.
+  registry:
+    name: Announce to the MCP registry
+    needs: [prepare, publish]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Never from TestPyPI (the registry only reads pypi.org), and only when the
+    # MCP package was actually part of this run — a recovery publish of the SDK
+    # alone must not re-announce a version whose wheel did not go out.
+    if: >-
+      needs.prepare.outputs.repository == 'pypi'
+      && (needs.prepare.outputs.only == 'all' || needs.prepare.outputs.only == 'mcp')
+    permissions:
+      contents: read
+      id-token: write # OIDC: mcp-publisher exchanges it, no stored secret
+    steps:
+      - name: Checkout the tag
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: v${{ needs.prepare.outputs.version }}
+
+      - name: Check server.json names the version being published
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          set -euo pipefail
+          # `make version` already keeps these in step; this fails loudly rather
+          # than announcing a version that is not the one going out.
+          for declared in $(jq -r '.version, .packages[0].version' server.json); do
+            if [ "$declared" != "$VERSION" ]; then
+              echo "::error::server.json declares $declared, publishing $VERSION"
+              exit 1
+            fi
+          done
+
+      - name: Wait for the description to be readable on PyPI
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          set -euo pipefail
+          # Ownership is proven by an `mcp-name:` marker in the published
+          # description. Upload and index are not the same instant, so give it
+          # a few tries instead of failing the release on a propagation gap.
+          for attempt in 1 2 3 4 5 6; do
+            body=$(curl -fsS "https://pypi.org/pypi/content-mcp/$VERSION/json" || true)
+            if printf '%s' "$body" | jq -e '.info.description | contains("mcp-name: io.github.LatentNoise/content")' >/dev/null 2>&1; then
+              echo "marker visible on PyPI (attempt $attempt)"
+              exit 0
+            fi
+            echo "not visible yet (attempt $attempt), waiting…"
+            sleep 20
+          done
+          echo "::error::content-mcp $VERSION on PyPI carries no mcp-name marker;"
+          echo "::error::the registry will refuse to verify ownership. See docs/operations/mcp-registry.md"
+          exit 1
+
+      - name: Install mcp-publisher
+        run: |
+          set -euo pipefail
+          curl -fsSL "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz" \
+            | tar xz mcp-publisher
+          ./mcp-publisher --version || true
+
+      - name: Authenticate with GitHub OIDC
+        run: ./mcp-publisher login github-oidc
+
+      - name: Publish server.json
+        run: ./mcp-publisher publish
+
+      - name: Confirm the registry serves it
+        run: |
+          set -euo pipefail
+          sleep 5
+          curl -fsS "https://registry.modelcontextprotocol.io/v0/servers?search=io.github.LatentNoise" \
+            | jq -e '.servers[] | select(.server.name == "io.github.LatentNoise/content")' \
+            || { echo "::warning::published, but the entry is not searchable yet"; }

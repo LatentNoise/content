@@ -1,3 +1,5 @@
+<!-- mcp-name: io.github.LatentNoise/content -->
+
 # `content-mcp` — Content MCP server
 
 The official **MCP server** for the Content engine: give Claude, an IDE or any
