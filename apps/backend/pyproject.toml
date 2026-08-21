@@ -26,6 +26,13 @@ dev = [
 stt = [
     "faster-whisper>=1.0",
 ]
+# Optional document *reader* (a `.pdf` file source): installing it lets the
+# document provider extract a PDF's text layer. pypdf is BSD-3-Clause and a
+# pure-Python wheel — the same two properties that decided reportlab below, so
+# it installs on musl without a toolchain and attaches no licence obligation.
+read = [
+    "pypdf>=5.1",
+]
 # Optional document renderer (pdf.render): installing it activates the
 # `pdf` output type. reportlab is BSD-licensed — deliberately not the lighter
 # fpdf2, whose LGPL terms would attach obligations to a commercial licence.

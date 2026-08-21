@@ -50,6 +50,7 @@ def docs_root(tmp_path):
     (root / "note.md").write_text("# Release Notes\n\nThe engine got faster.\n")
     (root / "plain.txt").write_text("just some words in a file\n")
     (root / "paper.pdf").write_bytes(b"%PDF-1.4 not really a pdf")
+    (root / "thesis.docx").write_bytes(b"PK\x03\x04 not really a docx")
     (root / "clip.mp4").write_bytes(b"\x00\x00\x00\x18ftypmp42")
     return root
 
@@ -287,16 +288,29 @@ def test_an_inline_text_source_is_readable(ctx):
     assert analysis.text.word_count == 4
 
 
-def test_a_pdf_is_recognised_and_honestly_refused(docs_root, ctx):
+def test_a_deferred_format_is_recognised_and_honestly_refused(docs_root, ctx):
     """'Valid but not implemented' is a different answer from 'invalid'
-    (INV-014) — and a different answer from silently producing garbage."""
-    source = FileSource(id="d", type="file", path=str(docs_root / "paper.pdf"))
-    assert DocumentProvider().supports(source), "a PDF must be claimed, then refused"
+    (INV-014) — and a different answer from silently producing garbage.
+
+    This used to be the `.pdf` test. PDFs are read now, so the invariant moves
+    to the formats still deferred (`.docx`, `.epub`, `.odt`, `.rtf`): claimed
+    by the reader on purpose, then refused with a reason, terminally."""
+    source = FileSource(id="d", type="file", path=str(docs_root / "thesis.docx"))
+    assert DocumentProvider().supports(source), "claimed on purpose, then refused"
     with pytest.raises(AnalysisError) as exc:
         DocumentProvider().analyze(source, ctx)
     assert exc.value.issue.code == "source_type_not_supported"
-    assert ".pdf" in exc.value.issue.message
+    assert ".docx" in exc.value.issue.message
     assert exc.value.terminal, "a deliberate refusal must stop the fallback chain"
+
+
+def test_a_file_that_only_claims_to_be_a_pdf_fails_as_unreadable(docs_root, ctx):
+    """`paper.pdf` holds a header and nothing else. Now that PDFs are read, the
+    honest answer is that this one could not be, not that PDFs are unsupported."""
+    source = FileSource(id="d", type="file", path=str(docs_root / "paper.pdf"))
+    with pytest.raises(AnalysisError) as exc:
+        DocumentProvider().analyze(source, ctx)
+    assert "could not be read" in exc.value.issue.message
 
 
 def test_a_document_outside_the_allowed_roots_is_refused(ctx):
@@ -370,18 +384,19 @@ def test_capabilities_on_a_document_offer_text_and_refuse_media(
         assert caps[media]["reason"]["code"] == "missing_material"
 
 
-def test_the_pdf_refusal_survives_the_fallback_chain(doc_settings, docs_root):
-    """Regression (D-27): the provider-level PDF test passed while the *API*
+def test_a_deliberate_refusal_survives_the_fallback_chain(doc_settings, docs_root):
+    """Regression (D-27): the provider-level test passed while the *API*
     answered "ffprobe could not analyze the file". DocumentProvider's deliberate
     refusal was overwritten by the next candidate in the chain, so the honest
     answer never reached the caller. The provider list here is the one that
-    caused it — document, then ffmpeg."""
+    caused it — document, then ffmpeg. (Written for `.pdf`, which is read now;
+    `.docx` carries the same shape.)"""
     with _api(doc_settings, _text_providers()) as client:
         response = client.post(
             "/api/v1/capabilities",
             json={
                 "sources": [
-                    {"id": "a", "type": "file", "path": str(docs_root / "paper.pdf")}
+                    {"id": "a", "type": "file", "path": str(docs_root / "thesis.docx")}
                 ]
             },
         )
