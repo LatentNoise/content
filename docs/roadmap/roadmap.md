@@ -64,16 +64,33 @@ Counts are a snapshot of a real `make validate` run, not a target.
   selector is enough.
 - **Complexity:** medium-high. **Order:** the first product value.
 
-## M2 — Collections / playlists · **considered**
+## M2 — Collections / playlists · **in progress**
 
 - **Goal:** process a whole playlist.
-- **Capabilities:** `each_item` scope (fan-out: one job/artifact per item),
-  playlist sync (archive/rename detection).
-- **Prerequisites:** M1; probably R4 (a first-class plan in the DB) decided
-  first.
-- **Risks:** the first non-`single` scope; an explosion of child jobs.
-- **Exit criteria:** a playlist URL produces N traceable results.
-- **Complexity:** high.
+- **Capabilities:**
+  - `each_item` fan-out — **delivered**. A `collection` resource expands into
+    one member step per entry inside a single job (ADR 0019): each member is
+    analyzed and planned by the canonical single-resource pipeline, named per
+    item and delivered as its own artifact, with member concurrency bounded by
+    `CONTENT_COLLECTION_MEMBER_CONCURRENCY` (default 2). ADR 0022 completed it
+    for per-member audio.
+  - Playlist **synchronization** — **still open**. Keeping a local folder in
+    step with a playlist over time: the plan/apply diff, rename detection,
+    archiving or deleting removed entries, relocation after a naming or
+    location change. Nothing of it exists (`playlist_sync.py` is "Discard (V1)"
+    in [../hometube-reuse-audit.md](../hometube-reuse-audit.md), and
+    `reuse_existing` is still inert). It is the one standalone-HomeTube feature
+    with no equivalent here, and the README says so to anyone arriving from it.
+- **Prerequisites:** M1. R4 (a first-class plan in the DB) turned out not to
+  block the fan-out.
+- **Risks:** the first non-`single` scope — met. "An explosion of child jobs"
+  did not happen and cannot: ADR 0019 expands members into steps of one job
+  rather than into jobs.
+- **Exit criteria:**
+  - fan-out — **met**: a playlist URL produces N traceable results in one job.
+  - sync — a local folder still matches a playlist that has changed since it was
+    first downloaded, without re-downloading what is already there.
+- **Complexity:** high (the remainder is the sync half).
 
 ## M3 — Production hardening · **considered** (may precede M2 if usage demands it)
 

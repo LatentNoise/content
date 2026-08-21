@@ -14,6 +14,7 @@
 
 [Quick start](#quick-start) ·
 [HomeTube](#hometube--youtube-focused) ·
+[Coming from HomeTube?](#coming-from-standalone-hometube) ·
 [All the clients](#the-clients) ·
 [Connect an agent](#mcp-server--for-agents-and-ides) ·
 [Read the docs](docs/README.md)
@@ -50,14 +51,17 @@ pick what you want out of it, and watch the files land in your library.
 see media/README.md. -->
 
 > [!NOTE]
-> **A proven workflow, now growing into a platform.** The standalone HomeTube
-> container has passed **300,000 package downloads on GitHub Container
-> Registry** and remains maintained during the transition. Content carries
-> that familiar workflow forward and is designed to become its successor.
+> **A proven workflow, now growing into a platform.** The standalone
+> [HomeTube](https://github.com/EgalitarianMonkey/hometube) container has passed
+> **300,000 package downloads on GitHub Container Registry**. It keeps running
+> and stays maintained — nothing breaks, and there is no deadline. Content is
+> where that work continues, and where its users are invited to move at their
+> own pace.
 >
-> The standalone HomeTube project remains separate; it has not been retrofitted
-> to run on Content. This repository contains a new HomeTube UI built on the
-> Content engine.
+> The two are separate projects: standalone HomeTube has not been retrofitted to
+> run on Content. The **HomeTube app in this repository is a new UI on the
+> Content engine**, carrying the same workflow forward.
+> [Coming from standalone HomeTube? ↓](#coming-from-standalone-hometube)
 
 ## Quick start
 
@@ -195,6 +199,37 @@ variable and works the language rules through a concrete example — a Japanese
 talk, a French speaker, and exactly what ends up pre-checked. The
 [full variable table](docs/operations/deployment.md#configuration-a-root-env-not-versioned)
 lists everything the engine accepts.
+
+### Coming from standalone HomeTube?
+
+[HomeTube](https://github.com/EgalitarianMonkey/hometube) — the standalone
+Streamlit app — **keeps running and stays maintained**. Nothing breaks, and there
+is no deadline. Content is where the work continues, so this is a move you make
+when you are ready, not one you are forced into.
+
+**What comes across.** The workflow you know: paste a URL, choose quality, codec,
+container, audio languages and subtitles; remove or mark sponsored segments with
+SponsorBlock; cut clips; unlock restricted videos with a server-side cookie file;
+embed subtitles, chapters, thumbnails and metadata; and deliver readable file
+names into a library watched by Plex, Jellyfin, or Emby. Playlists come across
+too — each entry is analyzed and planned on its own, named per item, and
+delivered as its own artifact.
+
+**What is new.** The same source can also produce a transcript, a summary, a
+translation, generated thumbnails, metadata, Markdown, or PDF. And the engine is
+no longer reachable only from a web form: Studio, the Chromium extension, an MCP
+agent, the CLI, the SDK, and plain HTTP all ask for the same things.
+
+**What has not made the trip yet.** HomeTube's playlist **synchronization** — the
+plan/apply diff that keeps a local folder in step with a playlist over time
+(rename detection, archiving or deleting removed videos, relocation after a
+naming or location change) — does not exist here. Content downloads a playlist;
+it does not yet re-sync one. It is [roadmapped as part of
+M2](docs/roadmap/roadmap.md). If playlist sync is your main use, keep standalone
+HomeTube for that job.
+
+**One practical note.** Both HomeTube apps default to port **8501**. Change one of
+them in your `.env` if you want to run the two side by side.
 
 ### Content Studio — the whole contract, in a form
 
