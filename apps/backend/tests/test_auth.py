@@ -339,3 +339,31 @@ def test_cookie_state_is_the_three_situations(
         for k, v in configured.items()
     }
     assert cookie_state(credential, with_credentials(settings, **creds)) == expected
+
+
+def test_a_degraded_format_list_is_read_as_bot_detection():
+    """YouTube does not always say "sign in to confirm you're not a bot". For
+    an anonymous client it distrusts, it can answer with a format list holding
+    only storyboards, and yt-dlp reports a *format* problem:
+
+        WARNING: Only images are available for download.
+        ERROR: Requested format is not available.
+
+    Taken at face value that sends the user hunting for the wrong thing. The
+    same URL, with cookies, downloads seconds later — so the honest answer is
+    the cookie remedy. Observed while verifying the MCP server on 2026-08-21.
+    """
+    stderr = (
+        "WARNING: Only images are available for download. "
+        "use --list-formats to see them\n"
+        "ERROR: [youtube] aqz-KE-bpKQ: Requested format is not available."
+    )
+    assert classify_failure(stderr) == "bot_detection"
+
+
+def test_a_genuine_format_refusal_is_still_a_format_problem(settings):
+    """The narrow marker matters: asking for a format a source really does not
+    have must not be dressed up as an authentication problem."""
+    stderr = "ERROR: Requested format is not available. Use --list-formats"
+    assert classify_failure(stderr) == "format_unavailable"
+    assert failure_remedy("format_unavailable", None, settings) == ""
