@@ -143,11 +143,13 @@ version-update:  ## Set the version everywhere (asks when VERSION= is omitted)
 	  current=$$(grep -m1 '^version = ' apps/backend/pyproject.toml | sed 's/.*"\(.*\)"/\1/'); \
 	  major=$${current%%.*}; rest=$${current#*.}; \
 	  minor=$${rest%%.*}; patch=$${rest#*.}; \
+	  suggested="$$major.$$minor.$$((patch+1))"; \
 	  printf 'current version: %s\n' "$$current"; \
-	  printf 'suggestions:     %s.%s.%s (fixes only) | %s.%s.0 (features)\n' \
-	    "$$major" "$$minor" "$$((patch+1))" "$$major" "$$((minor+1))"; \
-	  printf 'new version (x.y.z): '; \
+	  printf 'suggestions:     %s (fixes only) | %s.%s.0 (features)\n' \
+	    "$$suggested" "$$major" "$$((minor+1))"; \
+	  printf 'new version (x.y.z) [%s]: ' "$$suggested"; \
 	  read -r v; \
+	  v=$${v:-$$suggested}; \
 	fi; \
 	v=$${v#v}; \
 	case "$$v" in \
@@ -174,6 +176,12 @@ version-update:  ## Set the version everywhere (asks when VERSION= is omitted)
 	$(MAKE) --no-print-directory version; \
 	echo "next: review with 'git diff', commit, then 'make version-tag'"
 
+# Interactive prompts in this file follow one convention: **Enter accepts what
+# is offered**, and the bracket shows it — `[Y/n]` for a yes/no, `[value]` for
+# a default. Nothing dangerous is offered by accident: `version-tag` asks
+# twice, and the second question is the only one that publishes anything —
+# asked right after printing what pushing will start. Answer `n` there and the
+# tag stays local.
 version-tag:  ## Create the annotated tag v<version> (clean tree required; asks first)
 	@test -z "$$(git status --porcelain)" || { \
 	  echo "the working tree is not clean — commit or stash first"; exit 1; }
@@ -201,10 +209,10 @@ version-tag:  ## Create the annotated tag v<version> (clean tree required; asks 
 	  echo " release notes and the published notes advertised a 404.)"; \
 	  exit 1; \
 	fi; \
-	printf 'create annotated tag v%s at %s (%s)? [y/N] ' \
+	printf 'create annotated tag v%s at %s (%s)? [Y/n] ' \
 	  "$$v" "$$(git rev-parse --short HEAD)" "$$(git branch --show-current)"; \
 	read -r answer; \
-	case "$$answer" in \
+	case "$${answer:-y}" in \
 	  [yY]*) ;; \
 	  *) echo "aborted — no tag created"; exit 1;; \
 	esac; \
@@ -214,9 +222,9 @@ version-tag:  ## Create the annotated tag v<version> (clean tree required; asks 
 	echo "Pushing it starts the release: CI, the four GHCR images, and a draft"; \
 	echo "release with the wheels, the extension zip and your notes attached."; \
 	echo "Nothing is published — the draft waits for you."; \
-	printf 'push v%s to origin now? [y/N] ' "$$v"; \
+	printf 'push v%s to origin now? [Y/n] ' "$$v"; \
 	read -r push; \
-	case "$$push" in \
+	case "$${push:-y}" in \
 	  [yY]*) \
 	    git push origin "v$$v" && \
 	    echo "pushed — follow it in Actions, then publish the draft release";; \
