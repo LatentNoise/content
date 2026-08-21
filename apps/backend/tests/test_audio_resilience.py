@@ -85,7 +85,7 @@ def test_a_transient_refusal_is_retried_and_the_output_survives(
     provider = YtDlpProvider()
     recorder = _Recorder(tmp_path, failures=1)
     monkeypatch.setattr(
-        YtDlpProvider, "_run", lambda self, args, ctx: recorder(args, ctx)
+        YtDlpProvider, "_run", lambda self, args, ctx, *_: recorder(args, ctx)
     )
     monkeypatch.setattr(
         YtDlpProvider, "_apply_fast_sponsorblock_cut", lambda self, s, c, p: None
@@ -104,7 +104,7 @@ def test_alternatives_are_reached_when_the_default_keeps_refusing(
     provider = YtDlpProvider()
     recorder = _Recorder(tmp_path, failures=2)
     monkeypatch.setattr(
-        YtDlpProvider, "_run", lambda self, args, ctx: recorder(args, ctx)
+        YtDlpProvider, "_run", lambda self, args, ctx, *_: recorder(args, ctx)
     )
     monkeypatch.setattr(
         YtDlpProvider, "_apply_fast_sponsorblock_cut", lambda self, s, c, p: None
@@ -123,7 +123,7 @@ def test_every_attempt_failing_reports_the_provider_error(
     provider = YtDlpProvider()
     recorder = _Recorder(tmp_path, failures=99)
     monkeypatch.setattr(
-        YtDlpProvider, "_run", lambda self, args, ctx: recorder(args, ctx)
+        YtDlpProvider, "_run", lambda self, args, ctx, *_: recorder(args, ctx)
     )
 
     with pytest.raises(StepExecutionError) as excinfo:
@@ -138,7 +138,7 @@ def test_cancellation_is_a_decision_not_a_hiccup(tmp_path, settings, monkeypatch
     provider = YtDlpProvider()
     recorder = _Recorder(tmp_path, failures=99, error_code="cancelled")
     monkeypatch.setattr(
-        YtDlpProvider, "_run", lambda self, args, ctx: recorder(args, ctx)
+        YtDlpProvider, "_run", lambda self, args, ctx, *_: recorder(args, ctx)
     )
 
     with pytest.raises(StepExecutionError) as excinfo:
@@ -154,7 +154,7 @@ def test_a_non_youtube_source_gets_one_attempt(tmp_path, settings, monkeypatch):
     provider = YtDlpProvider()
     recorder = _Recorder(tmp_path, failures=99)
     monkeypatch.setattr(
-        YtDlpProvider, "_run", lambda self, args, ctx: recorder(args, ctx)
+        YtDlpProvider, "_run", lambda self, args, ctx, *_: recorder(args, ctx)
     )
 
     with pytest.raises(StepExecutionError):

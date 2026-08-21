@@ -17,7 +17,14 @@ from content.planning.auth import resolve_source_credential
 from content.planning.planner import build_plan
 from content.processors.transcript import TranscriptProcessor
 from content.providers.base import ProviderRegistry
-from content.providers.ytdlp import YtDlpProvider, cookies_args, prepare_cookies
+from content.providers.ytdlp import (
+    YtDlpProvider,
+    classify_failure,
+    cookie_state,
+    cookies_args,
+    failure_remedy,
+    prepare_cookies,
+)
 from tests.conftest import FakeProvider, make_request, minimal_payload
 
 
@@ -242,3 +249,93 @@ def test_config_empty_when_no_credentials(settings):
             "vo_first": True,
             "primary_include_subtitles": True,
         }
+
+
+# --- telling the user what to do about it --------------------------------------
+#
+# "yt-dlp exited with code 1" is what a failed age-restricted download used to
+# say. The single most common cause is a missing cookie file — there is no
+# browser inside a container to borrow a session from — and the engine knows
+# which of three situations it is in. These tests hold it to saying so.
+
+
+@pytest.mark.parametrize(
+    "stderr, expected",
+    [
+        ("ERROR: Sign in to confirm you're not a bot", "bot_detection"),
+        ("ERROR: Sign in to confirm your age", "authentication_required"),
+        ("ERROR: This video is private", "authentication_required"),
+        ("ERROR: Requested format is not available", "format_unavailable"),
+        ("ERROR: unable to download video data", "provider_error"),
+    ],
+)
+def test_failures_are_classified(stderr, expected):
+    """Bot detection is tested before the generic auth patterns: YouTube's
+    "Sign in to confirm you're not a bot" matches both, and the other order
+    made the bot_detection branch unreachable for the one message that
+    produces it."""
+    assert classify_failure(stderr) == expected
+
+
+def test_no_credential_configured_says_how_to_add_one(settings):
+    remedy = failure_remedy("bot_detection", None, settings)
+    assert "cookies.txt" in remedy and "config/README.md" in remedy
+
+
+def test_a_configured_credential_not_asked_for_is_named(settings, tmp_path):
+    jar = tmp_path / "yt.txt"
+    jar.write_text("# cookies")
+    remedy = failure_remedy(
+        "authentication_required", None, with_credentials(settings, youtube=jar)
+    )
+    assert "youtube" in remedy and "auth.credential_id" in remedy
+
+
+def test_a_declared_credential_with_no_file_says_the_download_ran_anonymously(
+    settings, tmp_path
+):
+    """The quiet failure worth naming: `prepare_cookies` returns None when the
+    declared file is not there, so the attempt proceeds *without* cookies and
+    fails looking like an ordinary refusal."""
+    absent = tmp_path / "never-exported.txt"
+    remedy = failure_remedy(
+        "authentication_required", "youtube", with_credentials(settings, youtube=absent)
+    )
+    assert "declared but no file is readable" in remedy
+    assert str(absent) in remedy
+
+
+def test_cookies_that_were_used_and_still_refused_are_called_expired(
+    settings, tmp_path
+):
+    jar = tmp_path / "yt.txt"
+    jar.write_text("# cookies")
+    remedy = failure_remedy(
+        "bot_detection", "youtube", with_credentials(settings, youtube=jar)
+    )
+    assert "expired" in remedy
+
+
+def test_a_failure_cookies_cannot_answer_gets_no_cookie_advice(settings):
+    assert failure_remedy("format_unavailable", "youtube", settings) == ""
+    assert failure_remedy("provider_error", None, settings) == ""
+
+
+@pytest.mark.parametrize(
+    "configured, credential, expected",
+    [
+        ({}, None, "none"),
+        ({}, "youtube", "missing"),
+        ({"youtube": "PRESENT"}, "youtube", "used"),
+    ],
+)
+def test_cookie_state_is_the_three_situations(
+    settings, tmp_path, configured, credential, expected
+):
+    jar = tmp_path / "yt.txt"
+    jar.write_text("# cookies")
+    creds = {
+        k: (jar if v == "PRESENT" else tmp_path / "absent.txt")
+        for k, v in configured.items()
+    }
+    assert cookie_state(credential, with_credentials(settings, **creds)) == expected
