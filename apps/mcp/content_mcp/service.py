@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from content_sdk import ContentClient, outputs
+from content_sdk.errors import ContentError
 
 # get_artifact never streams large binaries over MCP (refinement 6): only small
 # text artifacts are inlined; everything else returns metadata + a reference.
@@ -108,24 +109,65 @@ def _source_for(client: ContentClient, source: str, credential: str | None):
     description says so plainly — an agent should choose it deliberately.
     """
     if _looks_like_url(source):
-        return outputs.url_source(source, credential_id=credential)
+        return outputs.url_source(source, credential_id=credential), None
     path = Path(source).expanduser()
     if not path.is_file():
         raise ValueError(
             f"'{source}' is neither a URL nor a file on this machine. "
             "Give a URL, or a path that exists where this MCP server runs."
         )
-    return client.upload_file(path)
+    record = client.upload(path)
+    upload_id = record.get("upload_id", "")
+    return (
+        outputs.upload_source(upload_id),
+        {
+            "upload_id": upload_id,
+            "filename": record.get("filename", path.name),
+            "size_bytes": record.get("size_bytes", 0),
+            # Where the bytes went, said plainly. A path would be a lie — the
+            # store is engine-owned and not addressable from here — so name the
+            # engine instead, which is the fact the caller actually needs.
+            "stored_on": client.base_url,
+            "retention": _retention(client),
+            "remove_with": "delete_upload",
+        },
+    )
+
+
+def _retention(client: ContentClient) -> str:
+    """How long the engine keeps an upload, in its own words.
+
+    Read from the engine rather than assumed: the TTL is the operator's
+    setting, and a number invented here would be a confident guess about
+    somebody else's machine.
+    """
+    try:
+        config = client.config() or {}
+    except ContentError:
+        return "unknown (the engine could not be asked)"
+    uploads = config.get("uploads")
+    if uploads is None:
+        # An engine older than this field. Saying "no TTL" here would be a
+        # confident falsehood in the reassuring direction — the default is 24h
+        # — and retention is the one thing not to guess about on somebody
+        # else's machine.
+        return "unknown (this engine does not report its upload policy)"
+    hours = uploads.get("ttl_hours")
+    if not hours:
+        return "kept until deleted (this engine has no expiry configured)"
+    when = "last use" if uploads.get("expire_from") == "last_use" else "upload"
+    return f"deleted {hours:g}h after {when}"
 
 
 def analyze_source(
     client: ContentClient, url: str, credential: str | None = None
 ) -> dict[str, Any]:
     """Analyze a URL **or a local file** and report what can be produced."""
-    analysis = client.analyze(_source_for(client, url, credential))
+    source, upload = _source_for(client, url, credential)
+    analysis = client.analyze(source)
     caps = client.get_capabilities(analysis.id)
     entry = analysis.sources[0]
-    return {
+    answer: dict[str, Any] = {
         "analysis_id": analysis.id,
         "resource_type": entry.resource_type,
         "title": entry.title,
@@ -134,6 +176,12 @@ def analyze_source(
             {"id": c.id, "status": c.status} for c in caps.sources[0].capabilities
         ],
     }
+    if upload is not None:
+        # A local file has left this machine. Say so in the answer the agent
+        # reads, rather than in documentation nobody opens at that moment:
+        # which engine holds it, how long, and how to take it back.
+        answer["upload"] = upload
+    return answer
 
 
 def list_capabilities(client: ContentClient, analysis_id: str) -> dict[str, Any]:
@@ -232,6 +280,20 @@ def retry_job(client: ContentClient, job_id: str) -> dict[str, Any]:
     return {"job_id": job.id, "status": job.status, "retry_of": job_id}
 
 
+def delete_upload(client: ContentClient, upload_id: str) -> dict[str, Any]:
+    """Remove bytes uploaded from this machine, now rather than on the TTL.
+
+    The counterpart of the upload that `analyze_source` performs silently: the
+    agent put a copy of someone's file on another machine, so the agent must be
+    able to take it back without waiting for a retention window.
+
+    It removes an upload — never an artifact, never a file in the library. A
+    job that still needs it will fail rather than read something else.
+    """
+    client.delete_upload(upload_id)
+    return {"upload_id": upload_id, "deleted": True}
+
+
 def get_config(client: ContentClient) -> dict[str, Any]:
     """What an agent needs to parameterize requests: the credential ids for
     authenticated sources, whether artifacts are delivered into the server
@@ -242,6 +304,10 @@ def get_config(client: ContentClient) -> dict[str, Any]:
         "delivery_by_default": config.get("delivery", {}).get("by_default", False),
         "folders": client.folders(),
         "language": config.get("language", {}),
+        # What happens to a local file handed to analyze_source: which engine
+        # receives it and how long it stays there. Part of the answer to "where
+        # did my file go", which should never require reading the docs.
+        "uploads": {**(config.get("uploads") or {}), "stored_on": client.base_url},
     }
 
 

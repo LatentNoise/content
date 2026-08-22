@@ -520,6 +520,18 @@ def create_app(
             # default, so a client can show the effective destination before
             # submitting instead of guessing.
             "delivery": {"by_default": settings.delivery_default},
+            # ADR 0020. A client that uploads bytes is entitled to know what
+            # happens to them: how long they are kept and how much it may send.
+            # Without this the policy exists only in the operator's .env, and a
+            # caller sending a file to somebody else's machine has to take the
+            # retention on trust — the one part of a remote engine that should
+            # never be implicit.
+            "uploads": {
+                "ttl_hours": settings.upload_ttl_hours,
+                "expire_from": "last_use",
+                "max_bytes": settings.max_upload_bytes,
+                "total_bytes": settings.uploads_total_bytes,
+            },
         }
 
     @app.get("/api/v1/folders", tags=["system"])
