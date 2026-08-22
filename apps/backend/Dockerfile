@@ -14,8 +14,8 @@
 # Bumping it is a deliberate, validated act: see
 # docs/operations/ytdlp-base-image.md. A scheduled workflow files an issue when
 # a newer upstream image appears; it never edits this file.
-ARG YTDLP_BASE_VERSION=2026.07.04
-ARG YTDLP_BASE_DIGEST=sha256:daef12c6ed97b6b2984d81142ddb0c56ee2f81e2d7372aba0ecd4fa7b5709889
+ARG YTDLP_BASE_VERSION=2026.08.19
+ARG YTDLP_BASE_DIGEST=sha256:11c9231bd209580b25e81daad39b3bbbd06c31443d0f9dab2c196e90c6e76156
 FROM jauderho/yt-dlp:${YTDLP_BASE_VERSION}@${YTDLP_BASE_DIGEST}
 
 # Re-declared: an ARG consumed by FROM is out of scope in the build stage.

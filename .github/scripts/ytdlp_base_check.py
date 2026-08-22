@@ -108,6 +108,24 @@ def version_for(digest: str) -> str:
     return ""
 
 
+def issue_title(pinned_version: str, new_version: str, new_digest: str) -> str:
+    """Say which of the two very different things happened.
+
+    A moving digest is worth watching either way, but the first version of this
+    title reported both as "X available (pinned: X)" — which, when the tag had
+    merely been rebuilt, read as a bug in the checker and buried the case that
+    actually matters. yt-dlp going stale is what breaks YouTube downloads; a
+    rebuilt base is usually distro patches.
+    """
+    if not new_version:
+        return (
+            f"yt-dlp base image: untagged {new_digest[:19]} (pinned: {pinned_version})"
+        )
+    if new_version == pinned_version:
+        return f"yt-dlp base image rebuilt: {new_version} republished, same yt-dlp"
+    return f"yt-dlp {new_version} available (pinned: {pinned_version})"
+
+
 def issue_body(pinned_version, pinned_digest, new_version, new_digest) -> str:
     named = new_version or "(untagged — compare by digest)"
     release = (
@@ -116,9 +134,26 @@ def issue_body(pinned_version, pinned_digest, new_version, new_digest) -> str:
         else "_no matching version tag found; check "
         "https://github.com/yt-dlp/yt-dlp/releases_"
     )
+    if new_version and new_version == pinned_version:
+        headline = (
+            f"`{IMAGE}:{new_version}` has been **rebuilt**: same yt-dlp, new "
+            "image. Typically distro patches in the base layers — worth taking, "
+            "rarely urgent."
+        )
+    elif new_version:
+        headline = (
+            f"**yt-dlp {new_version}** is out; the pin is still "
+            f"`{pinned_version}`. This is the one that matters: a stale yt-dlp "
+            "is how YouTube downloads start failing."
+        )
+    else:
+        headline = (
+            f"A newer `{IMAGE}` base image is available, with no version tag "
+            "matching its digest."
+        )
     return f"""\
-A newer `{IMAGE}` base image is available. **Nothing has been changed** — this
-issue is a notification, and the bump is a deliberate, validated act.
+{headline} **Nothing has been changed** — this issue is a notification, and the
+bump is a deliberate, validated act.
 
 | | Pinned now | Available |
 | --- | --- | --- |
@@ -184,10 +219,7 @@ def main() -> None:
                 issue_body(pinned_version, pinned_digest, new_version, new_digest)
             )
 
-    title = (
-        f"yt-dlp base image: {new_version or new_digest[:19]} available "
-        f"(pinned: {pinned_version})"
-    )
+    title = issue_title(pinned_version, new_version, new_digest)
     output = os.getenv("GITHUB_OUTPUT")
     if output:
         with open(output, "a", encoding="utf-8") as handle:
