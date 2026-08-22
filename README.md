@@ -373,8 +373,9 @@ rather than inferred:
 |  |  |
 | --- | --- |
 | **Works** | URLs and playlists · local files (uploaded to the engine, so a laptop can drive a NAS) · PDFs, read for their text layer · video, audio, subtitles, transcripts, summaries, translations, chapters, thumbnails, metadata, Markdown, PDF · delivery into your library · cookie-authenticated sources |
-| **Does not** | stdio only, no HTTP transport · no live progress (`get_job` is a poll) · no `.docx`/`.epub`/`.odt`/`.rtf`, no OCR for scans · no transcoding · no playlist sync · nothing deletes anything · [the API has no authentication](docs/architecture-decisions/0024-no-authentication-is-still-the-answer.md) |
+| **Does not** | no live progress (`get_job` is a poll) · no `.docx`/`.epub`/`.odt`/`.rtf`, no OCR for scans · no transcoding · no playlist sync · nothing deletes anything · [the API has no authentication](docs/architecture-decisions/0024-no-authentication-is-still-the-answer.md) |
 | **Needs a runner** | Summaries, translations and derived chapters want a local [Ollama](https://ollama.com) or a cloud key; transcripts want subtitles, or the optional Whisper runner. The engine reports these as `unavailable` up front rather than failing halfway |
+| **By design** | **stdio, not an HTTP endpoint** — the server runs where *you* do, which is what lets an agent hand it `~/Documents/report.pdf` and have the bytes uploaded to an engine on your NAS. It also means no open port on a system that has [no authentication](docs/architecture-decisions/0024-no-authentication-is-still-the-answer.md). For a client that cannot spawn a process — Open WebUI, hosted UIs — [`mcpo`](https://github.com/open-webui/mcpo) bridges it today |
 | **Coming** | [Retrying only what failed](docs/architecture-decisions/0025-retrying-only-what-failed.md) · [playlist sync](docs/roadmap/roadmap.md) · [retention](docs/architecture-decisions/0023-retention-and-reclaiming-disk.md) · more document readers |
 
 ### CLI — terminals, scripts, and cron
