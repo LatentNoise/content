@@ -57,6 +57,46 @@ for air-gapped installs (`uv tool install ./content_mcp-<v>-py3-none-any.whl
 One environment variable: `CONTENT_API_URL` (default `http://localhost:8010`).
 The server speaks stdio — your MCP client spawns it; you never run it by hand.
 
+### Why stdio, and not an HTTP endpoint
+
+A deliberate choice rather than a missing feature, and the reason is the point
+of the whole project: **Content turns resources you already have into
+artifacts, and a lot of those live on your own machine.**
+
+Over stdio the server runs where you do. That is what makes this work:
+
+```text
+"Summarize ~/Documents/rapport.pdf"
+```
+
+The file is read on your machine and uploaded to the engine, which may be a NAS
+in another room. Move the server to an HTTP endpoint next to the engine and
+that sentence stops meaning anything — the path would resolve on the *server's*
+filesystem, so at best it fails, at worst it reads a different file with the
+same name. No amount of protocol design fixes that: the bytes are where the
+person is.
+
+Two things follow from it, both worth having:
+
+- **No network surface.** The engine has no authentication by design
+  ([ADR 0024](../../docs/architecture-decisions/0024-no-authentication-is-still-the-answer.md)),
+  and an HTTP MCP server would extend that to "anyone who can reach the port
+  can drive it — download, write files, spend your CPU". stdio has no port.
+- **No service to run.** The client starts and stops the process. Nothing to
+  supervise, nothing to restart, nothing left listening after you close the
+  laptop.
+
+**What stdio cannot do**, plainly: serve a client that cannot spawn a process on
+your machine — Open WebUI in a container, LibreChat, a hosted web UI. For those,
+[`mcpo`](https://github.com/open-webui/mcpo) bridges an stdio MCP server to
+HTTP/OpenAPI today, and Open WebUI documents it as its own path.
+
+An HTTP transport may still come as a **second mode** — the SDK does
+`streamable-http` with one parameter — for the inverse case: sources that are
+already remote, and a client that cannot spawn. It would ship bound to loopback
+by default, and it would have to refuse local paths outright rather than
+silently resolve them somewhere else. stdio stays the default either way.
+
 ### Claude Code
 
 ```bash
@@ -126,7 +166,6 @@ Stated plainly, because finding out by trying is a bad first impression.
 
 | Not available | Why, and what to do instead |
 | --- | --- |
-| **HTTP/SSE transport** | stdio only. Your client spawns the process; a remote server is not exposed. |
 | **MCP prompts** | Not provided. The tool descriptions and the server instructions carry the guidance instead. |
 | **Live progress** | `get_job` is a status poll. The engine has an event stream, but no MCP notification carries it — a long download is opaque until it ends. |
 | **Job logs** | Not exposed. `get_job` gives the failing step and its reason, which is what an agent can act on; the raw logs stay on the engine. |
@@ -153,8 +192,9 @@ implemented; each links to where the decision lives.
   ([ADR 0023](../../docs/architecture-decisions/0023-retention-and-reclaiming-disk.md),
   proposed).
 - **More document readers, and OCR** — the formats listed as refused above.
-- **HTTP transport** — stdio is what every client here speaks today; nothing
-  blocks the other one except a reason to build it.
+- **An HTTP transport as a second mode** — for clients that cannot spawn a
+  process (Open WebUI, hosted UIs). Not a replacement: see *Why stdio* above
+  for what it would cost, and `mcpo` for what works today.
 
 Something you need that is not here? The gap list is the roadmap's front door:
 [open an issue](https://github.com/LatentNoise/content/issues).
