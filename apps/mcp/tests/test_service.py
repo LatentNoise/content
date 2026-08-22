@@ -305,3 +305,42 @@ def test_retry_job_reruns_the_request_and_names_its_ancestor():
 
     assert seen == {"path": "/api/v1/jobs/job_old/retry", "method": "POST"}
     assert answer == {"job_id": "job_new", "status": "queued", "retry_of": "job_old"}
+
+
+# --- what happens to an uploaded file, said in the answer ------------------------
+
+
+def _engine(config: dict, *, uploads_ok: bool = True) -> ContentClient:
+    def handler(request):
+        path = request.url.path
+        if path.endswith("/config"):
+            return httpx.Response(200, json=config)
+        if path.endswith("/uploads"):
+            return httpx.Response(
+                201, json={"upload_id": "upl_1", "filename": "n.md", "size_bytes": 7}
+            )
+        return httpx.Response(200, json={})
+
+    return ContentClient(
+        "http://engine.example:8010",
+        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+
+def test_retention_is_reported_from_what_the_engine_says():
+    client = _engine({"uploads": {"ttl_hours": 24, "expire_from": "last_use"}})
+    assert service._retention(client) == "deleted 24h after last use"
+
+
+def test_an_engine_that_does_not_report_its_policy_says_unknown():
+    """The dangerous case: an older engine returns no `uploads` block. Claiming
+    "no TTL" there would be a confident falsehood in the reassuring direction —
+    the default is in fact 24h — and retention is the one thing not to guess at
+    on somebody else's machine."""
+    assert "unknown" in service._retention(_engine({"credentials": []}))
+
+
+def test_an_engine_with_expiry_switched_off_says_so_plainly():
+    client = _engine({"uploads": {"ttl_hours": 0}})
+    answer = service._retention(client)
+    assert "no expiry" in answer and "unknown" not in answer

@@ -168,4 +168,40 @@ def parse_markdown(markdown: str, *, title: str = "") -> Document:
 
     flush_paragraph()
     flush_list()
+    _drop_repeated_title(document)
     return document
+
+
+def _drop_repeated_title(document: Document) -> None:
+    """Collapse a title that the document states twice in a row.
+
+    Observed in a real PDF: the heading appeared, a rule, then the very same
+    heading and another rule. It happens whenever something writes a header
+    above a body that already titles itself — and an LLM summary titles itself
+    almost every time, because that is what "format the output as Markdown"
+    produces.
+
+    Only the narrow case is touched: two headings of the same level with the
+    same text, adjacent or separated by nothing but rules. That is never a
+    document someone meant to write. Two identical headings further apart are
+    left alone — a recurring section title is a legitimate shape, and guessing
+    at it would be the renderer editing the author.
+    """
+    heads = [i for i, b in enumerate(document.blocks) if b.kind == HEADING]
+    for first, second in zip(heads, heads[1:]):
+        between = document.blocks[first + 1 : second]
+        if any(b.kind != RULE for b in between):
+            continue
+        a, b = document.blocks[first], document.blocks[second]
+        if a.level != b.level:
+            continue
+        if _spans_text(a.spans).strip() != _spans_text(b.spans).strip():
+            continue
+        # Keep the first heading and drop the duplicate with the rules it
+        # dragged along, so the page does not end up with a stray double line.
+        del document.blocks[first + 1 : second + 1]
+        return
+
+
+def _spans_text(spans) -> str:
+    return "".join(s.text for s in spans)

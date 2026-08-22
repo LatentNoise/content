@@ -204,6 +204,16 @@ def build_server(client: ContentClient | None = None) -> MCPServer:
         return service.retry_job(client, job_id)
 
     @tool()
+    def delete_upload(upload_id: str) -> dict[str, Any]:
+        """Delete bytes uploaded from this machine, before the TTL expires.
+
+        `analyze_source` uploads a local file to the engine; the id it returns
+        under `upload` is what this takes. Removes only that upload — never an
+        artifact, never a file in the library.
+        """
+        return service.delete_upload(client, upload_id)
+
+    @tool()
     def get_config() -> dict[str, Any]:
         """Server-side context for building requests: credential ids for
         authenticated sources, whether delivery-by-default is on, and the

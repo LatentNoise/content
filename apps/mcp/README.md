@@ -111,6 +111,7 @@ inferred from the code.
 | **A whole playlist** | Ask with `scope: "each_item"`: one artifact per member, numbered in order |
 | **A destination in the library** | `delivery: {folder, filename}`; each artifact reports its `delivered_path` |
 | **The file on your own machine** | `download_artifact`, bounded by `CONTENT_MCP_DOWNLOAD_DIR` |
+| **To take an upload back** | `delete_upload` removes bytes sent from this machine before the TTL runs out |
 | **Authenticated sources** | `credential` names a cookie file configured on the *server*; the secret never travels |
 
 **What needs a runner.** The engine reports a capability as `unavailable`
@@ -134,7 +135,7 @@ Stated plainly, because finding out by trying is a bad first impression.
 | **Scanned PDFs** | The text layer is read; a scan holds an image of words. That needs OCR, which the engine does not implement, and it says so rather than returning nothing. |
 | **Video transcoding** | Stream copy and remux only. A format change that requires re-encoding is refused as `option_not_supported`. |
 | **Playlist synchronization** | Content downloads a playlist; it does not keep a folder in step with one over time. |
-| **Deleting anything** | No tool removes an artifact, a job or a file. Retention is an operator concern (ADR 0023, proposed). |
+| **Deleting anything but your own upload** | `delete_upload` takes back bytes this server sent; nothing removes an artifact, a job, or a file in the library. Retention for those is an operator concern (ADR 0023, proposed). |
 | **Authentication on the engine** | The V1 API has none (ADR 0024). Keep it on a trusted network or behind a reverse proxy — this server inherits whatever reach it has. |
 
 ## What is coming
@@ -216,6 +217,33 @@ wrong one is the ordinary mistake.
 - The layering is enforced by tests: the MCP server may import `content_sdk`
   only — never an HTTP client, never backend internals
   (`tests/test_layering.py` at the repo root).
+
+## Where an uploaded file goes, and for how long
+
+A local path handed to `analyze_source` leaves this machine. The answer says
+so, rather than leaving it to documentation nobody opens at that moment:
+
+```json
+"upload": {
+  "upload_id": "upl_…",
+  "filename": "report.pdf",
+  "size_bytes": 1583,
+  "stored_on": "http://nas.local:8010",
+  "retention": "deleted 24h after last use",
+  "remove_with": "delete_upload"
+}
+```
+
+`stored_on` names the engine rather than a path, because the store is
+engine-owned and no path here would address it. `retention` is **read from the
+engine**, not assumed: the TTL is the operator's setting, and an engine too old
+to report it answers `unknown` rather than a comfortable guess — claiming "no
+expiry" when the default is 24h would be a falsehood in the reassuring
+direction. `get_config` carries the same policy up front, before anything is
+sent.
+
+The TTL runs from an upload's **last use**, not its creation, so retrying a job
+still finds its input.
 
 ## Local files, both directions
 
