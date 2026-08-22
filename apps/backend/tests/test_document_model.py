@@ -224,3 +224,67 @@ def test_quote_and_rule_survive_the_round_trip():
     assert payload["blocks"][1] == {"kind": RULE}
     assert document.blocks[0].spans[0].text == "quoted"
     assert parse_markdown("para").blocks[0].kind == PARAGRAPH
+
+
+# --- a title stated twice --------------------------------------------------------
+
+
+def test_a_title_repeated_immediately_is_collapsed():
+    """Seen in a real PDF: the heading, a rule, the same heading, another rule.
+
+    It happens whenever something writes a header above a body that already
+    titles itself — and an LLM summary titles itself almost every time, since
+    that is what "format the output as Markdown" produces. The duplicate rule
+    goes with it, so the page does not keep a stray double line.
+    """
+    from content.documents.markdown import parse_markdown
+
+    document = parse_markdown(
+        "# Content — README summary\n\n---\n\n"
+        "# Content — README summary\n\n---\n\nBody text.",
+        title="Content — README summary",
+    )
+    headings = [b for b in document.blocks if b.kind == "heading"]
+    assert len(headings) == 1
+    assert sum(1 for b in document.blocks if b.kind == "rule") == 1
+
+
+def test_two_identical_headings_in_a_row_collapse_without_a_rule():
+    from content.documents.markdown import parse_markdown
+
+    document = parse_markdown("# Titre\n\n# Titre\n\nTexte.", title="")
+    assert len([b for b in document.blocks if b.kind == "heading"]) == 1
+
+
+def test_the_same_title_further_down_is_left_alone():
+    """A recurring section title is a legitimate shape. Collapsing it would be
+    the renderer editing the author, which is a different job."""
+    from content.documents.markdown import parse_markdown
+
+    document = parse_markdown("# Notes\n\nA.\n\n# Notes\n\nB.", title="")
+    assert len([b for b in document.blocks if b.kind == "heading"]) == 2
+
+
+def test_different_titles_or_levels_are_left_alone():
+    from content.documents.markdown import parse_markdown
+
+    assert (
+        len(
+            [
+                b
+                for b in parse_markdown("# A\n\n# B\n\nx.", title="").blocks
+                if b.kind == "heading"
+            ]
+        )
+        == 2
+    )
+    assert (
+        len(
+            [
+                b
+                for b in parse_markdown("# T\n\n## T\n\nx.", title="").blocks
+                if b.kind == "heading"
+            ]
+        )
+        == 2
+    )
