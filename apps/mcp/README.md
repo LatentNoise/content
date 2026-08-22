@@ -13,19 +13,6 @@ business logic**.
 any MCP client → content-mcp (this) → content_sdk → your Content engine (/api/v1)
 ```
 
-## Where downloaded files land
-
-`download_artifact` writes to the machine running this server — the counterpart
-to delivery, which writes to the engine's library. One variable bounds it:
-
-| Variable | Default | Role |
-| --- | --- | --- |
-| `CONTENT_MCP_DOWNLOAD_DIR` | `~/Downloads/Content` | The only directory this server may write to. Relative destinations resolve inside it; anything pointing outside is refused, not clamped |
-
-The refusal is deliberate. An MCP server writes to a real filesystem on an
-agent's say-so, so widening that is the operator's decision, taken once, rather
-than something a prompt can talk it into.
-
 ## Install
 
 The server is an ordinary Python application — nothing to clone. There are two
@@ -108,6 +95,69 @@ engine's delivery folder.
 Logs go to **stderr** (stdout carries only the MCP JSON-RPC framing), so a
 client's log pane shows them without corrupting the session.
 
+## What it supports today
+
+Everything below has been driven over stdio against a running engine, not
+inferred from the code.
+
+| You can ask for | Notes |
+| --- | --- |
+| **A URL** — a video, a playlist, a web page | Media through yt-dlp ([its supported sites](https://github.com/yt-dlp/yt-dlp/blob/master/supportedsites.md)), pages through the reader |
+| **A file on the machine running this server** | Read here and **uploaded** to the engine, which is how a laptop drives a homelab box. `.txt`, `.md`, `.pdf` (its text layer) and media files |
+| **video · audio · subtitles** | Quality, codec, container, audio languages, SponsorBlock, clip cutting |
+| **transcript · summary · translation · chapters** | The AI-backed ones need a runner — see *what needs a runner* below |
+| **thumbnail · keyframes · metadata** | Published artwork, extracted frames, normalized facts |
+| **markdown · document_text · pdf** | A page, a document, or a rendering of another output |
+| **A whole playlist** | Ask with `scope: "each_item"`: one artifact per member, numbered in order |
+| **A destination in the library** | `delivery: {folder, filename}`; each artifact reports its `delivered_path` |
+| **The file on your own machine** | `download_artifact`, bounded by `CONTENT_MCP_DOWNLOAD_DIR` |
+| **Authenticated sources** | `credential` names a cookie file configured on the *server*; the secret never travels |
+
+**What needs a runner.** The engine reports a capability as `unavailable`
+rather than failing halfway, so ask `analyze_source` first and believe it.
+Summaries, translations and derived chapters need a local
+[Ollama](https://ollama.com) or a configured cloud key; transcripts need
+existing subtitles, or the optional Whisper runner for audio without them.
+
+## What it does not support
+
+Stated plainly, because finding out by trying is a bad first impression.
+
+| Not available | Why, and what to do instead |
+| --- | --- |
+| **HTTP/SSE transport** | stdio only. Your client spawns the process; a remote server is not exposed. |
+| **MCP prompts** | Not provided. The tool descriptions and the server instructions carry the guidance instead. |
+| **Live progress** | `get_job` is a status poll. The engine has an event stream, but no MCP notification carries it — a long download is opaque until it ends. |
+| **Job logs** | Not exposed. `get_job` gives the failing step and its reason, which is what an agent can act on; the raw logs stay on the engine. |
+| **Retrying only what failed** | `retry_job` re-runs the whole request. A decision is pending (ADR 0025). |
+| **`.docx`, `.epub`, `.odt`, `.rtf`** | Recognised and refused — each needs its own reader. |
+| **Scanned PDFs** | The text layer is read; a scan holds an image of words. That needs OCR, which the engine does not implement, and it says so rather than returning nothing. |
+| **Video transcoding** | Stream copy and remux only. A format change that requires re-encoding is refused as `option_not_supported`. |
+| **Playlist synchronization** | Content downloads a playlist; it does not keep a folder in step with one over time. |
+| **Deleting anything** | No tool removes an artifact, a job or a file. Retention is an operator concern (ADR 0023, proposed). |
+| **Authentication on the engine** | The V1 API has none (ADR 0024). Keep it on a trusted network or behind a reverse proxy — this server inherits whatever reach it has. |
+
+## What is coming
+
+Written down so the gaps read as a plan rather than as neglect. None of it is
+implemented; each links to where the decision lives.
+
+- **Retrying only what failed** — a twenty-video playlist with one failure
+  should cost one member, not twenty
+  ([ADR 0025](../../docs/architecture-decisions/0025-retrying-only-what-failed.md),
+  proposed).
+- **Playlist synchronization** — keeping a local folder in step with a playlist
+  as it changes ([M2](../../docs/roadmap/roadmap.md), the half not yet built).
+- **Retention** — reclaiming disk without touching the user's library
+  ([ADR 0023](../../docs/architecture-decisions/0023-retention-and-reclaiming-disk.md),
+  proposed).
+- **More document readers, and OCR** — the formats listed as refused above.
+- **HTTP transport** — stdio is what every client here speaks today; nothing
+  blocks the other one except a reason to build it.
+
+Something you need that is not here? The gap list is the roadmap's front door:
+[open an issue](https://github.com/LatentNoise/content/issues).
+
 ## Tools (intention-level, not one-per-endpoint)
 
 | Tool | Intent |
@@ -117,6 +167,7 @@ client's log pane shows them without corrupting the session.
 | `generate` | Start a job producing outputs from an `analysis_id`; an output spec may carry `delivery` (`mode`/`folder`/`filename`, ADR 0018) |
 | `get_job` | Job status; once terminal, its artifacts — user-facing names (ADR 0017) and `delivered_path` in the server library |
 | `cancel_job` | Cooperative cancellation |
+| `retry_job` | Run a finished job's request again, as a new job. The **whole** request — see *What is coming* for the finer version |
 | `list_jobs` | Recent jobs |
 | `get_artifact` | Artifact metadata; **small text is inlined**, larger/binary returns a download reference (never raw bytes over MCP) |
 | `get_config` | Request-building context: credential ids, whether delivery-by-default is on, the existing library folders |
@@ -126,6 +177,56 @@ client's log pane shows them without corrupting the session.
 `content://analyses/{id}`, `content://jobs/{id}`, `content://artifacts/{id}` —
 JSON views for a host to attach as context. Prompts are intentionally not
 provided yet.
+
+## Where downloaded files land
+
+`download_artifact` writes to the machine running this server — the counterpart
+to delivery, which writes to the engine's library. One variable bounds it:
+
+| Variable | Default | Role |
+| --- | --- | --- |
+| `CONTENT_MCP_DOWNLOAD_DIR` | `~/Downloads/Content` | The only directory this server may write to. Relative destinations resolve inside it; anything pointing outside is refused, not clamped |
+
+The refusal is deliberate. An MCP server writes to a real filesystem on an
+agent's say-so, so widening that is the operator's decision, taken once, rather
+than something a prompt can talk it into.
+
+## When something goes wrong
+
+Every tool translates the SDK's exceptions into something an agent can act on,
+because the alternative is what this server used to say when the engine was not
+running: `[Errno 61] Connection refused`. It names neither what failed nor what
+to do, and it is the **first** thing a new user meets — the engine listens on
+`8010` on the host and `8000` only inside its container, so pointing at the
+wrong one is the ordinary mistake.
+
+| Situation | What the caller is told |
+| --- | --- |
+| The engine is not reachable | Which URL was tried, that `docker compose up -d` starts it, that `CONTENT_API_URL` moves it, and the 8010/8000 distinction |
+| An analysis has expired | That analyses are kept for a limited time, and to call `analyze_source` again |
+| The engine refused the request | The stable error codes (`output_type_not_supported`, …) and the body |
+| An output spec is malformed | Caught *before* the round trip, with an example of a correct one |
+
+## Design
+
+- `service.py` — the intention logic; takes an SDK client, returns JSON. No MCP
+  imports, no HTTP. Fully unit-tested over a mock transport.
+- `server.py` — thin wiring: registers the tools/resources on an `MCPServer` and
+  runs stdio. `content-mcp` → `content_mcp.server:main`.
+- The layering is enforced by tests: the MCP server may import `content_sdk`
+  only — never an HTTP client, never backend internals
+  (`tests/test_layering.py` at the repo root).
+
+## Local files, both directions
+
+A path you give `analyze_source` is a path on the machine running **this
+server**, never on the engine: the file is read here and uploaded, which is the
+only way a local file becomes usable by an engine running elsewhere. Identical
+path strings on two machines do not imply identical filesystems, so the path is
+never passed through untouched.
+
+`download_artifact` is the mirror image — it brings a finished artifact back to
+this machine, bounded by `CONTENT_MCP_DOWNLOAD_DIR` (see above).
 
 ## For development
 
@@ -165,39 +266,3 @@ Build the distributions with `make wheels` (they land in `dist/`).
   Re-run it after any transport change; the in-process suites above never reach
   a closed socket, which is exactly how the error-message defect survived.
 
-## When something goes wrong
-
-Every tool translates the SDK's exceptions into something an agent can act on,
-because the alternative is what this server used to say when the engine was not
-running: `[Errno 61] Connection refused`. It names neither what failed nor what
-to do, and it is the **first** thing a new user meets — the engine listens on
-`8010` on the host and `8000` only inside its container, so pointing at the
-wrong one is the ordinary mistake.
-
-| Situation | What the caller is told |
-| --- | --- |
-| The engine is not reachable | Which URL was tried, that `docker compose up -d` starts it, that `CONTENT_API_URL` moves it, and the 8010/8000 distinction |
-| An analysis has expired | That analyses are kept for a limited time, and to call `analyze_source` again |
-| The engine refused the request | The stable error codes (`output_type_not_supported`, …) and the body |
-| An output spec is malformed | Caught *before* the round trip, with an example of a correct one |
-
-## Design
-
-- `service.py` — the intention logic; takes an SDK client, returns JSON. No MCP
-  imports, no HTTP. Fully unit-tested over a mock transport.
-- `server.py` — thin wiring: registers the tools/resources on an `MCPServer` and
-  runs stdio. `content-mcp` → `content_mcp.server:main`.
-- The layering is enforced by tests: the MCP server may import `content_sdk`
-  only — never an HTTP client, never backend internals
-  (`tests/test_layering.py` at the repo root).
-
-## Local files, both directions
-
-A path you give `analyze_source` is a path on the machine running **this
-server**, never on the engine: the file is read here and uploaded, which is the
-only way a local file becomes usable by an engine running elsewhere. Identical
-path strings on two machines do not imply identical filesystems, so the path is
-never passed through untouched.
-
-`download_artifact` is the mirror image — it brings a finished artifact back to
-this machine, bounded by `CONTENT_MCP_DOWNLOAD_DIR` (see above).

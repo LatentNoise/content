@@ -284,3 +284,24 @@ def test_a_succeeded_job_carries_no_failure_noise():
     result = service.get_job(_api(handler), "job_ok")
     assert "failures" not in result
     assert result["error"] == ""
+
+
+def test_retry_job_reruns_the_request_and_names_its_ancestor():
+    """`cancel_job` had no counterpart: an agent that watched a job fail could
+    report the failure and nothing else. The answer carries `retry_of` so the
+    agent can tell the user which run this replaces."""
+    seen: dict = {}
+
+    def handler(request):
+        seen["path"] = request.url.path
+        seen["method"] = request.method
+        return httpx.Response(201, json={"job_id": "job_new", "status": "queued"})
+
+    client = ContentClient(
+        "http://engine",
+        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+    answer = service.retry_job(client, "job_old")
+
+    assert seen == {"path": "/api/v1/jobs/job_old/retry", "method": "POST"}
+    assert answer == {"job_id": "job_new", "status": "queued", "retry_of": "job_old"}
