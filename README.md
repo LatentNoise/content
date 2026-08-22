@@ -319,13 +319,14 @@ exposes intention-level tools — not one per endpoint — to:
 
 The agent never needs shell access, yt-dlp syntax, or backend internals.
 
-```bash
-uv tool install content-mcp
+**Nothing to install.** `uvx` fetches the server on first use and keeps it
+current, so the client owns the whole lifecycle:
 
+```bash
 # Claude Code
 claude mcp add content \
   --env CONTENT_API_URL=http://localhost:8010 \
-  -- content-mcp
+  -- uvx content-mcp
 ```
 
 For Claude Desktop, Cursor, and other MCP clients using the standard JSON
@@ -335,11 +336,20 @@ shape:
 {
   "mcpServers": {
     "content": {
-      "command": "content-mcp",
+      "command": "uvx",
+      "args": ["content-mcp"],
       "env": { "CONTENT_API_URL": "http://localhost:8010" }
     }
   }
 }
+```
+
+Prefer a pinned executable on your PATH — for an offline machine, or to control
+when the version changes? Install it and name it directly
+(`"command": "content-mcp"`, or `-- content-mcp` for Claude Code):
+
+```bash
+uv tool install content-mcp      # or: pipx install content-mcp
 ```
 
 Then ask naturally:
