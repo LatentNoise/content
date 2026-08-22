@@ -3,7 +3,7 @@
   "name": "io.github.LatentNoise/content",
   "title": "Content",
   "description": "Turn URLs, files and text into media, transcripts, summaries, translations and PDF.",
-  "version": "0.6.4",
+  "version": "0.6.5",
   "websiteUrl": "https://github.com/LatentNoise/content/blob/main/apps/mcp/README.md",
   "repository": {
     "url": "https://github.com/LatentNoise/content",
@@ -14,7 +14,7 @@
       "registryType": "pypi",
       "registryBaseUrl": "https://pypi.org",
       "identifier": "content-mcp",
-      "version": "0.6.4",
+      "version": "0.6.5",
       "transport": {
         "type": "stdio"
       },
