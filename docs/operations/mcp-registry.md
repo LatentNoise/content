@@ -97,11 +97,38 @@ The entry should be there with the version that was just published.
 
 ## What being listed does and does not buy
 
-**Claude Code does not query any registry.** Servers are added by hand
-(`claude mcp add content --env CONTENT_API_URL=… -- content-mcp`). Registry
-presence does not make Content installable in one click; it makes it *findable
-by a human* who then runs that command. Anthropic's curated connector directory
-is a separate channel and a later target.
+**The registry is a catalogue, not an installer.** It holds metadata and
+*installation instructions*; the artifact itself stays on PyPI. Our entry says,
+in machine-readable form: this server is the PyPI package `content-mcp`, it
+speaks stdio, and it reads `CONTENT_API_URL` and `CONTENT_MCP_DOWNLOAD_DIR`.
+Everything a client needs to install and launch it without asking the user
+anything is therefore already published — whether a given client *does* that is
+the client's business, not ours.
+
+**Claude Code does not, as of 2026-08-22.** Checked rather than assumed:
+`claude mcp --help` offers `add`, `add-json`, `add-from-claude-desktop`, `get`,
+`list`, `login`, `logout`, `remove`, `serve` — no `search`, no `install`, no
+registry subcommand of any kind. Articles describing clients that "discover and
+install from the registry" are describing an intent, or another client's own
+registry. Re-run that one-line check before believing otherwise; it is the kind
+of thing that changes without an announcement reaching us.
+
+So registry presence makes Content *findable by a human*, who then runs:
+
+```bash
+claude mcp add content --env CONTENT_API_URL=… -- uvx content-mcp
+```
+
+`uvx` is what makes that a single step: no install precedes it, and the client
+owns the version. Anthropic's curated connector directory is a separate channel
+and a later target.
+
+**One field we deliberately do not set.** `packages[].runtimeHint` exists to
+tell a client which runtime to use (`uvx` would be ours). The schema asks for
+it only when `runtimeArguments` are present, which is not our case, and a sweep
+of the registry found no PyPI entry using it — too thin a convention to follow
+on speculation. If a client ever documents that it honours the hint, adding it
+is one line in `server.json`.
 
 Directories worth submitting to once the registry entry is live, in order of
 likely return:

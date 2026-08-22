@@ -28,15 +28,35 @@ than something a prompt can talk it into.
 
 ## Install
 
-The server is an ordinary Python application — nothing to clone:
+The server is an ordinary Python application — nothing to clone. There are two
+shapes, and which one you want depends on who should own the lifecycle.
+
+**Let the client fetch it (nothing installed).** `uvx` downloads the server on
+first use, caches it and keeps it current, so there is no step to forget and no
+version to upgrade by hand. This is the shortest path and the one to prefer:
 
 ```bash
-uv tool install content-mcp     # isolated, on your PATH — recommended
+uvx content-mcp --version       # 0.6.4 — fetched on the spot
+```
+
+Your MCP client then spawns `uvx content-mcp` instead of a binary (see
+*Connect it to your engine* below). `pipx run content-mcp` does the same if you
+use pipx.
+
+**Or install an executable on your PATH.** Pin the version, work offline, or
+just prefer a command you can run yourself:
+
+```bash
+uv tool install content-mcp     # isolated, on your PATH
 content-mcp --help
 
 # or
 pipx install content-mcp
 ```
+
+The trade-off is only who updates it: `uvx` follows PyPI, an installed tool
+stays where you put it until `uv tool upgrade content-mcp`. Both run the same
+wheel.
 
 [`content-mcp` on PyPI](https://pypi.org/project/content-mcp/) pulls
 [`content-sdk`](https://pypi.org/project/content-sdk/) as an ordinary
@@ -53,6 +73,10 @@ The server speaks stdio — your MCP client spawns it; you never run it by hand.
 ### Claude Code
 
 ```bash
+# nothing installed — uvx fetches it
+claude mcp add content --env CONTENT_API_URL=http://localhost:8010 -- uvx content-mcp
+
+# or, with the executable installed
 claude mcp add content --env CONTENT_API_URL=http://localhost:8010 -- content-mcp
 ```
 
@@ -65,12 +89,16 @@ any other client using the standard JSON shape:
 {
   "mcpServers": {
     "content": {
-      "command": "content-mcp",
+      "command": "uvx",
+      "args": ["content-mcp"],
       "env": { "CONTENT_API_URL": "http://localhost:8010" }
     }
   }
 }
 ```
+
+With the executable installed instead, drop the `args` and use
+`"command": "content-mcp"`.
 
 Then ask for something like *"analyze this YouTube URL and download the audio
 into my library"* — the expected flow is `get_config` → `analyze_source` →
