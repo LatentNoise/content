@@ -19,8 +19,8 @@ The server is an ordinary Python application — nothing to clone. There are two
 shapes, and which one you want depends on who should own the lifecycle.
 
 **Let the client fetch it (nothing installed).** `uvx` downloads the server on
-first use, caches it and keeps it current, so there is no step to forget and no
-version to upgrade by hand. This is the shortest path and the one to prefer:
+first use and caches it, so there is nothing to install and nothing left behind.
+This is the shortest path and the one to prefer:
 
 ```bash
 uvx content-mcp --version       # 0.6.4 — fetched on the spot
@@ -41,9 +41,19 @@ content-mcp --help
 pipx install content-mcp
 ```
 
-The trade-off is only who updates it: `uvx` follows PyPI, an installed tool
-stays where you put it until `uv tool upgrade content-mcp`. Both run the same
-wheel.
+**Either way, updating is explicit.** This is worth knowing, because it is easy
+to assume otherwise: `uvx` reuses the environment it cached and does *not*
+re-check PyPI on each run, so a server started this way keeps its version until
+you say otherwise. Measured, not assumed — a plain `uvx content-mcp` served
+0.6.5 the day 0.6.6 was published.
+
+```bash
+uvx --refresh content-mcp        # take the newest release
+uvx content-mcp@0.6.6            # or pin one, which a client config can do too
+uv tool upgrade content-mcp      # for the installed form
+```
+
+Both forms run the same wheel; the difference is only where it lives.
 
 [`content-mcp` on PyPI](https://pypi.org/project/content-mcp/) pulls
 [`content-sdk`](https://pypi.org/project/content-sdk/) as an ordinary
