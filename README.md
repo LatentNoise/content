@@ -319,8 +319,9 @@ exposes intention-level tools — not one per endpoint — to:
 
 The agent never needs shell access, yt-dlp syntax, or backend internals.
 
-**Nothing to install.** `uvx` fetches the server on first use and keeps it
-current, so the client owns the whole lifecycle:
+**Nothing to install.** `uvx` fetches the server on first use and caches it, so
+the client owns the whole lifecycle (updating stays explicit — `uvx --refresh`,
+or pin `content-mcp@x.y.z`):
 
 ```bash
 # Claude Code
