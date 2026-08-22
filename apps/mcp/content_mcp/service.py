@@ -215,6 +215,23 @@ def cancel_job(client: ContentClient, job_id: str) -> dict[str, Any]:
     return client.cancel(job_id)
 
 
+def retry_job(client: ContentClient, job_id: str) -> dict[str, Any]:
+    """Run a finished job's request again, as a new job.
+
+    `cancel_job` had no counterpart: an agent that watched a job fail could
+    report the failure and nothing else, when "try that again" is the obvious
+    next move for a transient one (a 429 from the provider, a network blip).
+
+    It re-runs the **whole** request — a playlist where one member failed
+    downloads all of them again. Retrying only what failed is a decision still
+    being made (ADR 0025), so this is deliberately the coarse version rather
+    than a guess at the fine one. Judge the cost before calling it on a
+    collection.
+    """
+    job = client.retry(job_id)
+    return {"job_id": job.id, "status": job.status, "retry_of": job_id}
+
+
 def get_config(client: ContentClient) -> dict[str, Any]:
     """What an agent needs to parameterize requests: the credential ids for
     authenticated sources, whether artifacts are delivered into the server

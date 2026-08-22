@@ -363,9 +363,19 @@ The normal tool journey is
 the agent's own machine are bounded by a single variable
 (`CONTENT_MCP_DOWNLOAD_DIR`, `~/Downloads/Content` by default): a destination
 pointing outside it is refused, not clamped — widening that is the operator's
-decision, not something a prompt can talk the server into. See the
-[MCP guide](apps/mcp/README.md) for every tool, resource, and verified
-behavior.
+decision, not something a prompt can talk the server into.
+
+**What it can and cannot do, briefly** — the
+[MCP guide](apps/mcp/README.md#what-it-supports-today) has the full three
+tables, and each row there was driven over stdio against a running engine
+rather than inferred:
+
+|  |  |
+| --- | --- |
+| **Works** | URLs and playlists · local files (uploaded to the engine, so a laptop can drive a NAS) · PDFs, read for their text layer · video, audio, subtitles, transcripts, summaries, translations, chapters, thumbnails, metadata, Markdown, PDF · delivery into your library · cookie-authenticated sources |
+| **Does not** | stdio only, no HTTP transport · no live progress (`get_job` is a poll) · no `.docx`/`.epub`/`.odt`/`.rtf`, no OCR for scans · no transcoding · no playlist sync · nothing deletes anything · [the API has no authentication](docs/architecture-decisions/0024-no-authentication-is-still-the-answer.md) |
+| **Needs a runner** | Summaries, translations and derived chapters want a local [Ollama](https://ollama.com) or a cloud key; transcripts want subtitles, or the optional Whisper runner. The engine reports these as `unavailable` up front rather than failing halfway |
+| **Coming** | [Retrying only what failed](docs/architecture-decisions/0025-retrying-only-what-failed.md) · [playlist sync](docs/roadmap/roadmap.md) · [retention](docs/architecture-decisions/0023-retention-and-reclaiming-disk.md) · more document readers |
 
 ### CLI — terminals, scripts, and cron
 

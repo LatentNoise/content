@@ -194,6 +194,16 @@ def build_server(client: ContentClient | None = None) -> MCPServer:
         return service.download_artifact(client, artifact_id, destination)
 
     @tool()
+    def retry_job(job_id: str) -> dict[str, Any]:
+        """Run a finished job's request again, as a new job.
+
+        Re-runs the *whole* request: a playlist where one member failed
+        re-downloads every member. Worth it for a transient failure, wasteful
+        for a large collection — read the failure in `get_job` first.
+        """
+        return service.retry_job(client, job_id)
+
+    @tool()
     def get_config() -> dict[str, Any]:
         """Server-side context for building requests: credential ids for
         authenticated sources, whether delivery-by-default is on, and the
