@@ -1,6 +1,6 @@
 [project]
 name = "content-cli"
-version = "0.6.4"
+version = "0.6.5"
 description = "Command-line client for the Content engine (talks to /api/v1)."
 readme = "README.md"
 license = "AGPL-3.0-or-later"
@@ -24,7 +24,7 @@ classifiers = [
 # Pinned to the exact SDK release, not a floor: the monorepo ships one version
 # for everything (`make version`), and a CLI resolving to a different SDK than
 # the one it was tested against is precisely the drift that guarantees buys.
-dependencies = ["content-sdk==0.6.4"]
+dependencies = ["content-sdk==0.6.5"]
 
 [project.scripts]
 content = "content_cli.cli:main"
