@@ -46,6 +46,13 @@ class ExecutionContext:
     input_materials: list[Material] = field(default_factory=list)
     cancel_check: Callable[[], bool] = lambda: False
     on_progress: Callable[[float, str], None] = lambda percent, message: None
+    # A step that succeeded while doing less than was asked. Until now the
+    # engine had no way to say that: warnings were a planning-time concept, so
+    # a runner that silently produced a partial result had only two options,
+    # failing or lying. The executor supplies an implementation that both
+    # records the warning on the artifacts of the step and publishes it as an
+    # event; the default is a no-op so a provider can be exercised alone.
+    on_warning: Callable[[str, str, dict], None] = lambda code, message, details: None
 
 
 @dataclass

@@ -142,7 +142,9 @@ Documented cases:
 
 `JobEvent` is an **append-only journal, sequenced per job** (a strictly increasing `sequence`), persisted, replayable, and independent of the raw logs (stdout/stderr go to `logs/`, never into the events).
 
-Types: `job.created`, `job.validating`, `job.planned`, `job.queued`, `job.started`, `step.started`, `step.progress`, `step.succeeded`, `step.failed`, `step.skipped`, `artifact.created`, `artifact.delivered`, `job.succeeded`, `job.partially_succeeded`, `job.failed`, `job.cancelled`.
+Types: `job.created`, `job.validating`, `job.planned`, `job.queued`, `job.started`, `step.started`, `step.progress`, `step.succeeded`, `step.failed`, `step.skipped`, `step.warning`, `artifact.created`, `artifact.delivered`, `job.succeeded`, `job.partially_succeeded`, `job.failed`, `job.cancelled`.
+
+`step.warning` carries `{step_id, code, message, details}` and means a step is **succeeding while doing less than was asked** — the engine had no way to say that before, so a runner in that position had to choose between failing and lying. The first case is an LLM whose context window silently dropped the tail of a long transcript (`partial_output`). The same warnings are attached to the artifacts that step produces, under `provenance.warnings`, because "what happened during this job" and "can I trust this file" are asked at different times and only one of them is answered by an event stream.
 
 `artifact.delivered` carries `{artifact_id, artifact_request_id, path, renamed_from}`. `path` is relative to the delivery root; `renamed_from` is empty unless the name was already taken by *different* content, in which case it names what was wanted before the `-1` counter fired — a collision is a thing the user should be able to find out about, not discover in the folder weeks later.
 

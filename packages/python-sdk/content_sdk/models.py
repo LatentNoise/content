@@ -90,6 +90,11 @@ class ArtifactData(_Model):
     media_type: str = ""
     size_bytes: int = 0
     checksum: str = ""
+    # Where the artifact came from, and any caveat attached to it: `warnings`
+    # holds what a step reported while still succeeding — a summary built from
+    # a truncated transcript, for instance. Declared rather than left to
+    # `extra="allow"` because callers act on it; the CLI and MCP surface it.
+    provenance: dict[str, Any] = Field(default_factory=dict)
 
 
 class Event(_Model):
