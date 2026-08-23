@@ -1,0 +1,67 @@
+# Scan what users are actually running, weekly.
+#
+# ADR 0026 argues that the only security claim worth publishing is one a
+# stranger can re-check, and that a scanner must be pointed at the deliverable
+# rather than at a workspace — the audit that produced that ADR found its one
+# advisory in a developer's virtualenv, in a package Content ships nowhere.
+#
+# Hence: the *published* images, not the build tree. And on a schedule rather
+# than at build time, because a scan during the release only ever knows about
+# vulnerabilities disclosed before the release. The interesting case for an
+# image carrying ffmpeg, yt-dlp and a Debian base is the one disclosed three
+# weeks *after* it shipped, while people are running it.
+#
+# Findings land in the Security tab as SARIF. Nothing here fails a build: a
+# gate that fires on a dependency Content never calls is a gate that gets
+# routinely overridden, and the triage question — does Content reach this code
+# path — is not one a scanner can answer.
+
+name: Security scan
+
+on:
+  schedule:
+    - cron: "27 4 * * 1" # Mondays, 04:27 UTC — off the hour, GitHub asks
+  workflow_dispatch:
+  push:
+    paths:
+      - ".github/workflows/security-scan.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-scan-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  images:
+    name: ${{ matrix.image }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      security-events: write # the SARIF upload — this is the whole output
+    strategy:
+      fail-fast: false
+      matrix:
+        image: [content, content-hometube, content-studio, content-console]
+    steps:
+      - name: Scan the published image
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ghcr.io/latentnoise/${{ matrix.image }}:latest
+          format: sarif
+          output: trivy-${{ matrix.image }}.sarif
+          # OS packages and language dependencies both: ffmpeg and yt-dlp are
+          # the surface that matters here, and only one of those is Python.
+          scanners: vuln
+          severity: CRITICAL,HIGH,MEDIUM
+          # A scan cannot fail the job (see the header) — but it must not pass
+          # it by silently failing to run, either.
+          exit-code: "0"
+
+      - name: Publish the findings to the Security tab
+        uses: github/codeql-action/upload-sarif@db488ddef3bf6cb639b32c2e9a7c0a7ea8271d28 # v4
+        with:
+          sarif_file: trivy-${{ matrix.image }}.sarif
+          category: trivy-${{ matrix.image }}

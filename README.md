@@ -11,6 +11,7 @@
 [![CI](https://github.com/LatentNoise/content/actions/workflows/ci.yml/badge.svg)](https://github.com/LatentNoise/content/actions/workflows/ci.yml)
 [![Docker](https://img.shields.io/badge/Docker-amd64%20%C2%B7%20arm64-2496ED.svg?logo=docker&logoColor=white)](docs/operations/deployment.md)
 [![License](https://img.shields.io/badge/License-AGPL--3.0--or--later-green.svg)](LICENSE)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/LatentNoise/content/badge)](https://scorecard.dev/viewer/?uri=github.com/LatentNoise/content)
 
 [Quick start](#quick-start) ·
 [HomeTube](#hometube--youtube-focused) ·
@@ -573,8 +574,11 @@ versions, ports, storage and delivery, language preferences, server-side
 cookie credentials, optional LLM/STT runners, CORS, and notifications. No
 release check makes an outbound request unless you configure one.
 
-The V1 API has no built-in authentication. Keep it on a trusted network or put
-an authenticating reverse proxy in front of any externally reachable instance.
+The V1 API has no built-in authentication: anyone who can reach it can submit
+jobs, upload files and read every artifact. Keep it on a trusted network, or put
+an authenticating reverse proxy in front of any externally reachable instance —
+and do not publish the port. What an attacker who reaches the API can and cannot
+do is written out in [docs/operations/threat-model.md](docs/operations/threat-model.md).
 See [deployment](docs/operations/deployment.md) for configuration, health
 checks, data layout, authenticated sources, and production guidance, and
 [ADR 0024](docs/architecture-decisions/0024-no-authentication-is-still-the-answer.md)

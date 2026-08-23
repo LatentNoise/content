@@ -1,0 +1,53 @@
+# The one label Content carries, and the reason it is this one.
+#
+# A badge a project awards itself costs nothing to produce and therefore says
+# nothing. A Scorecard is an automated third-party re-check of this repository
+# — pinned actions, token permissions, branch protection, maintenance, released
+# artifacts — published to a public API that anyone can query without asking
+# us, and refreshed every week.
+#
+# It will score badly in places. That is deliberate: a number that can go down
+# is a measurement, and a seal that only ever gets awarded is marketing. See
+# ADR 0026.
+
+name: Scorecard
+
+on:
+  schedule:
+    - cron: "41 5 * * 1" # Mondays, after the image scan
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions: read-all
+
+jobs:
+  analysis:
+    name: OpenSSF Scorecard
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      security-events: write # the SARIF upload, so findings reach the Security tab
+      id-token: write # OIDC: signs the result for the public API — no stored secret
+      contents: read
+      actions: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Run the analysis
+        uses: ossf/scorecard-action@2d1146689b8cda280b9bc96326124645441f03bc # v2.4.4
+        with:
+          results_file: scorecard.sarif
+          results_format: sarif
+          # Publishing is the point: without it the score is another private
+          # claim, and the badge in the README has nothing to read.
+          publish_results: true
+
+      - name: Publish the findings to the Security tab
+        uses: github/codeql-action/upload-sarif@db488ddef3bf6cb639b32c2e9a7c0a7ea8271d28 # v4
+        with:
+          sarif_file: scorecard.sarif
+          category: scorecard

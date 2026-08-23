@@ -47,6 +47,7 @@
 !.github/CODEOWNERS
 !.github/ISSUE_TEMPLATE/*.yml
 !.github/workflows/*.yml
+!.github/dependabot.yml
 
 !apps/web-hometube/.streamlit/config.toml
 !apps/web-studio/.streamlit/config.toml

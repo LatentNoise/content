@@ -20,6 +20,16 @@ Please include:
 them. Content is designed so secrets never enter a request (INV-009); please do
 not undo that in a bug report.
 
+## Before reporting: what is already known and stated
+
+Content's API has **no authentication** — that is a decision, not an oversight
+(ADR 0024), and what it means for an operator is written out in
+[docs/operations/threat-model.md](docs/operations/threat-model.md). A report
+that an unauthenticated caller can use the API is describing documented,
+intended behaviour. What *is* worth reporting is anything that escapes the
+bounds that page claims: delivery writing outside the library root, a request
+that makes credentials observable, an upload that gets executed.
+
 ## What to expect
 
 This is a single-maintainer project with no company behind it. There is **no
