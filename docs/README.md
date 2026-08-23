@@ -29,14 +29,18 @@ The map of everything documented, from intent to operations. The root
   library (ADR 0009/0018)
 - [repository-architecture.md](repository-architecture.md) — the monorepo: one
   engine, the SDK as the single door, every client thin (ADR 0011/0015/0016)
-- [architecture-decisions/](architecture-decisions/) — ADR 0001–0025. Awaiting a
-  decision: [0025 retrying only what failed](architecture-decisions/0025-retrying-only-what-failed.md),
+- [architecture-decisions/](architecture-decisions/) — ADR 0001–0027. Awaiting a
+  decision: [0027 playlist synchronization](architecture-decisions/0027-playlist-synchronization.md),
+  [0025 retrying only what failed](architecture-decisions/0025-retrying-only-what-failed.md),
   [0023 retention and reclaiming disk](architecture-decisions/0023-retention-and-reclaiming-disk.md),
   [0024 no authentication, and what would change that](architecture-decisions/0024-no-authentication-is-still-the-answer.md).
   Recently accepted and implemented:
   [0022 `original` as a language token](architecture-decisions/0022-original-as-a-language-token.md)
 - [hometube-reuse-audit.md](hometube-reuse-audit.md) — what was kept from
   HomeTube, component by component
+- [playlist-synchronization-review.md](playlist-synchronization-review.md) — the
+  evidence behind ADR 0027: what HomeTube's sync solved, what not to port from
+  it, and the four things that must be decided before any sync code exists
 
 ## Clients
 
