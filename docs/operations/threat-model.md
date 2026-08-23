@@ -76,7 +76,10 @@ input for a living. Those are scanned weekly against the *published* images and
 the findings land in this repository's Security tab (ADR 0026).
 
 Keeping the image current is therefore the single most effective thing an
-operator does. Content is pre-1.0 and only the latest release is supported
+operator does, and the first scan says so with numbers: of 87 CRITICAL/HIGH
+findings across the four published images, every one was in the Debian base
+layer, and 56 of them already have a fix published upstream. Those 56 go away
+on a rebuild. Content is pre-1.0 and only the latest release is supported
 (SECURITY.md).
 
 ## Reporting something

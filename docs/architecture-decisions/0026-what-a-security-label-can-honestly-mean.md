@@ -159,6 +159,16 @@ user's actual safety than every other item on this page combined.
   costs a triage. That recurring cost is the actual price of this ADR, and it
   is charged to a single maintainer — which is the strongest argument against
   going further than these three moves.
+
+  The first run measured that price. At `CRITICAL..LOW` it produced **300
+  alerts** across the four images; narrowed to `CRITICAL,HIGH`, **87**. Every
+  one sits in the Debian base layer — `perl-base`, the `util-linux` family,
+  `openssl` — and **31 have no fixed version published at all**, which is the
+  clearest possible vindication of not gating a build on them. The remaining 56
+  do have fixes, and they say one useful thing between them: *rebuild the
+  image.* The severity floor was raised to `HIGH` on the strength of that first
+  run, because 213 medium and low findings in base packages is precisely the
+  noise this ADR argues against, arriving by the front door.
 - A lockfile is *not* adopted here. It is the correct fix for finding 1 and it
   is a real change to how the project builds and updates; it belongs in its own
   decision, with automated update PRs, rather than being smuggled in under a
