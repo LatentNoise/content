@@ -30,7 +30,7 @@ LABEL org.opencontainers.image.base.name="docker.io/jauderho/yt-dlp:${YTDLP_BASE
     org.opencontainers.image.source="https://github.com/LatentNoise/content" \
     org.opencontainers.image.authors="Yann Orieult" \
     org.opencontainers.image.url="https://github.com/LatentNoise/content" \
-    org.opencontainers.image.version="0.6.6"
+    org.opencontainers.image.version="0.6.7"
 
 # ttf-dejavu: PDF output for non-Latin scripts. Without a Unicode font the
 # renderer falls back to Helvetica, which draws Latin-1 only — a Japanese or
