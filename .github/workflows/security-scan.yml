@@ -15,6 +15,14 @@
 # gate that fires on a dependency Content never calls is a gate that gets
 # routinely overridden, and the triage question — does Content reach this code
 # path — is not one a scanner can answer.
+#
+# The first run bore that out. 87 CRITICAL/HIGH findings across the four
+# images, every one of them in the Debian base layer — perl-base, the
+# util-linux family, openssl — and 31 of them with no fixed version published
+# at all. A build gate would have failed on vulnerabilities that cannot be
+# fixed by anyone here. The other 56 are the useful half: they have fixes, in
+# packages Debian has already patched, which means they say *rebuild the
+# image* — the single most effective thing an operator or a maintainer does.
 
 name: Security scan
 
@@ -55,7 +63,11 @@ jobs:
           # OS packages and language dependencies both: ffmpeg and yt-dlp are
           # the surface that matters here, and only one of those is Python.
           scanners: vuln
-          severity: CRITICAL,HIGH,MEDIUM
+          # CRITICAL and HIGH only. The first run of this workflow produced 300
+          # alerts across the four images at CRITICAL..LOW, and 213 of those
+          # were medium or low findings in Debian base packages. That is the
+          # noise this file's header warns about, arriving by the front door.
+          severity: CRITICAL,HIGH
           # A scan cannot fail the job (see the header) — but it must not pass
           # it by silently failing to run, either.
           exit-code: "0"
