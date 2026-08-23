@@ -1,0 +1,23 @@
+# Actions only, deliberately.
+#
+# Every action in this repository is pinned to a commit SHA, which is the right
+# thing and which also means a pin goes stale silently — nothing tells you the
+# upstream released a fix for the SHA you froze. That is exactly the gap a bot
+# closes well: it re-points the SHA and updates the trailing version comment.
+#
+# The Python side is not here on purpose. There is no lockfile (ADR 0026,
+# finding 1); dependencies are floating ranges, so a bot could only ever raise
+# a lower bound — churn without a corresponding gain in what is actually
+# installed. When a lockfile exists, that decision should be revisited in the
+# same breath.
+
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: "" # this repository writes sentences, not conventional commits
+    labels: []
+    open-pull-requests-limit: 3

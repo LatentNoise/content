@@ -31,6 +31,7 @@ The map of everything documented, from intent to operations. The root
   engine, the SDK as the single door, every client thin (ADR 0011/0015/0016)
 - [architecture-decisions/](architecture-decisions/) — ADR 0001–0027. Awaiting a
   decision: [0027 playlist synchronization](architecture-decisions/0027-playlist-synchronization.md),
+  [0026 what a security label can honestly mean](architecture-decisions/0026-what-a-security-label-can-honestly-mean.md),
   [0025 retrying only what failed](architecture-decisions/0025-retrying-only-what-failed.md),
   [0023 retention and reclaiming disk](architecture-decisions/0023-retention-and-reclaiming-disk.md),
   [0024 no authentication, and what would change that](architecture-decisions/0024-no-authentication-is-still-the-answer.md).
@@ -71,6 +72,9 @@ One engine, one official SDK, thin clients — each documents itself:
 - [operations/mcp-registry.md](operations/mcp-registry.md) — publishing
   `content-mcp` to the official MCP registry: `server.json`, the PyPI
   ownership marker, and what being listed does (and does not) buy
+- [operations/threat-model.md](operations/threat-model.md) — what an attacker
+  who can reach the API can do, what bounds it, and why the port must not be
+  published (ADR 0024/0026)
 - [operations/release-readiness.md](operations/release-readiness.md) — what
   "releasable" means · [operations/github-settings.md](operations/github-settings.md)
   — the hosting settings the governance model assumes
