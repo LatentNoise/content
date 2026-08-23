@@ -68,6 +68,13 @@ class ContentSettings:
     allowed_input_roots: tuple[Path, ...] = field(default_factory=tuple)
     ollama_url: str = "http://localhost:11434"
     ollama_model: str = ""  # empty = first installed model (deterministic)
+    # Ceiling on the context window the engine asks Ollama for. The window is
+    # sized per request from the prompt; this bounds it, because the memory is
+    # the daemon's and the engine cannot see how much of it there is. 0 leaves
+    # the choice to the daemon entirely (the pre-0.6.8 behaviour). Raising it
+    # extends how long a recording can be summarised whole — at the cost of RAM
+    # on the machine running Ollama.
+    ollama_max_context: int = 32768
     # Speech-to-text (audio.transcribe) model, used when the optional [stt]
     # extra (faster-whisper) is installed. Absent extra = variants unavailable.
     whisper_model: str = "small"
@@ -530,6 +537,7 @@ def settings_from_env() -> ContentSettings:
         allowed_input_roots=roots,
         ollama_url=os.getenv("CONTENT_OLLAMA_URL", "http://localhost:11434"),
         ollama_model=os.getenv("CONTENT_OLLAMA_MODEL", ""),
+        ollama_max_context=_to_int(os.getenv("CONTENT_OLLAMA_MAX_CONTEXT"), 32768),
         whisper_model=os.getenv("CONTENT_WHISPER_MODEL", "small"),
         pdf_renderer=os.getenv("CONTENT_PDF_RENDERER", "auto").strip().lower(),
         typst_binary=os.getenv("CONTENT_TYPST_BINARY", "typst"),
