@@ -18,7 +18,7 @@ prose runs nearer 4), so it can miss a truncation but can never invent one.
 
 from __future__ import annotations
 
-from content.providers.ollama import _warn_if_truncated
+from content.providers.ollama import _context_for, _warn_if_truncated
 
 
 class _Ctx:
@@ -44,8 +44,9 @@ def test_a_truncated_prompt_is_reported():
     assert "16387" in message and "silently" in message
     assert details["prompt_eval_count"] == 16_387
     assert details["prompt_tokens_at_least"] == 24_500
-    # The remedy is named, since the ceiling is the daemon's, not the engine's.
-    assert "OLLAMA_CONTEXT_LENGTH" in message
+    # The remedy is named — and it is the engine's own setting, since the engine
+    # now asks for the window rather than inheriting the daemon's.
+    assert "CONTENT_OLLAMA_MAX_CONTEXT" in message
 
 
 def test_a_prompt_that_fitted_says_nothing():
@@ -216,3 +217,71 @@ def test_a_warning_does_not_leak_into_the_next_job(store, settings, providers):
 
     assert store.list_artifacts(noisy)[0]["provenance"]["warnings"] != []
     assert store.list_artifacts(quiet)[0]["provenance"]["warnings"] == []
+
+
+# --- asking for a window that fits, instead of hoping ---------------------------
+#
+# Measured on gemma3:4b, Ollama 0.32, against a 32 768-token window:
+#
+#     prompt 27 304 tokens -> read 27 304   (whole)
+#     prompt 33 363 tokens -> read 16 387   (half the window, plus scaffolding)
+#
+# and again at a requested window of 49 152:
+#
+#     prompt 50 319 tokens -> read 24 579   (half the window, plus scaffolding)
+#
+# Ollama does not degrade gracefully past its window: it keeps half of it. Two
+# percent over the line costs fifty percent of the source, which is why the
+# engine now sizes the window from the prompt rather than inheriting whatever
+# single global number the daemon was started with.
+
+
+def test_a_short_prompt_does_not_reserve_a_long_window():
+    """The cheap direction of the same change: a two-page summary no longer
+    reserves a window sized for the longest job the operator once anticipated."""
+    assert _context_for("x" * 1_000, 32_768) == 4_096
+
+
+def test_the_window_grows_with_the_prompt():
+    # 60 000 characters of prose is ~16 000 tokens; asking for 22 048 clears it
+    # with the margin the 3-characters-per-token estimate is chosen to give.
+    assert _context_for("x" * 60_000, 32_768) == 22_048
+
+
+def test_a_two_hour_transcript_fits_under_the_default_ceiling():
+    """The case the maintainer asked about. ~18 000 words of French speech is
+    about 104 000 characters, measured at 27 400 tokens — under the 32 768
+    default, so it is summarised whole rather than halved."""
+    assert _context_for("x" * 104_000, 32_768) == 32_768
+    # and the estimate is not what limits it: the true need is below the cap
+    assert 104_000 // 3 + 2_048 > 27_400
+
+
+def test_the_ceiling_is_a_ceiling():
+    """Beyond it the engine stops asking for more, and `_warn_if_truncated`
+    becomes the honest answer instead."""
+    assert _context_for("x" * 5_000_000, 32_768) == 32_768
+
+
+def test_zero_hands_the_choice_back_to_the_daemon():
+    """The pre-0.6.8 behaviour, kept reachable: an operator who has tuned
+    OLLAMA_CONTEXT_LENGTH themselves does not want it second-guessed."""
+    assert _context_for("x" * 500_000, 0) is None
+
+
+def test_a_member_of_a_collection_warns_like_any_other_step():
+    """A playlist member runs under its own ExecutionContext, built by
+    `application/collections.py` rather than by the executor. That context
+    forwards `cancel_check` and `on_progress`; when it did not also forward
+    `on_warning`, a truncated summary of episode 7 came back looking clean —
+    the default is a no-op, so nothing failed and nothing was reported."""
+    import inspect
+
+    from content.application import collections
+
+    source = inspect.getsource(collections)
+    built = source.count("ExecutionContext(")
+    forwarded = source.count("on_warning=ctx.on_warning")
+    assert built and forwarded == built, (
+        f"{built} ExecutionContext(s) built here, {forwarded} forward on_warning"
+    )
