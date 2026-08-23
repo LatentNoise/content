@@ -208,6 +208,11 @@ class CollectionMemberRunner:
                     input_materials=inputs,
                     cancel_check=ctx.cancel_check,
                     on_progress=ctx.on_progress,
+                    # A member's step warns like any other. Forgetting this
+                    # line does not break anything visibly: the default is a
+                    # no-op, so a truncated summary of episode 7 of a playlist
+                    # would simply come back looking clean.
+                    on_warning=ctx.on_warning,
                 ),
             )
             materials[member_step.id] = [

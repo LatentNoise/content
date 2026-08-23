@@ -157,6 +157,7 @@ is in [HomeTube's README](../../apps/web-hometube/README.md#language-preferences
 | **🧠 Providers & LLM runners** | | |
 | `CONTENT_YTDLP_EXTRA_ARGS` | — | The operator's yt-dlp args (trusted), added to every call |
 | `CONTENT_OLLAMA_URL` / `_MODEL` | host / auto | The **local** LLM for `summary`, `translation` and derived `chapters`. Empty model = the first installed one, resolved deterministically and recorded in provenance |
+| `CONTENT_OLLAMA_MAX_CONTEXT` | `32768` | Ceiling on the context window the engine asks Ollama for. The window is sized per request from the prompt; this bounds it, because the memory is the daemon's. Ollama does not degrade gracefully past its window — it keeps **half** of it, so a prompt 2% too long loses 50% of the source. Raising this extends how long a recording can be summarised whole, at the cost of RAM where Ollama runs. `0` hands the choice back to the daemon |
 | `CONTENT_WHISPER_MODEL` | `small` | The speech-to-text model (requires the `[stt]` extra / an image built with `INSTALL_STT=true`) — activates transcript/summary **from audio** |
 | `CONTENT_ANTHROPIC_API_KEY` / `_MODEL` | — / `claude-sonnet-5` | The Anthropic **cloud** LLM for `summary`, `translation` and `chapters` (a key = active; excluded if `privacy.allow_cloud_providers:false`) |
 | `CONTENT_OPENAI_API_KEY` / `_MODEL` | — / `gpt-4o-mini` | The OpenAI **cloud** LLM, same three operations |

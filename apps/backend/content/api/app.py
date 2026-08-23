@@ -276,7 +276,13 @@ def create_app(
     settings = settings or settings_from_env()
     store = store or Store(settings.db_path)
     if providers is None:
-        summarizers: list = [OllamaProvider(settings.ollama_url, settings.ollama_model)]
+        summarizers: list = [
+            OllamaProvider(
+                settings.ollama_url,
+                settings.ollama_model,
+                settings.ollama_max_context,
+            )
+        ]
         if settings.anthropic_api_key:
             summarizers.append(
                 CloudSummarizer(
