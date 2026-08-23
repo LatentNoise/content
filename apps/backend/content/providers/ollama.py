@@ -35,6 +35,55 @@ from content.providers.base import (
 _AVAILABILITY_TTL_SECONDS = 30.0
 
 
+# A token is worth at least this many characters of ordinary prose. Used only
+# to compute a *lower bound* on the prompt's token count, so the check can
+# never invent a truncation it did not see: real text runs nearer 4 characters
+# per token, and scripts like Chinese run nearer 1 — which makes this bound
+# conservative for Latin text and simply silent for CJK. Missing a warning is
+# the acceptable failure here; crying wolf is not.
+_CHARS_PER_TOKEN_FLOOR = 8
+
+
+def _warn_if_truncated(prompt, payload, model, ctx) -> None:
+    """Say so when the daemon read less of the prompt than we sent it.
+
+    Measured on the real deployment (Ollama 0.32, gemma3:4b): a 32 400-word
+    transcript and a 90 000-word one both came back with
+    ``prompt_eval_count`` of exactly 16 387 — the default
+    ``OLLAMA_CONTEXT_LENGTH`` of 16 384 plus the chat scaffolding. The prompt is
+    **cut, not refused**: the job succeeds, the artifact looks right, and the
+    summary covers the beginning of a recording while appearing to cover all of
+    it. Nothing in the response says so; ``prompt_eval_count`` is the only
+    trace, and until now nothing read it.
+
+    Roughly 12 000 words — about 1 h 20 of speech — is where that starts. Below
+    it nothing is wrong, which is why this stays a warning on a successful step
+    rather than a failure.
+    """
+    read = payload.get("prompt_eval_count")
+    if not isinstance(read, int) or read <= 0:
+        return  # an older daemon, or a field we cannot trust: say nothing
+    floor = len(prompt) // _CHARS_PER_TOKEN_FLOOR
+    if read >= floor:
+        return
+    kept = max(1, round(100 * read / floor))
+    ctx.on_warning(
+        "partial_output",
+        (
+            f"The model read {read} tokens of a prompt of at least ~{floor}: "
+            f"at most {kept}% of the source reached it, and the rest was "
+            "silently dropped by the context window. Raise "
+            "OLLAMA_CONTEXT_LENGTH on the daemon, or send a shorter source."
+        ),
+        {
+            "provider": "ollama",
+            "model": model,
+            "prompt_eval_count": read,
+            "prompt_tokens_at_least": floor,
+        },
+    )
+
+
 class OllamaProvider:
     name = "ollama"
     location = "local"
@@ -194,5 +243,6 @@ class OllamaProvider:
             )
         except (urllib.error.URLError, OSError, TimeoutError) as exc:
             raise StepExecutionError("provider_error", f"Ollama unreachable: {exc}")
+        _warn_if_truncated(prompt, payload, model, ctx)
         content = (payload.get("message") or {}).get("content", "")
         return strip_thinking(content)

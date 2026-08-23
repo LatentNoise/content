@@ -240,22 +240,37 @@ def get_job(client: ContentClient, job_id: str) -> dict[str, Any]:
             if not result["error"]:
                 result["error"] = failures[0]["error"]
     if job.is_terminal:
-        result["artifacts"] = [
-            {
-                "id": a.id,
-                "type": a.type,
-                # The name to show a user (ADR 0017); the technical job-store
-                # name is an implementation detail agents don't need.
-                "filename": a.display_filename or a.filename,
-                # Where the file landed in the server's delivery library,
-                # relative to its root ("" = no delivered copy) — ADR 0018.
-                "delivered_path": a.delivered_path,
-                "media_type": a.media_type,
-                "size_bytes": a.size_bytes,
-            }
-            for a in client.artifacts(job_id)
-        ]
+        result["artifacts"] = [_artifact_summary(a) for a in client.artifacts(job_id)]
+        # A step can succeed while doing less than was asked — a summary built
+        # from the first 16k tokens of a two-hour transcript is the case this
+        # exists for. Surfaced at job level too, because an agent that reads
+        # only the status would otherwise report the result as complete.
+        caveats = [w for a in result["artifacts"] for w in a.get("warnings", [])]
+        if caveats:
+            result["warnings"] = caveats
     return result
+
+
+def _artifact_summary(artifact) -> dict[str, Any]:
+    summary: dict[str, Any] = {
+        "id": artifact.id,
+        "type": artifact.type,
+        # The name to show a user (ADR 0017); the technical job-store name is
+        # an implementation detail agents don't need.
+        "filename": artifact.display_filename or artifact.filename,
+        # Where the file landed in the server's delivery library, relative to
+        # its root ("" = no delivered copy) — ADR 0018.
+        "delivered_path": artifact.delivered_path,
+        "media_type": artifact.media_type,
+        "size_bytes": artifact.size_bytes,
+    }
+    warnings = (getattr(artifact, "provenance", None) or {}).get("warnings") or []
+    if warnings:
+        summary["warnings"] = [
+            {"code": w.get("code", ""), "message": w.get("message", "")}
+            for w in warnings
+        ]
+    return summary
 
 
 def cancel_job(client: ContentClient, job_id: str) -> dict[str, Any]:

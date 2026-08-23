@@ -61,6 +61,7 @@ class _RunState:
         self._produced_count = {output.id: 0 for output in request.outputs}
         self._step_materials: dict[str, list[Material]] = {}
         self._step_artifact_ids: dict[str, list[str]] = {}
+        self._step_warnings: dict[str, list[dict]] = {}
         self._stop_new_steps = False
 
     def transition(self, step_id: str, target: str) -> None:
@@ -103,6 +104,15 @@ class _RunState:
                 for artifact_id in self._step_artifact_ids.get(dep, [])
             ]
         return materials, artifact_ids
+
+    def record_warning(self, step_id: str, warning: dict) -> None:
+        """A step reports it succeeded while doing less than was asked."""
+        with self._lock:
+            self._step_warnings.setdefault(step_id, []).append(warning)
+
+    def warnings_for(self, step_id: str) -> list[dict]:
+        with self._lock:
+            return list(self._step_warnings.get(step_id, []))
 
     def count_artifact(self, output_id: str) -> None:
         with self._lock:
@@ -361,7 +371,9 @@ class JobExecutor:
                 produced, reused_from_job, producer_override = reused
                 promote_mode = "copy"
             else:
-                produced = self._run_step(job_id, step, storage, deadline, inputs)
+                produced = self._run_step(
+                    job_id, step, storage, deadline, inputs, state
+                )
                 reused_from_job, producer_override = "", None
                 promote_mode = "move"
             artifact_ids, materials = self._register_products(
@@ -422,6 +434,7 @@ class JobExecutor:
         storage: JobStorage,
         deadline: float | None,
         inputs: list[Material],
+        state: _RunState,
     ) -> list[ProducedFile]:
         runner = self._providers.get(step.provider)
         timeout = float(self._settings.step_timeout_seconds)
@@ -436,6 +449,20 @@ class JobExecutor:
                     job_id, step.id, percent, 100.0, "percent", message
                 )
 
+        def on_warning(code: str, message: str, details: dict) -> None:
+            """A step succeeded while doing less than was asked.
+
+            Two destinations, because they answer two questions. The event
+            answers "what happened during this job"; the artifact attribute
+            answers "can I trust this file", which is the one a caller holding
+            the artifact months later actually asks.
+            """
+            warning = {"code": code, "message": message, "details": details}
+            state.record_warning(step.id, warning)
+            self._events.publish(
+                job_id, "step.warning", {"step_id": step.id, **warning}
+            )
+
         return runner.execute(
             step,
             ExecutionContext(
@@ -447,6 +474,7 @@ class JobExecutor:
                 input_materials=inputs,
                 cancel_check=lambda: self._store.is_cancel_requested(job_id),
                 on_progress=on_progress,
+                on_warning=on_warning,
             ),
         )
 
@@ -568,6 +596,7 @@ class JobExecutor:
                     parent_artifact_ids,
                     producer_override,
                     display_filename,
+                    state.warnings_for(step.id),
                 )
                 state.count_artifact(output.id)
                 all_artifact_ids.append(artifact_id)
@@ -650,6 +679,7 @@ class JobExecutor:
         parent_artifact_ids: list[str],
         producer_override: dict | None = None,
         display_filename: str = "",
+        warnings: list[dict] | None = None,
     ) -> str:
         runner = self._providers.get(step.provider)
         producer = producer_override or {
@@ -675,6 +705,11 @@ class JobExecutor:
                     "source_ids": [step.source_id] if step.source_id else [],
                     "parent_artifact_ids": parent_artifact_ids,
                     "producer": producer,
+                    # Warnings the step raised travel with the artifact, not
+                    # only with the job: "was this summary built from the whole
+                    # transcript" is a question asked of the file, long after
+                    # the job's events have scrolled away.
+                    "warnings": warnings or [],
                     "attributes": item.attributes,
                 },
             }
