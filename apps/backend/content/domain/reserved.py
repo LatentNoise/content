@@ -72,6 +72,26 @@ def _hints_set(request) -> bool:
 
 RESERVED_FIELDS: tuple[ReservedField, ...] = (
     ReservedField(
+        path="outputs[].options.format",
+        disposition="refuse",
+        # The voice service answers mp3. Producing wav or opus means a
+        # transcode, which is ffmpeg's job and a step of its own — so the
+        # option is declared in the contract, because the intent is real, and
+        # refused by name until that step exists. Accepting it and returning an
+        # mp3 anyway is the exact shape of promise D-01 forbids: the client
+        # gets a file, the file plays, and the format is not the one asked for.
+        triggered=lambda r: any(
+            getattr(o, "type", "") == "speech"
+            and getattr(getattr(o, "options", None), "format", "mp3") != "mp3"
+            for o in r.outputs
+        ),
+        reason=(
+            "Only `mp3` is implemented for speech: the synthesiser produces it "
+            "natively and no transcoding step is wired yet."
+        ),
+        remedy='Request `format: "mp3"`.',
+    ),
+    ReservedField(
         path="execution.mode",
         disposition="refuse",
         triggered=lambda r: r.execution.mode != "async",

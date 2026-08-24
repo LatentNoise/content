@@ -1494,7 +1494,7 @@ def _plan_pdf(
             outputs_by_id, builder, resolved_output_ids[0], path, errors, warnings
         )
     else:
-        dependency_id = _pdf_from_source(
+        dependency_id = _readable_from_source(
             source, source_analysis, builder, providers, path, errors, credential_id
         )
     if dependency_id is None:
@@ -1513,6 +1513,94 @@ def _plan_pdf(
             # signature. It is a server-side *name*; the public contract never
             # carries a template, a path or renderer options.
             "template": settings.pdf_template,
+        },
+        depends_on=[dependency_id],
+        resource_key=builder.step_resource_key(dependency_id),
+    )
+
+
+# --- speech ---------------------------------------------------------------------
+
+
+def _plan_speech(
+    output,
+    index: int,
+    builder: PlanBuilder,
+    outputs_by_id: dict,
+    source,
+    source_analysis: SourceAnalysis | None,
+    providers: ProviderRegistry,
+    resolved_output_ids: list[str],
+    errors: list[ValidationIssue],
+    credential_id: str | None = None,
+) -> None:
+    """Speak a sibling output, or the source's own readable text.
+
+    The same two shapes as `_plan_pdf`, because the input is the same thing:
+    readable prose. Speaking and rendering differ in what comes out, not in
+    what goes in — which is why they share `RENDERABLE_OUTPUT_TYPES` and the
+    source-side reader instead of each growing their own list.
+    """
+    path = f"outputs[{index}]"
+    options = output.options
+
+    from content.providers.base import runner_is_available
+
+    runners = [
+        runner
+        for runner in providers.runners_for_operation(T.TEXT_SPEAK)
+        if runner_is_available(runner)
+    ]
+    if not runners:
+        errors.append(
+            ValidationIssue(
+                code=codes.CAPABILITY_UNAVAILABLE,
+                path=path,
+                message=(
+                    "No speech runner is installed. Install the optional TTS "
+                    "extra to enable `speech` outputs."
+                ),
+            )
+        )
+        return
+    runner = runners[0]
+
+    if resolved_output_ids:
+        ref_id = resolved_output_ids[0]
+        ref_output = outputs_by_id.get(ref_id)
+        if ref_output is None:
+            return  # unknown reference already reported structurally
+        if ref_output.type not in RENDERABLE_OUTPUT_TYPES:
+            errors.append(
+                ValidationIssue(
+                    code=codes.INVALID_OPTION,
+                    path=f"{path}.from_outputs",
+                    message=(
+                        f"Speech reads readable content, not a "
+                        f"'{ref_output.type}' output. Expected one of: "
+                        f"{', '.join(RENDERABLE_OUTPUT_TYPES)}."
+                    ),
+                )
+            )
+            return
+        dependency_id = builder.step_of_output(ref_id)
+    else:
+        dependency_id = _readable_from_source(
+            source, source_analysis, builder, providers, path, errors, credential_id
+        )
+    if dependency_id is None:
+        return
+
+    builder.bound_step(
+        output.id,
+        operation=T.TEXT_SPEAK,
+        provider=runner.name,
+        source_id=getattr(source, "id", None),
+        params={
+            "voice": options.voice,
+            "language": options.language,
+            "format": options.format,
+            "speed": options.speed,
         },
         depends_on=[dependency_id],
         resource_key=builder.step_resource_key(dependency_id),
@@ -1667,7 +1755,7 @@ def _pdf_from_output(
     return builder.step_of_output(ref_id)  # None when that output failed
 
 
-def _pdf_from_source(
+def _readable_from_source(
     source, source_analysis, builder, providers, path, errors, credential_id
 ) -> str | None:
     """Render the source's own readable content — the article-to-PDF case."""
@@ -2346,6 +2434,23 @@ def _build_plan(
                 output_ids,
                 errors,
                 warnings,
+                credential_id,
+            )
+            continue
+
+        if output.type == "speech":
+            # Before the source guard, exactly as `pdf`: reading a sibling
+            # output aloud needs no source of its own.
+            _plan_speech(
+                output,
+                index,
+                builder,
+                outputs_by_id,
+                source,
+                source_analysis,
+                providers,
+                output_ids,
+                errors,
                 credential_id,
             )
             continue
