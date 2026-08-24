@@ -23,7 +23,7 @@
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/architecture-dark.svg">
   <img src="docs/assets/architecture-light.svg" width="100%"
-       alt="Sources — a URL, a file, or text — enter one self-hosted Content engine that analyzes, plans, runs and delivers. HomeTube, Studio, Console, the browser extension, the MCP server, the CLI, the Python SDK and the REST API all sit above the engine and reach it through the same public contract. Out come video, audio, subtitles, transcript, summary, translation, chapters and PDF.">
+       alt="Sources — URLs, files, or texts, several of them in a single job — feed one self-hosted Content engine that analyzes, plans, runs and delivers. HomeTube, Studio, Console, the browser extension, the MCP server, the CLI, the Python SDK and the REST API all sit above the engine and reach it through the same public contract. Out come video, audio, subtitles, transcript, summary, translation, chapters and PDF.">
 </picture>
 
 </div>

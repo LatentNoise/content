@@ -51,10 +51,16 @@ CLIENTS = (
     ("REST API", "Anything"),
 )
 SOURCES = (
-    ("URL", "one or a collection"),
-    ("File", "one or many"),
-    ("Text", "single or batched"),
+    ("URLs", "one, many, or a playlist"),
+    ("Files", "one or many, uploaded"),
+    ("Texts", "pasted or batched"),
 )
+# Plural, because `sources` is an array and a single job really does carry
+# several — verified: three sources each with their own outputs validates. The
+# caption is there to stop the plural over-claiming: an output consuming two
+# sources at once is refused (`too_many_inputs`), so the promise is "many
+# sources in one job", not "many sources merged into one file".
+SOURCES_NOTE = "several in a single job"
 STEPS = (
     ("Analyze", "understand"),
     ("Plan", "resolve the path"),
@@ -148,9 +154,9 @@ PALETTES = {
 # Little marks that say what a source *is* without a word. Drawn at the origin
 # and translated into place, so the icon and its chip cannot drift apart.
 SOURCE_ICONS = {
-    "URL": "M-6 0h12 M0 -6c-3 3 -3 9 0 12 M0 -6c3 3 3 9 0 12",
-    "File": "M-5 -6h7l4 4v8h-11z M2 -6v4h4",
-    "Text": "M-6 -4h12 M-6 0h9 M-6 4h7",
+    "URLs": "M-6 0h12 M0 -6c-3 3 -3 9 0 12 M0 -6c3 3 3 9 0 12",
+    "Files": "M-5 -6h7l4 4v8h-11z M2 -6v4h4",
+    "Texts": "M-6 -4h12 M-6 0h9 M-6 4h7",
 }
 
 
@@ -225,8 +231,9 @@ def render(scheme: str) -> str:
         f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {W} {H}" '
         f'width="{W}" height="{H}" role="img" aria-labelledby="t d">\n'
         f'  <title id="t">Content\'s architecture</title>\n'
-        f'  <desc id="d">Sources — a URL, a file, or text — feed one '
-        f"self-hosted Content engine that analyzes, plans, runs and delivers. "
+        f'  <desc id="d">Sources — URLs, files, or texts, several of them in '
+        f"a single job — feed one self-hosted Content engine that analyzes, "
+        f"plans, runs and delivers. "
         f"HomeTube, Studio, Console, the browser extension, the MCP server, the "
         f"CLI, the Python SDK and the REST API all sit above the engine and "
         f"reach it through the same public contract. Artifacts come out: video, "
@@ -315,6 +322,10 @@ def render(scheme: str) -> str:
             f'  <path d="M {BAND_X0 - 2} {ty:.1f} l-11 -5.5 v11 z" '
             f'fill="{p["label"]}" opacity="0.6"/>\n'
         )
+    o.append(
+        f'  <text x="{SOURCE_X + 4}" y="{top + block + 26:.1f}" class="cs" '
+        f'fill="{p["label"]}" text-anchor="start">{escape(SOURCES_NOTE)}</text>\n'
+    )
 
     # --- the engine ------------------------------------------------------------
     ew = BAND_X1 - BAND_X0

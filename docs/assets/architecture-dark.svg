@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 772" width="1280" height="772" role="img" aria-labelledby="t d">
   <title id="t">Content's architecture</title>
-  <desc id="d">Sources — a URL, a file, or text — feed one self-hosted Content engine that analyzes, plans, runs and delivers. HomeTube, Studio, Console, the browser extension, the MCP server, the CLI, the Python SDK and the REST API all sit above the engine and reach it through the same public contract. Artifacts come out: video, audio, subtitles, transcript, summary, translation, chapters and PDF.</desc>
+  <desc id="d">Sources — URLs, files, or texts, several of them in a single job — feed one self-hosted Content engine that analyzes, plans, runs and delivers. HomeTube, Studio, Console, the browser extension, the MCP server, the CLI, the Python SDK and the REST API all sit above the engine and reach it through the same public contract. Artifacts come out: video, audio, subtitles, transcript, summary, translation, chapters and PDF.</desc>
   <defs>
     <linearGradient id="eg" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#1f6feb"/><stop offset="58%" stop-color="#4f46e5"/><stop offset="100%" stop-color="#8957e5"/></linearGradient>
     <linearGradient id="fl" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="#3fb950"/><stop offset="45%" stop-color="#58a6ff"/><stop offset="100%" stop-color="#a371f7"/></linearGradient>
@@ -52,8 +52,8 @@
     <circle r="13" fill="#0d1f14" stroke="#238636"/>
     <path d="M-6 0h12 M0 -6c-3 3 -3 9 0 12 M0 -6c3 3 3 9 0 12" fill="none" stroke="#3fb950" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
   </g>
-  <text x="100" y="267.0" class="ct" fill="#e6edf3" text-anchor="start">URL</text>
-  <text x="100" y="287.0" class="cs" fill="#8b949e" text-anchor="start">one or a collection</text>
+  <text x="100" y="267.0" class="ct" fill="#e6edf3" text-anchor="start">URLs</text>
+  <text x="100" y="287.0" class="cs" fill="#8b949e" text-anchor="start">one, many, or a playlist</text>
   <path d="M 286 271.0 C 336 271.0, 304 315.0, 348 315.0" fill="none" stroke="#8b949e" stroke-width="2" stroke-linecap="round" opacity="0.6"/>
   <path d="M 358 315.0 l-11 -5.5 v11 z" fill="#8b949e" opacity="0.6"/>
   <rect x="40" y="318.0" width="240" height="62" rx="17" fill="#161b22" stroke="#30363d" filter="url(#lift)"/>
@@ -61,8 +61,8 @@
     <circle r="13" fill="#0d1f14" stroke="#238636"/>
     <path d="M-5 -6h7l4 4v8h-11z M2 -6v4h4" fill="none" stroke="#3fb950" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
   </g>
-  <text x="100" y="345.0" class="ct" fill="#e6edf3" text-anchor="start">File</text>
-  <text x="100" y="365.0" class="cs" fill="#8b949e" text-anchor="start">one or many</text>
+  <text x="100" y="345.0" class="ct" fill="#e6edf3" text-anchor="start">Files</text>
+  <text x="100" y="365.0" class="cs" fill="#8b949e" text-anchor="start">one or many, uploaded</text>
   <path d="M 286 349.0 C 336 349.0, 304 349.0, 348 349.0" fill="none" stroke="#8b949e" stroke-width="2" stroke-linecap="round" opacity="0.6"/>
   <path d="M 358 349.0 l-11 -5.5 v11 z" fill="#8b949e" opacity="0.6"/>
   <rect x="40" y="396.0" width="240" height="62" rx="17" fill="#161b22" stroke="#30363d" filter="url(#lift)"/>
@@ -70,10 +70,11 @@
     <circle r="13" fill="#0d1f14" stroke="#238636"/>
     <path d="M-6 -4h12 M-6 0h9 M-6 4h7" fill="none" stroke="#3fb950" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
   </g>
-  <text x="100" y="423.0" class="ct" fill="#e6edf3" text-anchor="start">Text</text>
-  <text x="100" y="443.0" class="cs" fill="#8b949e" text-anchor="start">single or batched</text>
+  <text x="100" y="423.0" class="ct" fill="#e6edf3" text-anchor="start">Texts</text>
+  <text x="100" y="443.0" class="cs" fill="#8b949e" text-anchor="start">pasted or batched</text>
   <path d="M 286 427.0 C 336 427.0, 304 383.0, 348 383.0" fill="none" stroke="#8b949e" stroke-width="2" stroke-linecap="round" opacity="0.6"/>
   <path d="M 358 383.0 l-11 -5.5 v11 z" fill="#8b949e" opacity="0.6"/>
+  <text x="44" y="484.0" class="cs" fill="#8b949e" text-anchor="start">several in a single job</text>
   <rect x="360" y="196" width="880" height="306" rx="44" fill="url(#eg)" filter="url(#glow)"/>
   <text x="800.0" y="258" text-anchor="middle" fill="#ffffff" font-size="36" font-weight="800" letter-spacing="-0.02em">Content engine</text>
   <text x="800.0" y="288" text-anchor="middle" fill="#dbeafe" font-size="16" font-weight="500">self-hosted · persistent · all business logic lives here</text>
