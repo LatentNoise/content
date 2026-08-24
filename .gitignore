@@ -49,6 +49,11 @@
 !.github/workflows/*.yml
 !.github/dependabot.yml
 
+# The README's architecture diagram, generated as one file per colour
+# scheme (scripts/gen_readme_diagram.py). SVG is text, so it belongs in
+# this allowlist; binary media stays out and is attached to releases.
+!docs/assets/*.svg
+
 !apps/web-hometube/.streamlit/config.toml
 !apps/web-studio/.streamlit/config.toml
 !apps/web-admin/.streamlit/config.toml
