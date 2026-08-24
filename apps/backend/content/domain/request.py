@@ -51,6 +51,7 @@ EXECUTABLE_OUTPUT_TYPES = (
     "document_text",
     "markdown",
     "pdf",
+    "speech",
     "keyframes",
 )
 
@@ -512,6 +513,42 @@ class PdfOutput(BaseOutput):
     options: PdfOptions = Field(default_factory=PdfOptions)
 
 
+class SpeechOptions(StrictModel):
+    """A spoken rendering of material another output already produced.
+
+    Small for the same reason `PdfOptions` is: everything about *what* is said
+    — language of the content, length, style — belongs to the output that
+    produced the text. What is left here is how it is read aloud.
+
+    `voice` is deliberately a free string rather than an enum. The catalogue
+    belongs to whichever synthesiser is installed, it changes without this
+    contract changing, and freezing today's list into the public model would
+    make every new voice a breaking change. Empty means "the runner picks one
+    that speaks `language`", which is the answer a client usually wants.
+    """
+
+    voice: str = ""
+    # The language to read in. `auto` takes it from the material, which already
+    # carries one for a transcript, a summary or a translation.
+    language: str = "auto"
+    format: Literal["mp3", "wav", "opus"] = "mp3"
+    # 1.0 is the voice's natural pace. Bounded rather than free: past these a
+    # synthesiser stops being intelligible, and a client asking for 10x wants
+    # an error rather than 40 minutes of noise.
+    speed: float = Field(default=1.0, ge=0.5, le=2.0)
+
+    @field_validator("language")
+    @classmethod
+    def _no_original_token(cls, value: str) -> str:
+        _reject_original(value, "a speech language")
+        return value
+
+
+class SpeechOutput(BaseOutput):
+    type: Literal["speech"]
+    options: SpeechOptions = Field(default_factory=SpeechOptions)
+
+
 class ThumbnailOptions(StrictModel):
     """A thumbnail is either the one the source already publishes or one cut
     out of the video. `source` chooses; `auto` prefers the published image when
@@ -697,6 +734,7 @@ ArtifactRequest = Annotated[
         SummaryOutput,
         TranslationOutput,
         ChaptersOutput,
+        SpeechOutput,
         DocumentTextOutput,
         MarkdownOutput,
         PdfOutput,

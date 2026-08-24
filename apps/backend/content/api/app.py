@@ -65,6 +65,7 @@ from content.processors.transcript import TranscriptProcessor
 from content.providers.base import ProviderRegistry
 from content.providers.cloud_llm import CloudSummarizer
 from content.providers.documents import DocumentProvider
+from content.providers.edge_speech import EdgeSpeechRunner
 from content.providers.ffmpeg import FfmpegProvider
 from content.providers.ollama import OllamaProvider
 from content.providers.webpage import WebPageProvider
@@ -308,6 +309,11 @@ def create_app(
                     settings.typst_binary, settings.pdf_font, settings.pdf_template
                 ),
                 ReportLabPdfProcessor(settings.pdf_font),
+                # Registered whether or not the extra is installed: an absent
+                # package makes it unavailable, which the capability layer
+                # reports with a reason. A runner that is simply missing from
+                # this list reports nothing at all.
+                EdgeSpeechRunner(),
                 *summarizers,
             ],
         )
