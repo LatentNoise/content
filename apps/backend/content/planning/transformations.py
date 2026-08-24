@@ -44,6 +44,12 @@ PDF = "pdf"
 # are an audio track either way, but this one has had text written into it, and
 # nothing downstream can recover the pairing from the audio alone.
 SYNCED_AUDIO = "synced_audio"
+# Spoken audio synthesised from readable material. Distinct from AUDIO, which
+# is a track *acquired from a source*: this one has no source track behind it,
+# it is text that was read aloud. Terminal, like PDF — nothing downstream
+# consumes it, and turning it back into text would be a transcription, not an
+# inverse.
+SPEECH = "speech"
 
 # --- operation names (stable, provider-independent verbs) ----------------------
 ACQUIRE_VIDEO = "media.acquire_video"
@@ -72,6 +78,10 @@ RENDER_PDF = "document.render_pdf"
 # as they are spoken. `synced_audio.generate` is the public capability id;
 # this is the transformation, as with document.render_pdf / pdf.render.
 AUDIO_SYNC_TEXT = "audio.sync_text"
+# Read text aloud. Same reasoning as RENDER_PDF: `speech.generate` is the public
+# capability id, `text.speak` is the transformation, and one may have several
+# implementations (a cloud voice service, a local synthesiser).
+TEXT_SPEAK = "text.speak"
 
 
 @dataclass(frozen=True)
@@ -232,6 +242,12 @@ DEFINITIONS: tuple[TransformationDefinition, ...] = (
     # the text, which is why it is a step and not a `format` option repeated on
     # summary, transcript, translation and chapters (R1 — one declaration).
     # `lossy`: the rendered page cannot be turned back into its source material.
+    TransformationDefinition(
+        operation=RENDER_PDF,
+        input_kinds=(TEXT, SUMMARY, TRANSCRIPT, TRANSLATION, CHAPTERS),
+        output_kinds=(PDF,),
+        lossy=True,
+    ),
     # audio + timed text -> the same audio, carrying the text. Two input kinds
     # on purpose, and the only transformation here that takes two: the pairing
     # *is* the product, and neither half can be inferred from the other.
@@ -240,10 +256,18 @@ DEFINITIONS: tuple[TransformationDefinition, ...] = (
         input_kinds=(AUDIO, TRANSCRIPT, SUBTITLES),
         output_kinds=(SYNCED_AUDIO,),
     ),
+    # Read readable material aloud. It takes the same text-bearing kinds as
+    # RENDER_PDF and for the same reason: speaking is orthogonal to *what*
+    # produced the text, so it is a step rather than a `voice` option repeated
+    # on summary, transcript, translation and chapters (R1 — one declaration).
+    # `lossy`, and not deterministic: a synthesiser is free to phrase the same
+    # sentence differently between versions, so the step is not cacheable on
+    # its inputs alone.
     TransformationDefinition(
-        operation=RENDER_PDF,
+        operation=TEXT_SPEAK,
         input_kinds=(TEXT, SUMMARY, TRANSCRIPT, TRANSLATION, CHAPTERS),
-        output_kinds=(PDF,),
+        output_kinds=(SPEECH,),
+        deterministic=False,
         lossy=True,
     ),
 )

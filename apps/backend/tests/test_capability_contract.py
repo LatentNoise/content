@@ -45,6 +45,9 @@ STABLE_CAPABILITY_IDS = {
     "markdown.export",
     # Rendering readable content into a paginated document.
     "pdf.render",
+    # Reading readable content aloud. Same input as pdf.render: what differs is
+    # what comes out, not what goes in.
+    "speech.generate",
     # Frames cut out of the video itself (prompt 11).
     "thumbnail.generate",
     "keyframes.extract",
