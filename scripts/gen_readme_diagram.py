@@ -55,11 +55,13 @@ SOURCES = (
     ("Files", "one or many, uploaded"),
     ("Texts", "pasted or batched"),
 )
-# Plural, because `sources` is an array and a single job really does carry
-# several — verified: three sources each with their own outputs validates. The
-# caption is there to stop the plural over-claiming: an output consuming two
-# sources at once is refused (`too_many_inputs`), so the promise is "many
-# sources in one job", not "many sources merged into one file".
+# Plural, because `sources` is documented 1..N and a job really does carry
+# several — Studio offers up to eight. The caption bounds the claim to what
+# runs today: several sources, each producing its own artifacts, in one job.
+# Aggregating several sources into one artifact is the `all_sources` scope,
+# which is designed, documented as "one aggregated result (fan-in)", and not
+# yet implemented — so the engine answers `scope_not_supported` rather than
+# refusing the request.
 SOURCES_NOTE = "several in a single job"
 STEPS = (
     ("Analyze", "understand"),
