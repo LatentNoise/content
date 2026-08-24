@@ -46,8 +46,12 @@ def test_both_schemes_carry_the_same_words():
         for scheme, target in TARGETS.items()
     }
     assert texts["light"] == texts["dark"]
-    for name in (*CLIENTS, *SOURCES, *ARTIFACTS):
-        assert name in texts["light"], f"{name} is drawn nowhere"
+    drawn = set(texts["light"])
+    for name, sub in (*CLIENTS, *SOURCES):
+        assert name in drawn, f"{name} is drawn nowhere"
+        assert sub in drawn, f"{name} has lost its subtitle"
+    for name in ARTIFACTS:
+        assert name in drawn, f"{name} is drawn nowhere"
 
 
 def test_no_chip_escapes_the_canvas():
