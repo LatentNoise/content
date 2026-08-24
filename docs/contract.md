@@ -163,7 +163,7 @@ and this paragraph is the reservation: a future language code spelled
 1. `from_sources` and `from_outputs` list existing ids; otherwise `unknown_source_reference` / `unknown_output_reference`.
 2. The `from_outputs` graph must be acyclic (`dependency_cycle`).
 3. If both are empty: the output consumes **the single source** of the request if `sources` holds only one; otherwise the `role: primary` source if it is unique; otherwise the error `ambiguous_inputs` ("precise from_sources"). No other inference.
-4. An output type imposes input requirements (e.g. `audio` requires exactly one audio-material input per instance in `single` scope: `too_many_inputs` otherwise).
+4. An output type imposes input requirements (e.g. `audio` requires exactly one audio-material input per instance in `single` scope: `too_many_inputs` otherwise). **This arity is a property of the scope, not of the type**: it binds `single` and `each_item`, both of which resolve one instance to one source. A scope that is *about* several sources — `each_source`, `all_sources`, `group` — is never `too_many_inputs`; it is well-formed, and today it answers `scope_not_supported`.
 5. A dependency that is declared but technically useless is not an error: it constrains ordering (the step waits) and the provenance. The planner never silently "corrects" the client's declarations.
 
 ### `scope`
