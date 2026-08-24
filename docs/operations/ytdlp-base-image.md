@@ -15,12 +15,39 @@ hard, notice automatically, upgrade deliberately.**
 | --- | --- |
 | **Pinned** | An explicit version *and* an immutable digest — never `:latest` |
 | **Detected** | A scheduled workflow compares the pin against upstream every week |
-| **Upgraded** | Only by the maintainer, only after local validation passes |
-| **Never** | No automatic bump, no dependency-update pull request, no auto-merge, no auto-publish |
+| **Upgraded** | The pin in the Dockerfile: only by the maintainer, only after local validation passes |
+| **Refreshed** | The *moving image tags*: daily and unattended, gated on a boot check and a `yt-dlp --version` check |
+| **Never** | No automatic edit to the pin, no auto-merge, and never a republished `X.Y.Z` |
 
-Pull requests are disabled on this repository ([CONTRIBUTING.md](../../CONTRIBUTING.md)),
-so the usual bot-opens-a-PR mechanism is not available and would not be wanted.
-The workflow files **an issue** instead: a notification, not a change.
+The workflow files **an issue** rather than opening a pull request: a
+notification, not a change. Unsolicited pull requests are closed unread
+([CONTRIBUTING.md](../../CONTRIBUTING.md)) — the maintainer's own are the normal
+route for everything else, and Dependabot opens them for pinned actions, but a
+base-image bump wants the local validation below rather than a green tick.
+
+### Why the tags are refreshed and the pin is not
+
+A watcher only shortens the time to *notice*. Between noticing and a release,
+every user's downloader stays broken — issue #28 spent six weeks in that gap,
+and the failure mode is total: "No video formats found", not a degraded result.
+
+What makes an unattended rebuild safe here is a distinction the tag scheme
+already draws. `X.Y.Z` is what was released and validated, and nothing
+republishes it. `latest`, `X.Y` and `X` **already move** — CI re-points them at
+every release, and `deploy/docker-compose.yml` defaults to `latest`. So
+`.github/workflows/ytdlp-refresh.yml` rebuilds the released tree on the newest
+base and re-points only those, which is a promise none of them were making.
+
+The source pin is untouched: the refresh passes the newer base as a
+`--build-arg`, the escape hatch described below. The weekly issue still gets
+filed, and the deliberate bump still happens — this only stops users waiting
+for it.
+
+It also catches something the yt-dlp framing misses. Upstream republishes the
+same yt-dlp version when the distro underneath it is patched, and every
+CRITICAL/HIGH finding in the image scan (ADR 0026) lives in exactly that layer.
+So the trigger is a **digest** change, not a version change, and the run summary
+says which of the two happened.
 
 ## How the pin is written
 

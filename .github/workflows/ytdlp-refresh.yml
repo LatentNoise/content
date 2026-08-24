@@ -1,0 +1,210 @@
+# Rebuild the current release on a newer yt-dlp, daily, and republish only the
+# tags that already move.
+#
+# yt-dlp is the one dependency that rots without anyone touching this
+# repository: YouTube changes its player, and a downloader that worked last
+# month answers "No video formats found". The failure is total rather than
+# subtle, and it arrives on YouTube's schedule, not on a release schedule. That
+# is why the weekly watcher exists — but a watcher only shortens the time to
+# *notice*. Between noticing and a maintainer cutting a release, the engine
+# stays broken for everybody, and issue #28 spent six weeks in exactly that gap.
+#
+# What makes this safe is a distinction the tag scheme already draws.
+# `X.Y.Z` is what was released and validated; it is never touched here. `latest`,
+# `X.Y` and `X` already move — CI re-points them at every release — and
+# `deploy/docker-compose.yml` defaults to `latest`. So a self-hoster who wants
+# a working downloader follows a moving tag and gets a fresh yt-dlp within a
+# day; one who wants exactly what shipped pins `X.Y.Z` and is unaffected.
+#
+# The source pin is likewise never edited. `docs/operations/ytdlp-base-image.md`
+# keeps its policy — the Dockerfile is bumped by the maintainer after local
+# validation — and this workflow only passes a newer base as a `--build-arg`,
+# which is the escape hatch that document already describes for trying a
+# candidate. The weekly watcher still files its issue, so the deliberate bump
+# still happens; this just stops users waiting for it.
+
+name: Refresh yt-dlp in the published image
+
+on:
+  schedule:
+    # Daily, 05:43 UTC. Off the hour: GitHub drops scheduled runs when the
+    # whole platform stampedes at :00.
+    - cron: "43 5 * * *"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Rebuild even if the pinned base is already current"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ytdlp-refresh
+  cancel-in-progress: false
+
+jobs:
+  check:
+    name: Is the released image carrying a stale yt-dlp?
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      stale: ${{ steps.check.outputs.update_available }}
+      release: ${{ steps.release.outputs.tag }}
+      version: ${{ steps.release.outputs.version }}
+      moving_tags: ${{ steps.release.outputs.moving_tags }}
+      new_version: ${{ steps.check.outputs.new_version }}
+      new_digest: ${{ steps.check.outputs.new_digest }}
+      pinned_version: ${{ steps.check.outputs.pinned_version }}
+    steps:
+      - name: Find the current release
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag=$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq .tagName)
+          version="${tag#v}"
+          owner=$(echo "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')
+          repo="ghcr.io/${owner}/content"
+          # Only the tags CI already re-points at every release. X.Y.Z is what
+          # was validated and is deliberately absent from this list.
+          case "$version" in
+            *-*) echo "A pre-release is not refreshed: $version" >&2; exit 1 ;;
+            *)
+              major="${version%%.*}"
+              minor="${version%.*}"
+              echo "moving_tags=${repo}:latest,${repo}:${minor},${repo}:${major}" >>"$GITHUB_OUTPUT"
+              ;;
+          esac
+          echo "tag=$tag" >>"$GITHUB_OUTPUT"
+          echo "version=$version" >>"$GITHUB_OUTPUT"
+          echo "Release $tag; moving tags will be re-pointed."
+
+      - name: Check out the released tree, not main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ steps.release.outputs.tag }}
+
+      - name: Compare its pin against upstream
+        id: check
+        # The same script the weekly watcher runs, against the *released*
+        # Dockerfile rather than main's — what users are running is what is
+        # being judged.
+        run: python3 .github/scripts/ytdlp_base_check.py
+        env:
+          DOCKERFILE: apps/backend/Dockerfile
+
+  refresh:
+    name: Rebuild ${{ needs.check.outputs.release }} on yt-dlp ${{ needs.check.outputs.new_version }}
+    needs: check
+    if: needs.check.outputs.stale == 'true' || inputs.force
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    permissions:
+      contents: read
+      packages: write # GHCR, via GITHUB_TOKEN — no stored registry secret
+    steps:
+      - name: Check out the released tree
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.check.outputs.release }}
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4.2.0
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+
+      - name: Log in to GHCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build for a boot check
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          file: apps/backend/Dockerfile
+          platforms: linux/amd64
+          load: true
+          tags: content-refresh-check:local
+          build-args: |
+            YTDLP_BASE_VERSION=${{ needs.check.outputs.new_version }}
+            YTDLP_BASE_DIGEST=${{ needs.check.outputs.new_digest }}
+          provenance: false
+          sbom: false
+
+      # Nothing is published that could not start and could not download. A
+      # daily unattended publish is only defensible if it is gated on the two
+      # things that actually break: the app failing to construct (0.5.0 shipped
+      # unbootable for exactly this reason) and yt-dlp failing to run.
+      - name: The app must build and yt-dlp must answer
+        run: |
+          set -euo pipefail
+          docker run --rm --entrypoint python content-refresh-check:local \
+            -c 'from content.api.app import create_app; create_app(); print("app ok")'
+          got=$(docker run --rm --entrypoint yt-dlp content-refresh-check:local --version)
+          echo "yt-dlp in the rebuilt image: $got"
+          want="${{ needs.check.outputs.new_version }}"
+          # Upstream writes 2026.08.19, yt-dlp reports 2026.08.19 — but an
+          # untagged candidate leaves `want` empty, and then there is nothing
+          # to compare and nothing to publish.
+          if [ -z "$want" ]; then
+            echo "The upstream digest carries no version tag; not publishing." >&2
+            exit 1
+          fi
+          if [ "$got" != "$want" ]; then
+            echo "Expected yt-dlp $want, image reports $got." >&2
+            exit 1
+          fi
+
+      - name: Publish the moving tags
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          file: apps/backend/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ needs.check.outputs.moving_tags }}
+          build-args: |
+            YTDLP_BASE_VERSION=${{ needs.check.outputs.new_version }}
+            YTDLP_BASE_DIGEST=${{ needs.check.outputs.new_digest }}
+          labels: |
+            org.opencontainers.image.version=${{ needs.check.outputs.release }}
+            org.opencontainers.image.revision=${{ needs.check.outputs.release }}
+          provenance: false
+          sbom: false
+
+      # Two different things trigger a rebuild and they are worth different
+      # words, for the same reason the watcher's issue titles are: a new yt-dlp
+      # is how YouTube downloads stop working, a rebuilt base at the same
+      # version is distro patches — which is also worth having, since every
+      # CRITICAL/HIGH finding in Saturday's image scan sat in that layer.
+      - name: Say what moved
+        env:
+          WAS: ${{ needs.check.outputs.pinned_version }}
+          NOW: ${{ needs.check.outputs.new_version }}
+        run: |
+          set -euo pipefail
+          if [ "$WAS" = "$NOW" ]; then
+            what="Base rebuilt at the same yt-dlp ($NOW) — distro patches."
+          else
+            what="New yt-dlp: $WAS → $NOW."
+          fi
+          {
+            echo "### yt-dlp refresh"
+            echo
+            echo "$what"
+            echo
+            echo "| | |"
+            echo "| --- | --- |"
+            echo "| Release rebuilt | \`${{ needs.check.outputs.release }}\` |"
+            echo "| Tags re-pointed | \`${{ needs.check.outputs.moving_tags }}\` |"
+            echo
+            echo "\`${{ needs.check.outputs.version }}\` was **not** republished:"
+            echo "it is what was released and validated."
+          } >>"$GITHUB_STEP_SUMMARY"
