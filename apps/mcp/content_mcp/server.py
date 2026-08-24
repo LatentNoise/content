@@ -93,6 +93,27 @@ def _actionable(exc: ContentError, base_url: str) -> str:
     return str(exc)
 
 
+# The SDK draws a line Content already believed in: a failure you *anticipated*
+# is reported with your message, and anything else is a crash whose text is
+# withheld from the model. `ToolError` is how a handler says which one this is.
+#
+# Raising a bare `RuntimeError` put every engine failure on the wrong side of
+# that line: from mcp 2.1 an agent asking about an unreachable engine was told
+# "Error executing tool get_config" and nothing more — no URL, no remedy, which
+# is exactly the answer `_actionable` exists to prevent.
+#
+# Imported defensively because the floor is `mcp>=1.2`: the class moved with
+# the fastmcp-to-mcpserver rename, and on a release that has neither, a plain
+# exception is the old behaviour rather than a crash at import time.
+try:  # mcp >= 2.1
+    from mcp.server.mcpserver.exceptions import ToolError
+except ImportError:  # pragma: no cover - depends on the installed mcp
+    try:  # mcp < 2.1
+        from mcp.server.fastmcp.exceptions import ToolError
+    except ImportError:
+        ToolError = RuntimeError  # type: ignore[assignment, misc]
+
+
 def _friendly(fn, client: ContentClient):
     """Wrap one tool so SDK errors surface as guidance rather than errno."""
 
@@ -101,7 +122,17 @@ def _friendly(fn, client: ContentClient):
         try:
             return fn(*args, **kwargs)
         except ContentError as exc:
-            raise RuntimeError(_actionable(exc, client.base_url)) from exc
+            # Anticipated: the engine answered, and what it answered is the
+            # most useful thing the agent can be told.
+            raise ToolError(_actionable(exc, client.base_url)) from exc
+        except (ValueError, TypeError) as exc:
+            # The service's own rejections of a malformed call — "this output
+            # has no 'type'", with the example that fixes it. Anticipated in
+            # the strongest sense: the message exists precisely so the agent
+            # can correct itself without a round trip to the engine. Translated
+            # here rather than raised as ToolError inside `service`, which has
+            # no business importing the MCP SDK.
+            raise ToolError(str(exc)) from exc
 
     return wrapper
 
