@@ -18,6 +18,14 @@ from content.domain.reserved import check_reserved
 # V1 media output types consume exactly one source and no upstream outputs.
 _SINGLE_SOURCE_TYPES = ("video", "audio", "metadata", "thumbnail", "subtitles")
 
+# The scopes under which one output instance takes one source, and where an
+# arity rule is therefore the engine's to enforce. `each_item` belongs here:
+# it fans over the members of *one* collection source (ADR 0019). Every other
+# scope is about several sources by definition, so the number of inputs is the
+# planner's business — and the planner's answer for all of them today is
+# `scope_not_supported`, which is a promise rather than a rejection.
+_ONE_INSTANCE_SCOPES = ("single", "each_item")
+
 
 class ResolvedInputs(dict):
     """output id -> (source_ids, output_ids) once resolution rules applied."""
@@ -143,6 +151,17 @@ def validate_structure(request: GenerationRequest) -> ValidationResult:
     issues.extend(resolution_issues)
 
     for index, output in enumerate(request.outputs):
+        # Both arity rules below describe **one instance consuming one input**,
+        # which is a property of the scope and not of the output type — the
+        # second one's own message has always said "with scope 'single'".
+        # Applied to every scope, they made the documented answer unreachable:
+        # a client asking for `all_sources`, the scope whose entire purpose is
+        # aggregating several sources, was told `too_many_inputs` — that its
+        # request was malformed — instead of `scope_not_supported`, that it was
+        # well-formed and simply not implemented yet. Those are different
+        # answers, and only the second one tells a client to come back later.
+        if output.scope not in _ONE_INSTANCE_SCOPES:
+            continue
         if output.type in ("transcript", "summary", "translation", "chapters"):
             # These derive from exactly one input: a source, or one upstream
             # output (transcript <- subtitles/audio; summary <- transcript;
