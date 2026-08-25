@@ -43,6 +43,43 @@ _AVAILABILITY_TTL_SECONDS = 30.0
 # the acceptable failure here; crying wolf is not.
 _CHARS_PER_TOKEN_FLOOR = 8
 
+# The other direction, used to *size* the window rather than to judge it. French
+# prose measured at 3.77 characters per token on this corpus; 3 over-asks by
+# about a quarter, which costs a little memory and buys the margin. Denser
+# scripts tokenise closer to 1 character per token and will still overflow —
+# `_warn_if_truncated` remains the backstop, by design.
+_CHARS_PER_TOKEN_DENSE = 3
+
+# Room for the answer inside the same window.
+_OUTPUT_HEADROOM_TOKENS = 2048
+
+# Below this, asking for a smaller window than the daemon would have used gains
+# nothing and risks clipping a short prompt.
+_MIN_CONTEXT_TOKENS = 4096
+
+
+def _context_for(prompt: str, ceiling: int) -> int | None:
+    """The window to ask for, or None to leave the choice to the daemon.
+
+    Ollama does not refuse a prompt that does not fit — it truncates it, and it
+    does so on a cliff. Measured on gemma3:4b against a 32 768-token window: a
+    27 304-token prompt was read whole, and a 33 363-token one was read as
+    16 387 — *half* the window, not the window. Two percent over the line costs
+    fifty percent of the source. The same halving reproduced at a requested
+    window of 49 152, where a 50 319-token prompt came back as 24 579.
+
+    So the window is not something to hope about. The daemon's default is one
+    global number chosen with no knowledge of the prompt — and when
+    `OLLAMA_CONTEXT_LENGTH` is unset entirely, that number is 4 096, which
+    halves the transcript of a twenty-minute video. Asking per request is both
+    more correct and cheaper: a short summary no longer reserves a window sized
+    for the longest job the operator once anticipated.
+    """
+    if ceiling <= 0:
+        return None  # explicitly disabled: whatever the daemon decides
+    need = len(prompt) // _CHARS_PER_TOKEN_DENSE + _OUTPUT_HEADROOM_TOKENS
+    return max(_MIN_CONTEXT_TOKENS, min(need, ceiling))
+
 
 def _warn_if_truncated(prompt, payload, model, ctx) -> None:
     """Say so when the daemon read less of the prompt than we sent it.
@@ -73,7 +110,8 @@ def _warn_if_truncated(prompt, payload, model, ctx) -> None:
             f"The model read {read} tokens of a prompt of at least ~{floor}: "
             f"at most {kept}% of the source reached it, and the rest was "
             "silently dropped by the context window. Raise "
-            "OLLAMA_CONTEXT_LENGTH on the daemon, or send a shorter source."
+            "CONTENT_OLLAMA_MAX_CONTEXT (and give the daemon the memory for "
+            "it), or send a shorter source."
         ),
         {
             "provider": "ollama",
@@ -89,9 +127,15 @@ class OllamaProvider:
     location = "local"
     operations = ("text.summarize", "text.translate", "chapters.derive")
 
-    def __init__(self, base_url: str = "http://localhost:11434", model: str = ""):
+    def __init__(
+        self,
+        base_url: str = "http://localhost:11434",
+        model: str = "",
+        max_context: int = 32768,
+    ):
         self.base_url = base_url.rstrip("/")
         self.configured_model = model
+        self.max_context = max_context
         self.tool_version = ""
         self._probe_cache: tuple[float, bool] | None = None
         self._models_cache: tuple[float, list[str]] | None = None
@@ -217,12 +261,16 @@ class OllamaProvider:
         # Blocking single call, bounded by the step timeout. Cooperative
         # cancellation cannot interrupt it mid-call (documented limitation of
         # service runners); the job cancels right after the call returns.
+        options: dict = {"temperature": 0.2}
+        window = _context_for(prompt, self.max_context)
+        if window is not None:
+            options["num_ctx"] = window
         body = json.dumps(
             {
                 "model": model,
                 "messages": [{"role": "user", "content": prompt}],
                 "stream": False,
-                "options": {"temperature": 0.2},
+                "options": options,
             }
         ).encode()
         request = urllib.request.Request(

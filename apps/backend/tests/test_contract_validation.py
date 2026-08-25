@@ -271,3 +271,56 @@ def test_no_public_field_is_accepted_without_being_classified():
         f"reserved: {sorted(unclassified)} — read them in the engine, or add "
         "them to content/domain/reserved.py with a refusal or a warning"
     )
+
+
+# --- multi-source scopes answer "not yet", not "malformed" ----------------------
+
+
+def _two_source_payload(**output):
+    return {
+        "schema_version": "1.0",
+        "sources": [
+            {"id": "a", "type": "text", "content": "one"},
+            {"id": "b", "type": "text", "content": "two"},
+        ],
+        "outputs": [{"id": "s", "from_sources": ["a", "b"], **output}],
+    }
+
+
+@pytest.mark.parametrize("scope", ["all_sources", "each_source", "group"])
+def test_a_multi_source_scope_is_well_formed(scope):
+    """Content is meant to aggregate several sources; `all_sources` is the
+    scope that says so, and Studio already offers up to eight sources.
+
+    Structural validation used to answer `too_many_inputs` here — *your request
+    is malformed* — because an arity rule written for one instance consuming
+    one source was applied to every scope. That made the documented answer
+    unreachable: the contract promises `scope_not_supported`, "valid but not
+    supported by the current execution engine", and a client cannot tell from
+    `too_many_inputs` that the thing it asked for is coming.
+    """
+    result = validate_structure(
+        make_request(_two_source_payload(type="summary", scope=scope))
+    )
+    assert "too_many_inputs" not in codes_of(result)
+    assert result.valid, codes_of(result)
+
+
+@pytest.mark.parametrize("output_type", ["summary", "transcript", "video", "audio"])
+def test_single_scope_still_takes_exactly_one_source(output_type):
+    """The rule is not gone, it is scoped. One instance still consumes one
+    source, which is what `single` means."""
+    result = validate_structure(
+        make_request(_two_source_payload(type=output_type, scope="single"))
+    )
+    assert "too_many_inputs" in codes_of(result)
+
+
+def test_each_item_still_takes_exactly_one_source():
+    """`each_item` fans over the members of *one* collection (ADR 0019), so it
+    keeps the arity rule — and must not become a silent no-op in the planner,
+    which returns early when the count is not one."""
+    result = validate_structure(
+        make_request(_two_source_payload(type="summary", scope="each_item"))
+    )
+    assert "too_many_inputs" in codes_of(result)

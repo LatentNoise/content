@@ -28,7 +28,7 @@ VERSION_MODULES    := apps/backend/content/__init__.py \
 .DEFAULT_GOAL := validate
 .PHONY: help install hooks format lint test test-all ui-venv test-ui test-ui-live \
         validate validate-all validate-release clean run \
-        version version-update version-tag wheels deploy-compose extension-zip docker-up docker-update docker-down \
+        version version-update version-tag wheels deploy-compose readme-diagram extension-zip docker-up docker-update docker-down \
         docker-logs cookies
 
 help:  ## List the available targets
@@ -251,6 +251,13 @@ wheels:  ## Build the SDK + CLI + MCP wheels for a release (dist/)
 # the two can never describe different deployments (tests/test_deploy_compose).
 deploy-compose:  ## Regenerate deploy/docker-compose.yml from docker-compose.yml
 	$(VENV)/python scripts/gen_deploy_compose.py
+
+# The README opens with a diagram, and GitHub needs one file per colour
+# scheme to follow its own theme. Both come from one geometry so a client
+# added to the row cannot appear in only one of them
+# (tests/test_readme_diagram).
+readme-diagram:  ## Regenerate the README's architecture SVGs (light + dark)
+	$(VENV)/python scripts/gen_readme_diagram.py
 
 # --- browser extension -----------------------------------------------------------
 
