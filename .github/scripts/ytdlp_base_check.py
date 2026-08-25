@@ -225,6 +225,13 @@ def main() -> None:
         with open(output, "a", encoding="utf-8") as handle:
             handle.write(f"update_available={str(not up_to_date).lower()}\n")
             handle.write(f"issue_title={title}\n")
+            # What the refresh workflow builds with. The digest is the
+            # authority — it is what Docker resolves and it is immutable — and
+            # the version is carried alongside so the rebuilt image can still
+            # say, in a label a human reads, which yt-dlp is inside it.
+            handle.write(f"pinned_version={pinned_version}\n")
+            handle.write(f"new_version={new_version}\n")
+            handle.write(f"new_digest={new_digest}\n")
 
 
 if __name__ == "__main__":

@@ -20,6 +20,12 @@
 [Connect an agent](#mcp-server--for-agents-and-ides) ·
 [Read the docs](docs/README.md)
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/architecture-dark.svg">
+  <img src="docs/assets/architecture-light.svg" width="100%"
+       alt="Sources — URLs, files, or texts, several of them in a single job — feed one self-hosted Content engine that analyzes, plans, runs and delivers. HomeTube, Studio, Console, the browser extension, the MCP server, the CLI, the Python SDK and the REST API all sit above the engine and reach it through the same public contract. Out come video, audio, subtitles, transcript, summary, translation, chapters and PDF.">
+</picture>
+
 </div>
 
 Content is a self-hosted engine that turns supported sources into media,
