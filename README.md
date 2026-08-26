@@ -5,13 +5,20 @@
 
 ## Turn URLs, files, and text into media, knowledge, and documents.
 
-**One self-hosted engine. HomeTube for YouTube, Content Studio for everything else — plus a browser extension, an MCP server, a CLI, a typed SDK, and the REST API underneath them all.**
+**One self-hosted engine. HomeTube client for YouTube — Content Studio for everything else — HomeTube browser extension — MCP server — CLI — Typed SDK — REST API underneath them all**
 
 [![Latest release](https://img.shields.io/github/v/release/LatentNoise/content?sort=semver&display_name=tag)](https://github.com/LatentNoise/content/releases/latest)
 [![CI](https://github.com/LatentNoise/content/actions/workflows/ci.yml/badge.svg)](https://github.com/LatentNoise/content/actions/workflows/ci.yml)
 [![Docker](https://img.shields.io/badge/Docker-amd64%20%C2%B7%20arm64-2496ED.svg?logo=docker&logoColor=white)](docs/operations/deployment.md)
 [![License](https://img.shields.io/badge/License-AGPL--3.0--or--later-green.svg)](LICENSE)
-[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/LatentNoise/content/badge)](https://scorecard.dev/viewer/?uri=github.com/LatentNoise/content)
+<!-- The obvious badge URL, api.scorecard.dev/.../badge, renders "invalid repo
+     path" for this repository. It redirects to shields.io's ossf-scorecard
+     endpoint, which lowercases the path, while the Scorecard API is
+     case-sensitive: github.com/latentnoise/content is a hard 404 and only
+     github.com/LatentNoise/content resolves. Repositories whose owner is
+     already lowercase never hit it. Reading the API directly keeps the
+     casing and the live score. -->
+[![OpenSSF Scorecard](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fapi.scorecard.dev%2Fprojects%2Fgithub.com%2FLatentNoise%2Fcontent&query=%24.score&suffix=%2F10&label=OpenSSF%20Scorecard&color=blue)](https://scorecard.dev/viewer/?uri=github.com/LatentNoise/content)
 
 [Quick start](#quick-start) ·
 [HomeTube](#hometube--youtube-focused) ·
@@ -20,6 +27,11 @@
 [Connect an agent](#mcp-server--for-agents-and-ides) ·
 [Read the docs](docs/README.md)
 
+Content is a self-hosted engine that turns supported sources into media,
+transcripts, summaries, translations, images, metadata, Markdown, PDF, and
+more. The **backend** analyzes each source, determines what it can actually
+produce, plans and runs the job, records its history, and delivers the results.
+
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/architecture-dark.svg">
   <img src="docs/assets/architecture-light.svg" width="100%"
@@ -27,11 +39,6 @@
 </picture>
 
 </div>
-
-Content is a self-hosted engine that turns supported sources into media,
-transcripts, summaries, translations, images, metadata, Markdown, PDF, and
-more. The **backend** analyzes each source, determines what it can actually
-produce, plans and runs the job, records its history, and delivers the results.
 
 Everything else is a **client of one public contract**: **HomeTube** for the
 focused YouTube experience, **Content Studio** for general workflows, a
