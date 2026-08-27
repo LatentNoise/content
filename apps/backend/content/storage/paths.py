@@ -36,6 +36,29 @@ def safe_segment(value: str, kind: str = "identifier") -> str:
     return value
 
 
+def _copy_preserving_what_it_can(source: Path, target: Path) -> None:
+    """Copy the bytes, then carry the metadata across if the filesystem lets us.
+
+    ``shutil.copy2`` is ``copyfile`` followed by ``copystat``, and ``copystat``
+    calls ``os.utime`` — which a CIFS/SMB mount refuses outright with EPERM.
+    Both callers below stage *beside the destination*, which on such a
+    deployment is the share itself: the bytes landed, the timestamp call
+    raised, and the publish failed with the copy already complete. A finished
+    artifact was lost to a modification time.
+
+    So the two halves are separated. The copy must succeed; the metadata is an
+    improvement on top of it. Still attempted rather than dropped, because
+    timestamps are worth preserving wherever they are allowed — and not
+    logged, because nothing in this module logs and a share refusing ``utime``
+    is expected rather than exceptional.
+    """
+    shutil.copyfile(source, target)
+    try:
+        shutil.copystat(source, target)
+    except OSError:
+        pass
+
+
 def publish_file(source: Path, destination: Path, *, overwrite: bool = False) -> Path:
     """Publish a completed file to its final path (INV-STORAGE-007/008).
 
@@ -55,7 +78,7 @@ def publish_file(source: Path, destination: Path, *, overwrite: bool = False) ->
         # Cross-filesystem: stage next to the destination, then rename in place.
         staged = destination.parent / f".{destination.name}.partial"
         try:
-            shutil.copy2(source, staged)
+            _copy_preserving_what_it_can(source, staged)
             os.replace(staged, destination)
         finally:
             staged.unlink(missing_ok=True)
@@ -104,7 +127,7 @@ def stage_beside(source: Path, directory: Path, *, move: bool = False) -> Path:
         if move:
             publish_file(Path(source), staged, overwrite=True)
         else:
-            shutil.copy2(Path(source), staged)
+            _copy_preserving_what_it_can(Path(source), staged)
     except BaseException:
         staged.unlink(missing_ok=True)
         raise

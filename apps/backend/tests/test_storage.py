@@ -4,13 +4,20 @@ Covers path safety, the tmp/work/artifact lifecycles, atomic publication and
 the cache-disabled default (no inter-job reuse in V1).
 """
 
+import errno
+
 import pytest
 
 from content.analysis.service import AnalysisService
 from content.application.submit import submit_generation
 from content.execution.executor import JobExecutor
 from content.storage.layout import JobStorage
-from content.storage.paths import StoragePaths, publish_file, safe_segment
+from content.storage.paths import (
+    StoragePaths,
+    publish_file,
+    safe_segment,
+    stage_beside,
+)
 from tests.conftest import make_request, minimal_payload
 
 # --- path safety (INV-STORAGE-006) ---------------------------------------------
@@ -110,6 +117,103 @@ def test_publish_file_cross_filesystem_fallback(tmp_path, monkeypatch):
     assert dest.read_bytes() == b"cross-fs"
     assert not src.exists()
     assert not (dest.parent / f".{dest.name}.partial").exists()
+
+
+def _refusing_copystat():
+    """What a CIFS/SMB mount does to ``os.utime``."""
+
+    def refuse(*_args, **_kwargs):
+        raise PermissionError(errno.EPERM, "Operation not permitted")
+
+    return refuse
+
+
+def _flaky_replace(paths_mod):
+    """os.replace that fails the direct move once, then behaves."""
+    real_replace = paths_mod.os.replace
+    calls = {"n": 0}
+
+    def flaky(a, b):
+        calls["n"] += 1
+        if calls["n"] == 1:  # the direct move, as across a mount point
+            raise OSError(errno.EXDEV, "Cross-device link")
+        return real_replace(a, b)  # the staged rename succeeds
+
+    return flaky
+
+
+def test_publish_file_survives_a_destination_that_refuses_timestamps(
+    tmp_path, monkeypatch
+):
+    """A CIFS/SMB share refuses ``utime`` outright, and the copy staged beside
+    the destination lives *on that share*. ``copy2`` is ``copyfile`` plus
+    ``copystat``, so the bytes landed and the call raised anyway — a timestamp
+    failing a finished copy, and no artifact publishable to such a mount.
+
+    Preserved metadata is worth having and is not worth a failed delivery.
+    """
+    import content.storage.paths as paths_mod
+
+    src = tmp_path / "src.bin"
+    src.write_bytes(b"finished media")
+    dest = tmp_path / "share" / "dest.bin"
+
+    monkeypatch.setattr(paths_mod.os, "replace", _flaky_replace(paths_mod))
+    monkeypatch.setattr(
+        paths_mod.shutil,
+        "copystat",
+        _refusing_copystat(),
+    )
+
+    publish_file(src, dest)
+
+    assert dest.read_bytes() == b"finished media"
+    assert not src.exists()  # consumed, as on any successful publish
+    assert not (dest.parent / f".{dest.name}.partial").exists()
+
+
+def test_stage_beside_survives_a_destination_that_refuses_timestamps(
+    tmp_path, monkeypatch
+):
+    """The same defect on the copy branch of ``stage_beside``: it stages into
+    the caller's directory, which is the share."""
+    import content.storage.paths as paths_mod
+
+    src = tmp_path / "src.bin"
+    src.write_bytes(b"payload")
+    monkeypatch.setattr(paths_mod.shutil, "copystat", _refusing_copystat())
+
+    staged = stage_beside(src, tmp_path / "share", move=False)
+
+    assert staged.read_bytes() == b"payload"
+    assert src.exists()  # move=False leaves the source alone
+    assert staged.parent == tmp_path / "share"
+
+
+def test_the_cross_filesystem_publish_still_preserves_timestamps(tmp_path, monkeypatch):
+    """The fix tolerates a refusal; it must not stop *asking*. Dropping
+    ``copystat`` everywhere would quietly lose mtimes on every filesystem that
+    was happy to keep them."""
+    import content.storage.paths as paths_mod
+
+    src = tmp_path / "src.bin"
+    src.write_bytes(b"cross-fs")
+    dest = tmp_path / "sub" / "dest.bin"
+
+    seen: list[str] = []
+    real_copystat = paths_mod.shutil.copystat
+
+    def recording_copystat(a, b, **kwargs):
+        seen.append(str(b))
+        return real_copystat(a, b, **kwargs)
+
+    monkeypatch.setattr(paths_mod.os, "replace", _flaky_replace(paths_mod))
+    monkeypatch.setattr(paths_mod.shutil, "copystat", recording_copystat)
+
+    publish_file(src, dest)
+
+    assert seen, "copystat was never attempted; timestamps are no longer preserved"
+    assert dest.read_bytes() == b"cross-fs"
 
 
 # --- job lifecycles (INV-STORAGE-003/004/005) ----------------------------------
