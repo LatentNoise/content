@@ -82,19 +82,47 @@ jobs:
           echo "version=$version" >>"$GITHUB_OUTPUT"
           echo "Release $tag; moving tags will be re-pointed."
 
-      - name: Check out the released tree, not main
+      # main, not the tag. The *pin* being judged belongs to the release; the
+      # checker reading it is tooling and belongs to main. Conflating the two
+      # is what broke this job for three nights: it ran v0.6.7's copy of the
+      # script, which predates the outputs the rebuild needs, so `new_version`
+      # and `new_digest` arrived empty and docker was handed
+      # `jauderho/yt-dlp:@`. `update_available` existed back then and still
+      # came through, which is exactly why the check job went on passing.
+      - name: Check out main — the checker is tooling, not the artifact
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ steps.release.outputs.tag }}
+          fetch-depth: 0 # the release tag has to be reachable
+
+      - name: Take the released Dockerfile, and only that
+        run: |
+          set -euo pipefail
+          git show "${{ steps.release.outputs.tag }}:apps/backend/Dockerfile" \
+            > released.Dockerfile
+          echo "Judging the pin from ${{ steps.release.outputs.tag }}:"
+          grep -E '^ARG YTDLP_BASE_' released.Dockerfile
 
       - name: Compare its pin against upstream
         id: check
-        # The same script the weekly watcher runs, against the *released*
-        # Dockerfile rather than main's — what users are running is what is
-        # being judged.
         run: python3 .github/scripts/ytdlp_base_check.py
         env:
-          DOCKERFILE: apps/backend/Dockerfile
+          DOCKERFILE: released.Dockerfile
+
+      # A guard, because the failure this fixes was silent here and loud four
+      # steps later, in docker's words rather than ours.
+      - name: An update with nothing to build with is a broken check
+        if: steps.check.outputs.update_available == 'true'
+        env:
+          NEW_VERSION: ${{ steps.check.outputs.new_version }}
+          NEW_DIGEST: ${{ steps.check.outputs.new_digest }}
+        run: |
+          set -euo pipefail
+          if [ -z "$NEW_DIGEST" ]; then
+            echo "::error::the check reported an update but resolved no digest;" \
+                 "refusing to build with empty --build-args"
+            exit 1
+          fi
+          echo "Will rebuild on ${NEW_VERSION:-(untagged)} $NEW_DIGEST"
 
   refresh:
     name: Rebuild ${{ needs.check.outputs.release }} on yt-dlp ${{ needs.check.outputs.new_version }}
