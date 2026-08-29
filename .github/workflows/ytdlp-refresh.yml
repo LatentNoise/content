@@ -133,6 +133,7 @@ jobs:
     permissions:
       contents: read
       packages: write # GHCR, via GITHUB_TOKEN — no stored registry secret
+      issues: write # to say, once, that the release can no longer be rebuilt
     steps:
       - name: Check out the released tree
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -152,7 +153,24 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # The build is a *question*, not a requirement: can the released tree
+      # still be built on today's base? "No" is an answer this job is supposed
+      # to deliver, not an error it should die of.
+      #
+      # It happened on 2026-08-28: upstream removed pip from the base image and
+      # marked its Python externally-managed, so v0.6.7's Dockerfile — which
+      # calls bare `pip` — stopped building. Nothing here can fix that; only a
+      # release carrying the corrected Dockerfile can. Until then this job ran
+      # red every morning on `exit code: 127`, which is how a daily alert turns
+      # into wallpaper.
+      #
+      # So a build failure now files the finding as an issue and the job ends
+      # green. Everything after the build — the boot check, the publish — stays
+      # a hard failure, because at that point the image exists and misbehaving
+      # is a real fault.
       - name: Build for a boot check
+        id: build
+        continue-on-error: true
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
@@ -166,11 +184,68 @@ jobs:
           provenance: false
           sbom: false
 
+      - name: The released tree no longer builds on this base
+        if: steps.build.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE: ${{ needs.check.outputs.release }}
+          NEW_VERSION: ${{ needs.check.outputs.new_version }}
+          NEW_DIGEST: ${{ needs.check.outputs.new_digest }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          LABEL="ytdlp-base-update"
+          TITLE="$RELEASE cannot be rebuilt on the current yt-dlp base"
+          gh label create "$LABEL" \
+            --description "A newer jauderho/yt-dlp base image is available" \
+            --color FBCA04 2>/dev/null || true
+
+          cat > body.md <<BODY
+          The daily refresh cannot re-point the moving tags: **\`$RELEASE\` no
+          longer builds** on the base it would be rebuilt against.
+
+          | | |
+          | --- | --- |
+          | Release | \`$RELEASE\` |
+          | Base offered | \`${NEW_VERSION:-(untagged)}\` |
+          | Digest | \`$NEW_DIGEST\` |
+          | Build log | $RUN_URL |
+
+          This is not something the workflow can repair. The released tree's
+          Dockerfile was written against an older base, and only a **new release
+          carrying the corrected one** restores the refresh. Until then
+          \`latest\`, \`0.6\` and \`0\` keep pointing at the last image that
+          built — which still works; it simply stops getting a fresher yt-dlp.
+
+          Nothing was published by this run.
+
+          <sub>Filed by \`.github/workflows/ytdlp-refresh.yml\`.</sub>
+          BODY
+          sed -i 's/^          //' body.md
+
+          existing=$(gh issue list --label "$LABEL" --state open \
+            --search "$TITLE in:title" --json number --jq '.[0].number // empty')
+          if [ -n "$existing" ]; then
+            gh issue edit "$existing" --body-file body.md
+            echo "Updated issue #$existing in place."
+          else
+            gh issue create --title "$TITLE" --label "$LABEL" --body-file body.md
+          fi
+
+          {
+            echo "### Refresh skipped"
+            echo
+            echo "\`$RELEASE\` no longer builds on the offered base."
+            echo "Filed as an issue; a release carrying the fixed Dockerfile is"
+            echo "what restores this. Nothing was published."
+          } >>"$GITHUB_STEP_SUMMARY"
+
       # Nothing is published that could not start and could not download. A
       # daily unattended publish is only defensible if it is gated on the two
       # things that actually break: the app failing to construct (0.5.0 shipped
       # unbootable for exactly this reason) and yt-dlp failing to run.
       - name: The app must build and yt-dlp must answer
+        if: steps.build.outcome == 'success'
         run: |
           set -euo pipefail
           docker run --rm --entrypoint python content-refresh-check:local \
@@ -191,6 +266,7 @@ jobs:
           fi
 
       - name: Publish the moving tags
+        if: steps.build.outcome == 'success'
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
@@ -213,6 +289,7 @@ jobs:
       # version is distro patches — which is also worth having, since every
       # CRITICAL/HIGH finding in Saturday's image scan sat in that layer.
       - name: Say what moved
+        if: steps.build.outcome == 'success'
         env:
           WAS: ${{ needs.check.outputs.pinned_version }}
           NOW: ${{ needs.check.outputs.new_version }}
