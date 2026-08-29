@@ -59,8 +59,27 @@ RUN if [ "$YTDLP_SELF_UPDATE" = "true" ]; then \
 # the update procedure reads it back from a running container.
 RUN yt-dlp --version
 
-ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
-    PIP_BREAK_SYSTEM_PACKAGES=1 \
+# Install into a virtual environment, not the base's Python.
+#
+# The base stopped shipping pip and marked its system Python
+# externally-managed (PEP 668), so installing there is now both impossible and
+# refused by policy — `pip: not found`, and behind it an EXTERNALLY-MANAGED
+# marker that would have said no anyway. `PIP_BREAK_SYSTEM_PACKAGES` used to
+# cover the second half; nothing covers the first.
+#
+# A venv is what PEP 668 points at, and it asks nothing of the base beyond
+# `venv` itself, which is stdlib. Verified against both the pinned base and the
+# current one: `python3 -m venv` yields a working pip on each, so this is not a
+# fix that only works after the next bump.
+#
+# Everything downstream resolves through it — the dependency install, the
+# optional STT extra, and the CMD that starts the app — because it is first on
+# PATH. yt-dlp and ffmpeg are untouched: they are base binaries, and yt-dlp
+# pins its own interpreter in its shebang.
+RUN python3 -m venv /opt/venv
+
+ENV PATH="/opt/venv/bin:$PATH" \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
