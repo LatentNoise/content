@@ -89,14 +89,38 @@ happened once; do the steps in order and none of them can happen again.
    > `apps/mcp/README.md` after 0.5.0 was published, and the registry reads
    > what is already on PyPI.
 
-8. **[shell] Verify.** Each check exercises a different artifact:
+8. **[shell] Verify the artifacts.** Each check exercises a different one:
 
    ```bash
    docker pull ghcr.io/latentnoise/content:<x.y.z>   # the images exist
    uv tool install --reinstall content-mcp           # PyPI serves the new version
    curl -s "https://registry.modelcontextprotocol.io/v0/servers?search=io.github.LatentNoise" | jq
-   curl -s http://<engine>:8010/api/v1/health        # after compose pull: version matches
    ```
+
+9. **[shell] Verify the deployment**, which is a different question. The steps
+   above prove the artifacts were published; this proves the thing people run
+   actually works, on the machine it runs on. Upgrade, then ask the engine:
+
+   ```bash
+   ssh proxmox-nuc 'pct exec 130 -- sh -lc "cd /mnt/data/docker/content \
+     && docker compose pull && docker compose up -d"'
+   make verify-deployment ENGINE=http://192.168.21.30:8010 VERSION=<x.y.z>
+   ```
+
+   `verify-deployment` talks HTTP and nothing else, so it works against any
+   engine from anywhere. It checks health and the served version, that the
+   runners are present and reports their real tool versions (a yt-dlp six weeks
+   stale answers `/health` perfectly), that analysis and capability resolution
+   work, that a job runs end to end and its artifact reads back with the bytes
+   that went in, and that provenance still carries `warnings`.
+
+   The job it submits uses `delivery: none` — verification must not leave
+   anything in the operator's library.
+
+   **Do this every release.** The failures this catches are the ones a test
+   suite cannot see: 0.5.0 shipped an image that could not start, 0.6.7's could
+   not be rebuilt at all, and a CIFS/SMB share could refuse a finished copy.
+   Green on a laptop said nothing about any of them.
 
 ## TestPyPI or PyPI?
 
