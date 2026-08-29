@@ -28,7 +28,7 @@ VERSION_MODULES    := apps/backend/content/__init__.py \
 .DEFAULT_GOAL := validate
 .PHONY: help install hooks format lint test test-all ui-venv test-ui test-ui-live \
         validate validate-all validate-release clean run \
-        version version-update version-tag wheels deploy-compose readme-diagram extension-zip docker-up docker-update docker-down \
+        version version-update version-tag wheels deploy-compose readme-diagram verify-deployment extension-zip docker-up docker-update docker-down \
         docker-logs cookies
 
 help:  ## List the available targets
@@ -249,6 +249,16 @@ wheels:  ## Build the SDK + CLI + MCP wheels for a release (dist/)
 
 # The clone-free install's compose file is generated from the one above, so
 # the two can never describe different deployments (tests/test_deploy_compose).
+# The last step of a release, and the only one that asks the deployment itself
+# rather than the repository. ENGINE is required on purpose: there is no
+# default worth guessing, and pointing this at the wrong box proves nothing.
+verify-deployment:  ## End-to-end checks against a RUNNING engine (ENGINE=http://host:8010)
+	@test -n "$(ENGINE)" || { \
+	  echo "ENGINE is required, e.g. make verify-deployment ENGINE=http://192.168.21.30:8010"; \
+	  exit 1; }
+	@python3 scripts/verify_deployment.py --engine "$(ENGINE)" \
+	  $(if $(VERSION),--expect-version "$(VERSION)",)
+
 deploy-compose:  ## Regenerate deploy/docker-compose.yml from docker-compose.yml
 	$(VENV)/python scripts/gen_deploy_compose.py
 
