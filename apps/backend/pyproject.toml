@@ -32,6 +32,12 @@ dev = [
 stt = [
     "faster-whisper>=1.0",
 ]
+# Writing synchronised lyrics into an MP3 (synced_audio). Pure Python and
+# small, like the PDF and reader extras, so it ships by default: a feature that
+# only works for whoever added an extra is not a feature you can announce.
+lyrics = [
+    "mutagen>=1.47",
+]
 # Optional document *reader* (a `.pdf` file source): installing it lets the
 # document provider extract a PDF's text layer. pypdf is BSD-3-Clause and a
 # pure-Python wheel — the same two properties that decided reportlab below, so

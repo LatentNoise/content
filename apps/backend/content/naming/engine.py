@@ -52,7 +52,10 @@ PRIMARY_PRECEDENCE = (
 # subtitles is subtitles — the language suffix and the extension carry the
 # rest). Semantic transformations (summary from transcript) keep their own
 # name.
-INHERIT_QUALIFIER_TYPES = frozenset({"pdf", "translation"})
+# `synced_audio` joins them: it is the audio, with its words written in —
+# the extension says the rest, and "Talk - synced_audio.mp3" tells a
+# reader nothing "Talk.mp3" beside a "Talk.lrc" does not already say.
+INHERIT_QUALIFIER_TYPES = frozenset({"pdf", "synced_audio", "translation"})
 
 
 class OutputNaming(BaseModel):
