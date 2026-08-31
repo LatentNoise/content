@@ -51,6 +51,7 @@ EXECUTABLE_OUTPUT_TYPES = (
     "document_text",
     "markdown",
     "pdf",
+    "synced_audio",
     "keyframes",
 )
 
@@ -512,6 +513,35 @@ class PdfOutput(BaseOutput):
     options: PdfOptions = Field(default_factory=PdfOptions)
 
 
+class SyncedAudioOptions(StrictModel):
+    """An audio file that carries its own words, timed to them.
+
+    Small, like `PdfOptions`, and for the same reason: what is *said* belongs to
+    the transcript, what is *heard* belongs to the audio. Only the pairing is
+    decided here.
+    """
+
+    # The words go into the file as ID3 SYLT, which is the standard answer and
+    # is read by disappointingly few players. An `.lrc` beside the file is what
+    # phone players actually open, so it ships by default — off only for
+    # somebody who knows their player reads SYLT and wants one file.
+    lrc_sidecar: bool = True
+    # The ISO 639-2 tag the ID3 frames are labelled with; `auto` takes it from
+    # the transcript, which already carries one.
+    language: str = "auto"
+
+    @field_validator("language")
+    @classmethod
+    def _no_original_token(cls, value: str) -> str:
+        _reject_original(value, "a synced audio language")
+        return value
+
+
+class SyncedAudioOutput(BaseOutput):
+    type: Literal["synced_audio"]
+    options: SyncedAudioOptions = Field(default_factory=SyncedAudioOptions)
+
+
 class ThumbnailOptions(StrictModel):
     """A thumbnail is either the one the source already publishes or one cut
     out of the video. `source` chooses; `auto` prefers the published image when
@@ -697,6 +727,7 @@ ArtifactRequest = Annotated[
         SummaryOutput,
         TranslationOutput,
         ChaptersOutput,
+        SyncedAudioOutput,
         DocumentTextOutput,
         MarkdownOutput,
         PdfOutput,

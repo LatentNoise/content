@@ -61,6 +61,7 @@ from content.persistence.store import Store, new_id
 from content.planning.transformations import build_registry
 from content.processors.chapters import ChaptersProcessor
 from content.processors.pdf import ReportLabPdfProcessor, TypstPdfProcessor
+from content.processors.synced_audio import SyncedAudioProcessor
 from content.processors.transcript import TranscriptProcessor
 from content.providers.base import ProviderRegistry
 from content.providers.cloud_llm import CloudSummarizer
@@ -314,6 +315,7 @@ def create_app(
                     settings.typst_binary, settings.pdf_font, settings.pdf_template
                 ),
                 ReportLabPdfProcessor(settings.pdf_font),
+                SyncedAudioProcessor(),
                 *summarizers,
             ],
         )

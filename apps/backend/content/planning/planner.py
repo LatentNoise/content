@@ -1519,6 +1519,129 @@ def _plan_pdf(
     )
 
 
+# --- synced audio ---------------------------------------------------------------
+
+# What can carry the timings. A transcript asked for as plain text has lost
+# them, and there is nothing left to synchronise — refused here, by name, rather
+# than discovered as an empty lyrics pane on a phone.
+_TIMED_TEXT_TYPES = ("transcript", "subtitles", "translation")
+
+
+def _plan_synced_audio(
+    output,
+    index: int,
+    builder: PlanBuilder,
+    outputs_by_id: dict,
+    source,
+    providers: ProviderRegistry,
+    resolved_output_ids: list[str],
+    errors: list[ValidationIssue],
+) -> None:
+    """Bind one audio output and one timed-text output into a single step.
+
+    The only planner here that takes two upstream outputs, and it is the reason
+    the feature exists: the pairing is the product. Each half is checked by
+    name, because "no audio came back" discovered at execution is a worse
+    message than "that output is a summary, not timed text" refused now.
+    """
+    from content.providers.base import runner_is_available
+
+    path = f"outputs[{index}]"
+    options = output.options
+
+    runners = [
+        runner
+        for runner in providers.runners_for_operation(T.AUDIO_SYNC_TEXT)
+        if runner_is_available(runner)
+    ]
+    if not runners:
+        errors.append(
+            ValidationIssue(
+                code=codes.CAPABILITY_UNAVAILABLE,
+                path=path,
+                message=(
+                    "No runner can write synchronised lyrics. Install the "
+                    "optional `lyrics` extra to enable `synced_audio`."
+                ),
+            )
+        )
+        return
+
+    audio_id = timed_id = None
+    for ref_id in resolved_output_ids:
+        referenced = outputs_by_id.get(ref_id)
+        if referenced is None:
+            return  # unknown reference already reported structurally
+        if referenced.type == "audio":
+            audio_id = ref_id
+        elif referenced.type in _TIMED_TEXT_TYPES:
+            timed_id = ref_id
+
+    if audio_id is None or timed_id is None:
+        errors.append(
+            ValidationIssue(
+                code=codes.INVALID_OPTION,
+                path=f"{path}.from_outputs",
+                message=(
+                    "Synchronised audio pairs one `audio` output with one timed "
+                    f"text output ({', '.join(_TIMED_TEXT_TYPES)}). Reference "
+                    "both."
+                ),
+            )
+        )
+        return
+
+    # The lyrics go into an MP3's ID3 tags; no other container here carries
+    # them. Said now, with the fix, rather than after the download.
+    audio_format = getattr(outputs_by_id[audio_id].options, "format", "source")
+    if audio_format != "mp3":
+        errors.append(
+            ValidationIssue(
+                code=codes.INVALID_OPTION,
+                path=f"{path}.from_outputs",
+                message=(
+                    f"Lyrics are written into MP3 tags, and output '{audio_id}' "
+                    f"asks for '{audio_format}'. Set `options.format: \"mp3\"` on "
+                    "it."
+                ),
+            )
+        )
+        return
+
+    # A timed-text output serialised as plain text has no timings left.
+    timed_format = getattr(outputs_by_id[timed_id].options, "format", "")
+    if timed_format in ("text", "txt", "md", "markdown"):
+        errors.append(
+            ValidationIssue(
+                code=codes.INVALID_OPTION,
+                path=f"{path}.from_outputs",
+                message=(
+                    f"Output '{timed_id}' is generated as '{timed_format}', which "
+                    "carries no timings. Ask for `json`, `srt` or `vtt` on it."
+                ),
+            )
+        )
+        return
+
+    audio_step = builder.step_of_output(audio_id)
+    timed_step = builder.step_of_output(timed_id)
+    if audio_step is None or timed_step is None:
+        return  # an upstream output failed to plan; already reported
+
+    builder.bound_step(
+        output.id,
+        operation=T.AUDIO_SYNC_TEXT,
+        provider=runners[0].name,
+        source_id=getattr(source, "id", None),
+        params={
+            "language": options.language,
+            "lrc_sidecar": options.lrc_sidecar,
+        },
+        depends_on=[audio_step, timed_step],
+        resource_key=builder.step_resource_key(audio_step),
+    )
+
+
 # Renderer preference order for CONTENT_PDF_RENDERER=auto. Typst first: it is
 # the high-quality implementation (real typography, byte-reproducible output),
 # with ReportLab as the supported pure-Python fallback for installations where
@@ -2347,6 +2470,19 @@ def _build_plan(
                 errors,
                 warnings,
                 credential_id,
+            )
+            continue
+
+        if output.type == "synced_audio":
+            _plan_synced_audio(
+                output,
+                index,
+                builder,
+                outputs_by_id,
+                source,
+                providers,
+                output_ids,
+                errors,
             )
             continue
 
