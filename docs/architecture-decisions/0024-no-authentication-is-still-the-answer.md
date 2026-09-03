@@ -56,6 +56,18 @@ engine from a victim's browser. Those are the load-bearing parts of this
 decision. Weakening any of them without revisiting this ADR would be
 incoherent.
 
+**The allowed-input-roots bound does not reach the MCP server.** The MCP
+server never constructs a `file` source: it reads a local path itself and
+uploads the bytes to the engine (ADR 0020), which is correct for an engine
+running on another host but means `CONTENT_ALLOWED_INPUT_ROOTS` never sees
+that read at all. The bound this ADR declares load-bearing is real on the
+`file`-source path and absent on the MCP path — not weakened, routed around by
+two designs that never checked each other. Its MCP-side equivalent is
+`CONTENT_MCP_ALLOWED_READ_DIRS` (`apps/mcp/content_mcp/service.py`,
+`_check_read_allowed`), which is its own bound rather than an inheritance of
+this one, refuses every read by default the same way an empty
+`CONTENT_ALLOWED_INPUT_ROOTS` does, and must be kept real independently of it.
+
 ## What would force this open again
 
 Named now, so the question is not re-litigated from scratch each time:
