@@ -40,3 +40,12 @@ def test_server_exposes_content_resource_templates():
     assert "content://analyses/{analysis_id}" in uris
     assert "content://jobs/{job_id}" in uris
     assert "content://artifacts/{artifact_id}" in uris
+
+
+def test_instructions_warn_that_inlined_text_is_untrusted():
+    """The data/instruction boundary the security audit flags (§3.4) has no
+    control that can enforce it — the model has to be told, in the one place
+    it reliably reads before acting: its own instructions."""
+    server = build_server(_client())
+    assert "untrusted" in server.instructions.lower()
+    assert "CONTENT_MCP_ALLOWED_READ_DIRS" in server.instructions
