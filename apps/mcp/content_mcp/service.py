@@ -9,6 +9,7 @@ merely exposes them as MCP tools/resources.
 from __future__ import annotations
 
 import os
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -268,6 +269,61 @@ def generate(
     return {"job_id": job.id, "status": job.status}
 
 
+# get_job's polling heuristic (poll_after) — promised on r/mcp to u/ChiefGrowth
+# ("polling costs calls too, give me a hint"), never shipped until now. Backoff
+# grows with how long the job has already been running: freshly started, a
+# caller can check back soon; five minutes in, checking every couple of
+# seconds is a call spent for nothing. Bounded on both ends so the suggestion
+# is never useless (0s) or a real wait the caller didn't ask for (minutes+).
+MIN_POLL_AFTER_SECONDS = 2
+MAX_POLL_AFTER_SECONDS = 60
+# A step whose operation starts with one of these is presumed slow — a
+# network fetch or a model call, minutes-scale — versus everything else the
+# planner emits (subtitle reshaping, chapter derivation/export), which runs
+# locally and is typically done in seconds. Only ever biases the *floor* of
+# the suggestion; a wrong guess here costs nothing but an extra poll.
+_SLOW_OPERATION_PREFIXES = (
+    "media.acquire_",
+    "audio.transcribe",
+    "text.summarize",
+    "text.translate",
+)
+_SLOW_FLOOR_SECONDS = 5
+
+
+def _elapsed_seconds(timestamp: str | None) -> float:
+    """Seconds since *timestamp* (an engine ISO-8601 string), or 0 if absent
+    or unparseable — an unknown age should not crash a status check, it
+    should just fall back to the shortest suggestion."""
+    if not timestamp:
+        return 0.0
+    try:
+        then = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+    except ValueError:
+        return 0.0
+    if then.tzinfo is None:
+        then = then.replace(tzinfo=timezone.utc)
+    return max(0.0, (datetime.now(timezone.utc) - then).total_seconds())
+
+
+def _poll_after(job) -> int | None:
+    """Seconds to wait before calling get_job again — a heuristic, not a
+    promise from the engine, so a caller is free to ignore it. None once the
+    job is terminal: there is nothing left to wait for."""
+    if job.is_terminal:
+        return None
+    elapsed = _elapsed_seconds(job.data.started_at or job.data.created_at)
+    slow = any(
+        str(step.get("operation", "")).startswith(_SLOW_OPERATION_PREFIXES)
+        for step in (job.data.steps or [])
+    )
+    floor = _SLOW_FLOOR_SECONDS if slow else MIN_POLL_AFTER_SECONDS
+    # Roughly a third of the time already spent, so the interval grows with
+    # the job rather than staying flat — proportional backoff without needing
+    # a running poll count, which this stateless call does not have.
+    return max(floor, min(MAX_POLL_AFTER_SECONDS, round(elapsed / 3) or floor))
+
+
 def get_job(client: ContentClient, job_id: str) -> dict[str, Any]:
     """Job status; once terminal, the produced artifacts (metadata only), and
     when something went wrong, what went wrong.
@@ -283,6 +339,7 @@ def get_job(client: ContentClient, job_id: str) -> dict[str, Any]:
         "job_id": job.id,
         "status": job.status,
         "error": job.data.error,
+        "poll_after": _poll_after(job),
     }
     if job.status in ("failed", "partially_succeeded"):
         failures = [
