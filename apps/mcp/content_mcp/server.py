@@ -29,6 +29,8 @@ INSTRUCTIONS = (
     "subtitles, transcript, summary…). Typical flow: analyze_source to see what "
     "a source is and what can be produced, then generate with the returned "
     "analysis_id, then poll get_job until it is terminal and read its artifacts. "
+    "get_job's response carries poll_after (seconds); wait that long before "
+    "calling it again rather than polling on a fixed or guessed interval. "
     "The engine names every artifact after the analyzed resource; when the "
     "server's delivery policy is on (see get_config), finished files are also "
     "copied into the server's media library and each artifact reports its "
@@ -196,7 +198,12 @@ def build_server(client: ContentClient | None = None) -> MCPServer:
 
     @tool()
     def get_job(job_id: str) -> dict[str, Any]:
-        """Get a job's status and, once terminal, its produced artifacts."""
+        """Get a job's status and, once terminal, its produced artifacts.
+
+        Carries `poll_after`: seconds to wait before calling this again — a
+        heuristic (grows with elapsed time and the kind of work the job is
+        doing), not a promise, and `null` once the job is terminal.
+        """
         return service.get_job(client, job_id)
 
     @tool()
