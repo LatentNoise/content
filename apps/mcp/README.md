@@ -65,7 +65,9 @@ for air-gapped installs (`uv tool install ./content_mcp-<v>-py3-none-any.whl
 ## Connect it to your engine
 
 One environment variable: `CONTENT_API_URL` (default `http://localhost:8010`).
-The server speaks stdio — your MCP client spawns it; you never run it by hand.
+The server speaks stdio by default — your MCP client spawns it; you never run
+it by hand. A second transport, streamable-http, is available for clients
+that cannot spawn a process — see *Why stdio, and not an HTTP endpoint* below.
 
 ### Why stdio, and not an HTTP endpoint
 
@@ -97,15 +99,30 @@ Two things follow from it, both worth having:
   laptop.
 
 **What stdio cannot do**, plainly: serve a client that cannot spawn a process on
-your machine — Open WebUI in a container, LibreChat, a hosted web UI. For those,
-[`mcpo`](https://github.com/open-webui/mcpo) bridges an stdio MCP server to
-HTTP/OpenAPI today, and Open WebUI documents it as its own path.
+your machine — Open WebUI in a container, LibreChat, a hosted web UI. For
+those, set `CONTENT_MCP_TRANSPORT=streamable-http` (the `mcp` library's own
+implementation — this server adds no HTTP code of its own) and point the
+client at `http://127.0.0.1:8770/mcp` by default:
 
-An HTTP transport may still come as a **second mode** — the SDK does
-`streamable-http` with one parameter — for the inverse case: sources that are
-already remote, and a client that cannot spawn. It would ship bound to loopback
-by default, and it would have to refuse local paths outright rather than
-silently resolve them somewhere else. stdio stays the default either way.
+```bash
+CONTENT_MCP_TRANSPORT=streamable-http CONTENT_API_URL=http://localhost:8010 content-mcp
+```
+
+| Variable | Default | What it does |
+| --- | --- | --- |
+| `CONTENT_MCP_TRANSPORT` | `stdio` | `stdio` or `streamable-http` |
+| `CONTENT_MCP_HTTP_HOST` | `127.0.0.1` | streamable-http only — **loopback**. Widening it (`0.0.0.0`, a LAN address) is something you ask for explicitly; this server will not default it open |
+| `CONTENT_MCP_HTTP_PORT` | `8770` | streamable-http only |
+
+The trade named above is real, and streamable-http does not escape it: **local
+file paths are refused outright** rather than resolved on whatever host
+happens to be running the server. `analyze_source("~/report.pdf")` works over
+stdio (the machine running the server is yours) and is rejected over
+streamable-http (the server may be reachable from a machine that is not
+yours, and "this machine" would silently mean the wrong one). Sources that are
+already remote — a URL — are unaffected either way. [`mcpo`](https://github.com/open-webui/mcpo)
+remains an option too, if you would rather bridge an stdio server than run
+this mode.
 
 ### Claude Code
 
@@ -177,7 +194,7 @@ Stated plainly, because finding out by trying is a bad first impression.
 | Not available | Why, and what to do instead |
 | --- | --- |
 | **MCP prompts** | Not provided. The tool descriptions and the server instructions carry the guidance instead. |
-| **Live progress** | `get_job` is a status poll. The engine has an event stream, but no MCP notification carries it — a long download is opaque until it ends. |
+| **Live progress** | `get_job` is a status poll (it does suggest a `poll_after` pace, but not progress within a step). The engine has an event stream, but no MCP notification carries it — a long download is opaque until it ends. |
 | **Job logs** | Not exposed. `get_job` gives the failing step and its reason, which is what an agent can act on; the raw logs stay on the engine. |
 | **Retrying only what failed** | `retry_job` re-runs the whole request. A decision is pending (ADR 0025). |
 | **`.docx`, `.epub`, `.odt`, `.rtf`** | Recognised and refused — each needs its own reader. |
@@ -202,9 +219,6 @@ implemented; each links to where the decision lives.
   ([ADR 0023](../../docs/architecture-decisions/0023-retention-and-reclaiming-disk.md),
   proposed).
 - **More document readers, and OCR** — the formats listed as refused above.
-- **An HTTP transport as a second mode** — for clients that cannot spawn a
-  process (Open WebUI, hosted UIs). Not a replacement: see *Why stdio* above
-  for what it would cost, and `mcpo` for what works today.
 
 Something you need that is not here? The gap list is the roadmap's front door:
 [open an issue](https://github.com/LatentNoise/content/issues).
@@ -216,7 +230,7 @@ Something you need that is not here? The gap list is the roadmap's front door:
 | `analyze_source` | Analyze a URL: what it is + what can be produced |
 | `list_capabilities` | Resolve the capabilities for an analyzed source |
 | `generate` | Start a job producing outputs from an `analysis_id`; an output spec may carry `delivery` (`mode`/`folder`/`filename`, ADR 0018) |
-| `get_job` | Job status; once terminal, its artifacts — user-facing names (ADR 0017) and `delivered_path` in the server library |
+| `get_job` | Job status; once terminal, its artifacts — user-facing names (ADR 0017) and `delivered_path` in the server library. Carries `poll_after` (seconds, `null` once terminal): a heuristic for how long to wait before calling again, not a promise |
 | `cancel_job` | Cooperative cancellation |
 | `retry_job` | Run a finished job's request again, as a new job. The **whole** request — see *What is coming* for the finer version |
 | `list_jobs` | Recent jobs |
@@ -301,7 +315,10 @@ A path you give `analyze_source` is a path on the machine running **this
 server**, never on the engine: the file is read here and uploaded, which is the
 only way a local file becomes usable by an engine running elsewhere. Identical
 path strings on two machines do not imply identical filesystems, so the path is
-never passed through untouched.
+never passed through untouched. That only holds when "this server" is
+unambiguous, which is why it is stdio-only: over streamable-http, where the
+server may run on a different machine than the caller, a local path is
+refused rather than read on the wrong host.
 
 `download_artifact` is the mirror image — it brings a finished artifact back to
 this machine, bounded by `CONTENT_MCP_DOWNLOAD_DIR` (see above).

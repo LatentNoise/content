@@ -151,7 +151,11 @@ def _check_read_allowed(path: Path) -> Path:
     return resolved
 
 
-def _looks_like_url(value: str) -> bool:
+def looks_like_url(value: str) -> bool:
+    """Public because server.py needs it too: over a network transport, a
+    non-URL source is a local path, and the http-transport startup path
+    refuses those before they ever reach this module (see build_server's
+    ``local_paths_allowed``)."""
     return "://" in value.split("?", 1)[0][:12]
 
 
@@ -169,7 +173,7 @@ def _source_for(client: ContentClient, source: str, credential: str | None):
     description says so plainly — an agent should choose it deliberately. What
     it may read is bounded by `CONTENT_MCP_ALLOWED_READ_DIRS` (`_check_read_allowed`).
     """
-    if _looks_like_url(source):
+    if looks_like_url(source):
         return outputs.url_source(source, credential_id=credential), None
     path = Path(source).expanduser()
     if not path.is_file():

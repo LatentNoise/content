@@ -2,7 +2,16 @@
 
 It exposes **intention-level** Tools (not one-per-endpoint) and read-only
 Resources, each delegating to ``service.py`` which speaks only the SDK. No REST,
-no business logic here. stdio transport (HTTP can come later).
+no business logic here.
+
+Two transports: stdio (the default — spawned by the client, one caller, no
+port) and streamable-http (CONTENT_MCP_TRANSPORT=streamable-http — for a
+client that cannot spawn a subprocess, e.g. OpenWebUI). Both are the `mcp`
+library's own implementation; this module only chooses defaults and wires one
+extra rule for the network case: local file paths are refused rather than
+read, because "the machine running this server" stops being the caller's
+machine the moment the two are joined over a network instead of by the client
+spawning the process itself.
 """
 
 from __future__ import annotations
@@ -144,7 +153,21 @@ def _friendly(fn, client: ContentClient):
     return wrapper
 
 
-def build_server(client: ContentClient | None = None) -> MCPServer:
+def build_server(
+    client: ContentClient | None = None, *, local_paths_allowed: bool = True
+) -> MCPServer:
+    """Wire the tools/resources over *client*.
+
+    ``local_paths_allowed`` is false when the caller is started over a network
+    transport (see ``main`` / ``CONTENT_MCP_TRANSPORT``): "a path on this
+    machine" is a promise this server can only keep when the machine running
+    it is the machine that spawned it, which is what stdio guarantees and a
+    network transport does not. A local path handed to a network-transport
+    server was going to be read on whatever host the server happens to run
+    on, on behalf of whoever could reach the port — silently resolved
+    somewhere the caller did not mean. Refusing it outright is the choice
+    made publicly on r/mcp; letting it through was never on the table.
+    """
     client = client or ContentClient()
     server = MCPServer(name="content", version="0.6.8", instructions=INSTRUCTIONS)
 
@@ -171,7 +194,18 @@ def build_server(client: ContentClient | None = None) -> MCPServer:
         MCP server runs on. A local file is read and uploaded to the engine,
         which is the only way a file here becomes usable by an engine running
         elsewhere; the path is never assumed to exist on the engine's side.
+        Over a network transport (streamable-http) local paths are refused
+        outright rather than resolved: "this machine" would be the server's
+        host, not the caller's, which is not what a path in a request means.
         """
+        if not local_paths_allowed and not service.looks_like_url(url):
+            raise ToolError(
+                f"'{url}' looks like a local path, and this server is running "
+                "over a network transport: it would be read on the server's "
+                "own host, not the caller's, which is not what a local path "
+                "in this request should mean. Give a URL instead, or run "
+                "this server over stdio to analyze local files."
+            )
         return service.analyze_source(client, url, credential=credential)
 
     @tool()
@@ -280,14 +314,27 @@ def build_server(client: ContentClient | None = None) -> MCPServer:
 
 
 _HELP = """\
-content-mcp — the official MCP server for the Content engine (stdio).
+content-mcp — the official MCP server for the Content engine.
 
-Run it from an MCP client, not by hand: the client spawns the process and
-speaks JSON-RPC over stdin/stdout. Configuration is one environment variable:
+Run it from an MCP client, not by hand: the client either spawns the process
+(stdio, the default) or connects to it over the network (streamable-http).
+Configuration is environment variables:
 
-  CONTENT_API_URL   base URL of your Content engine (default http://localhost:8010)
+  CONTENT_API_URL       base URL of your Content engine (default http://localhost:8010)
+  CONTENT_MCP_TRANSPORT stdio (default) or streamable-http
+  CONTENT_MCP_HTTP_HOST streamable-http only — default 127.0.0.1 (loopback).
+                        Widening it to listen on every interface is a choice
+                        this server will not make for you: set it explicitly
+                        (e.g. 0.0.0.0) if that is what you want.
+  CONTENT_MCP_HTTP_PORT streamable-http only — default 8770
 
-Example client configuration:
+Local file paths (the "analyze a file on this machine" half of analyze_source)
+are only honoured over stdio, where "this machine" is unambiguous. Over
+streamable-http the server may be reachable from a different machine than the
+one a path names, so local paths are refused rather than resolved on whatever
+host happens to be running the server.
+
+Example client configuration (stdio):
 
   {
     "mcpServers": {
@@ -298,10 +345,45 @@ Example client configuration:
     }
   }
 
+Example client configuration (streamable-http, e.g. for OpenWebUI): start
+the server with CONTENT_MCP_TRANSPORT=streamable-http, then point the client
+at http://127.0.0.1:8770/mcp (or wherever CONTENT_MCP_HTTP_HOST/_PORT put it).
+
 Options:
   --help      show this help and exit
   --version   show the version and exit
 """
+
+DEFAULT_HTTP_HOST = "127.0.0.1"
+DEFAULT_HTTP_PORT = 8770
+
+
+def _transport_config() -> tuple[str, dict[str, Any]]:
+    """The transport to run, and the kwargs `MCPServer.run` wants for it.
+
+    Read from environment variables rather than argv, the same way
+    CONTENT_API_URL is: an MCP client's config gives a command and an `env`
+    block, not flags, and this keeps the two configurable the same way.
+    """
+    import os
+
+    transport = os.getenv("CONTENT_MCP_TRANSPORT", "stdio").strip() or "stdio"
+    if transport == "stdio":
+        return transport, {}
+    if transport != "streamable-http":
+        raise SystemExit(
+            f"content-mcp: unknown CONTENT_MCP_TRANSPORT {transport!r} "
+            "(expected 'stdio' or 'streamable-http')"
+        )
+    return transport, {
+        # Loopback unless the operator names something else explicitly — the
+        # library's own default agrees, this just makes the choice visible
+        # and independent of whichever default that package ships next.
+        "host": os.getenv("CONTENT_MCP_HTTP_HOST", "").strip() or DEFAULT_HTTP_HOST,
+        "port": int(
+            os.getenv("CONTENT_MCP_HTTP_PORT", "").strip() or DEFAULT_HTTP_PORT
+        ),
+    }
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -328,7 +410,8 @@ def main(argv: list[str] | None = None) -> None:
     if args:
         print(f"content-mcp: unexpected argument {args[0]!r} (try --help)")
         raise SystemExit(2)
-    build_server().run("stdio")
+    transport, kwargs = _transport_config()
+    build_server(local_paths_allowed=(transport == "stdio")).run(transport, **kwargs)
 
 
 if __name__ == "__main__":
