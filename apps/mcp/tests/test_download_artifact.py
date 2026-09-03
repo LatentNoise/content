@@ -105,6 +105,26 @@ def test_the_refusal_names_the_variable_that_would_widen_it(root):
         service.download_artifact(_client(), "art_1", "/tmp/x.opus")
 
 
+def test_a_symlinked_destination_is_refused(root, tmp_path):
+    """The docstring on `_resolve_destination` has always claimed a symlink out
+    is refused like any other escape. The parent-only `resolve()` did not
+    actually check it: a symlink *named* as the final component resolves its
+    parent to somewhere inside root, passes the boundary check, and — until
+    this test — was written straight through to wherever it pointed.
+    """
+    outside = tmp_path / "outside.opus"
+    outside.write_bytes(b"whatever was there before")
+    link = root / "rapport.opus"
+    root.mkdir(parents=True)
+    link.symlink_to(outside)
+    with pytest.raises(ValueError, match="symlink"):
+        service.download_artifact(_client(), "art_1", "rapport.opus")
+    # The refusal happened before any bytes moved: the link is untouched and
+    # whatever it points at was never overwritten.
+    assert link.is_symlink()
+    assert outside.read_bytes() == b"whatever was there before"
+
+
 # --- failure leaves no debris ---------------------------------------------------
 
 
