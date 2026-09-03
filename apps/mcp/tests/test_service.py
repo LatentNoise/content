@@ -324,6 +324,103 @@ def test_a_succeeded_job_carries_no_failure_noise():
     assert result["error"] == ""
 
 
+# --- poll_after: a heuristic hint for how long to wait before polling again ---
+#
+# Promised on r/mcp to u/ChiefGrowth ("polling costs calls too, give me a
+# hint") and shipped here: get_job now returns poll_after (seconds), grown
+# from how long the job has been running and biased upward for steps that are
+# typically slow (a network fetch, a model call).
+
+
+def _job_response(status: str, *, started_at: str | None, steps=None):
+    return {
+        "job_id": "job_x",
+        "status": status,
+        "error": "",
+        "created_at": started_at or "2026-01-01T00:00:00+00:00",
+        "started_at": started_at,
+        "steps": steps or [],
+    }
+
+
+def test_poll_after_is_null_once_terminal():
+    def handler(request):
+        if request.url.path.endswith("/artifacts"):
+            return httpx.Response(200, json=[])
+        return httpx.Response(200, json=_job_response("succeeded", started_at=None))
+
+    result = service.get_job(_api(handler), "job_x")
+    assert result["poll_after"] is None
+
+
+def test_poll_after_is_present_for_a_running_job():
+    def handler(request):
+        return httpx.Response(200, json=_job_response("running", started_at=None))
+
+    result = service.get_job(_api(handler), "job_x")
+    assert isinstance(result["poll_after"], int)
+    assert result["poll_after"] >= service.MIN_POLL_AFTER_SECONDS
+
+
+def test_poll_after_grows_with_elapsed_time():
+    from datetime import datetime, timedelta, timezone
+
+    def handler(seconds_ago: int):
+        started = (
+            datetime.now(timezone.utc) - timedelta(seconds=seconds_ago)
+        ).isoformat()
+
+        def _handler(request):
+            return httpx.Response(
+                200, json=_job_response("running", started_at=started)
+            )
+
+        return _handler
+
+    fresh = service.get_job(_api(handler(1)), "job_x")["poll_after"]
+    long_running = service.get_job(_api(handler(300)), "job_x")["poll_after"]
+    assert fresh < long_running
+    assert long_running <= service.MAX_POLL_AFTER_SECONDS
+
+
+def test_poll_after_has_a_higher_floor_for_a_slow_operation():
+    def handler(request):
+        return httpx.Response(
+            200,
+            json=_job_response(
+                "running",
+                started_at=None,
+                steps=[
+                    {
+                        "step_id": "s",
+                        "operation": "audio.transcribe",
+                        "status": "running",
+                    }
+                ],
+            ),
+        )
+
+    result = service.get_job(_api(handler), "job_x")
+    assert result["poll_after"] >= service._SLOW_FLOOR_SECONDS
+
+
+def test_poll_after_tolerates_a_missing_or_unparseable_timestamp():
+    def handler(request):
+        return httpx.Response(
+            200,
+            json={
+                "job_id": "job_x",
+                "status": "running",
+                "error": "",
+                "created_at": "not-a-timestamp",
+                "steps": [],
+            },
+        )
+
+    result = service.get_job(_api(handler), "job_x")
+    assert result["poll_after"] == service.MIN_POLL_AFTER_SECONDS
+
+
 def test_retry_job_reruns_the_request_and_names_its_ancestor():
     """`cancel_job` had no counterpart: an agent that watched a job fail could
     report the failure and nothing else. The answer carries `retry_of` so the
