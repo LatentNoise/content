@@ -1,6 +1,6 @@
 [project]
 name = "content-mcp"
-version = "0.7.0"
+version = "0.7.1"
 description = "Official MCP server for the Content engine (agentic facade over the SDK)."
 readme = "README.md"
 license = "AGPL-3.0-or-later"
@@ -25,7 +25,7 @@ classifiers = [
 # for everything (`make version`), and an MCP server resolving to a different
 # SDK than the one it was tested against is precisely the drift that pin buys
 # away. The `mcp` framework is an external dependency and keeps a floor.
-dependencies = ["content-sdk==0.7.0", "mcp>=1.2"]
+dependencies = ["content-sdk==0.7.1", "mcp>=1.2"]
 
 [project.scripts]
 content-mcp = "content_mcp.server:main"
