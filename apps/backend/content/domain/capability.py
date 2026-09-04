@@ -42,5 +42,13 @@ class ResolvedCapability(BaseModel):
     # For derivable capabilities, the source material(s) it is built from
     # (e.g. ["subtitles"] for summary.from_subtitles).
     derived_from: list[str] = Field(default_factory=list)
+    # The whole path the selected variant takes, source material first,
+    # artifact last — e.g. ["subtitles", "transcript", "summary", "pdf"] for
+    # pdf.render.via_summary (ADR 0028). `derived_from` names where a
+    # derivation starts; this names what it passes through, which is the
+    # difference between "a PDF from subtitles" and the truth — a PDF *of the
+    # summary*. Computed from the transformation registry's own declarations,
+    # never hand-written per capability.
+    derivation: list[str] = Field(default_factory=list)
     # Structured reason when status is not available/derivable.
     reason: CapabilityReason | None = None

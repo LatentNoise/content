@@ -129,6 +129,7 @@ implementation allowed by the policy. It returns a
   "status": "derivable",          // available | derivable | unavailable | restricted | unknown
   "selected_variant": "summary.from_subtitles",
   "derived_from": ["subtitles"],
+  "derivation": ["subtitles", "transcript", "summary"],
   "reason": null                  // structured when unavailable (see below)
 }
 ```
@@ -138,6 +139,14 @@ identity (`resource_type`, `title`) and **`suggested_filename`** — the base
 name the naming engine (ADR 0017) would give this source's artifacts, so a UI
 prefills its filename field with an editable proposal instead of
 re-implementing the display profile client-side.
+
+`derivation` is the whole material chain the selected variant walks, source
+first, artifact last — `["subtitles", "transcript", "summary", "pdf"]` for
+`pdf.render.via_summary` (ADR 0028). `derived_from` says where a derivation
+starts; `derivation` says what it passes through, which is how a client can
+show that a derivable PDF on a video is a PDF *of the summary* rather than
+"a PDF from subtitles". It is computed from the transformation registry's
+`output_kinds` declarations, never hand-written per capability.
 
 ### Statuses and tri-state materials
 
