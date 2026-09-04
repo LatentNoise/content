@@ -117,6 +117,7 @@ A union discriminated by `type` (a logical result, never a tool):
 | `document_text` | `format` (`text` flattens the reading\|`markdown` keeps its structure). Input: a readable source (a web page, a `.txt`/`.md` file, an inline `text` source) | 1 |
 | `markdown` | *(none yet)* — Markdown is the extractor's canonical form. Input: a readable source | 1 |
 | `pdf` | `page_size` (`a4`\|`letter`), `title` (empty = taken from the rendered material). Input: a readable source **or**, through `from_outputs`, any readable output (`summary`, `transcript`, `translation`, `chapters`, `markdown`, `document_text`). Rendered by an operator-selected implementation (Typst or ReportLab) — the renderer, its template and its fonts are **operator configuration, never contract**; the chosen backend appears in the artifact's provenance. See [operations/pdf-rendering.md](operations/pdf-rendering.md) | 1 |
+| `synced_audio` | `lrc_sidecar` (default true), `language` (`auto` = from the transcript). Input: **two** outputs through `from_outputs` — one `audio` asked for as `mp3`, and one timed text output (`transcript`, `subtitles`, `translation`) still carrying its timings. The only output type that pairs two, because the pairing is the product and neither half can be recovered from the other. Produces the audio with ID3 `SYLT` (synchronised) and `USLT` (full text) written in, plus — unless declined — an `.lrc` beside it, which is what phone players actually read. Timings are the transcript's own; nothing is re-aligned | 1–2 |
 
 ### Types declared but not executed in V1
 

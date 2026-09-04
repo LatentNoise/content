@@ -133,9 +133,14 @@ TERMINAL = {"succeeded", "partially_succeeded", "failed", "cancelled"}
 # The sidebar (status, recent jobs) starts collapsed on purpose: HomeTube's
 # value is the single centered form. Collapsed, not gone — the header keeps
 # the toggle that reopens it.
+# The tab icon is the brand mark itself, not a stand-in emoji: HomeTube is
+# recognised by the pink play square, and a clapperboard glyph in the tab strip
+# read as a different product. Streamlit passes a `data:` URI straight through
+# to the favicon link, so the same inline SVG serves both the header and the
+# tab — one declaration, nothing to keep in sync.
 st.set_page_config(
     page_title="HomeTube",
-    page_icon="🎬",
+    page_icon=_LOGO_URI,
     layout="centered",
     initial_sidebar_state="collapsed",
 )

@@ -36,7 +36,7 @@ help:  ## List the available targets
 	  | awk -F ':.*## ' '{printf "  \033[1m%-18s\033[0m %s\n", $$1, $$2}'
 
 install: hooks  ## Create the venv and install the engine + SDK + CLI + MCP + shared client
-	cd apps/backend && uv venv .venv && uv pip install -e ".[test,dev,pdf,read]" --python .venv/bin/python
+	cd apps/backend && uv venv .venv && uv pip install -e ".[test,dev,pdf,read,lyrics]" --python .venv/bin/python
 	uv pip install -e packages/python-sdk --python apps/backend/.venv/bin/python
 	uv pip install -e apps/cli -e apps/mcp --python apps/backend/.venv/bin/python
 
