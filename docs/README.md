@@ -29,7 +29,7 @@ The map of everything documented, from intent to operations. The root
   library (ADR 0009/0018)
 - [repository-architecture.md](repository-architecture.md) — the monorepo: one
   engine, the SDK as the single door, every client thin (ADR 0011/0015/0016)
-- [architecture-decisions/](architecture-decisions/) — ADR 0001–0027. Awaiting a
+- [architecture-decisions/](architecture-decisions/) — ADR 0001–0028. Awaiting a
   decision: [0027 playlist synchronization](architecture-decisions/0027-playlist-synchronization.md),
   [0026 what a security label can honestly mean](architecture-decisions/0026-what-a-security-label-can-honestly-mean.md),
   [0025 retrying only what failed](architecture-decisions/0025-retrying-only-what-failed.md),

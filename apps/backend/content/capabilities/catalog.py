@@ -322,6 +322,23 @@ CAPABILITY_CATALOG: tuple[CapabilityDef, ...] = (
                 (T.TEXT_EXTRACT,),
                 (T.TEXT,),
             ),
+            # A source with no readable text of its own (a video) still has
+            # something to say in Markdown: the summary of what it says. The
+            # derivation is the summary chain, and the artifact is named for
+            # what it is ("… - summary.md") — see ADR 0028. The precise forms
+            # (a transcript, a translation) stay explicit requests.
+            _v(
+                "markdown.export.via_summary",
+                "markdown.export",
+                (T.ACQUIRE_SUBTITLES, T.SUBTITLES_TO_TRANSCRIPT, T.TEXT_SUMMARIZE),
+                (T.SUBTITLES,),
+            ),
+            _v(
+                "markdown.export.via_summary_stt",
+                "markdown.export",
+                (T.ACQUIRE_AUDIO, T.AUDIO_TRANSCRIBE, T.TEXT_SUMMARIZE),
+                (T.AUDIO,),
+            ),
         ),
     ),
     CapabilityDef(
@@ -330,16 +347,43 @@ CAPABILITY_CATALOG: tuple[CapabilityDef, ...] = (
         "Render readable content as a paginated PDF document.",
         "pdf",
         (
-            # Only the source-level chain is declared here, because that is what
-            # a capability answers: "what can this source alone yield?". Rendering
-            # *another output* (a summary, a transcript, a translation) is a
-            # composition expressed with `from_outputs`, exactly like every other
-            # derived output — it is not a property of the source.
+            # The source's own readable content, when it carries one — the
+            # article-to-PDF case, and the variant that wins when text exists.
             _v(
                 "pdf.render.from_text",
                 "pdf.render",
                 (T.TEXT_EXTRACT, T.RENDER_PDF),
                 (T.TEXT,),
+                ("pdf",),
+            ),
+            # When the source has no text, a PDF is still honestly derivable:
+            # summarize what it says, then render that (ADR 0028). A PDF of
+            # the *whole transcript* is rarely what a person means by "a PDF
+            # of this video", so the summary is the default; the precise form
+            # is the composition `{"type": "pdf", "from_outputs": [...]}`,
+            # which always wins when declared.
+            _v(
+                "pdf.render.via_summary",
+                "pdf.render",
+                (
+                    T.ACQUIRE_SUBTITLES,
+                    T.SUBTITLES_TO_TRANSCRIPT,
+                    T.TEXT_SUMMARIZE,
+                    T.RENDER_PDF,
+                ),
+                (T.SUBTITLES,),
+                ("pdf",),
+            ),
+            _v(
+                "pdf.render.via_summary_stt",
+                "pdf.render",
+                (
+                    T.ACQUIRE_AUDIO,
+                    T.AUDIO_TRANSCRIBE,
+                    T.TEXT_SUMMARIZE,
+                    T.RENDER_PDF,
+                ),
+                (T.AUDIO,),
                 ("pdf",),
             ),
         ),

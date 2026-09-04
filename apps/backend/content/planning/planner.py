@@ -17,6 +17,7 @@ from content.application.collections import (
     RUNNER_NAME,
     derive_member_request,
 )
+from content.capabilities.facts import facts_from_analysis
 from content.config import ContentSettings
 from content.domain import errors as codes
 from content.domain.analysis import ResourceAnalysis, SourceAnalysis
@@ -31,6 +32,7 @@ from content.domain.request import (
     EXECUTABLE_OUTPUT_TYPES,
     FileSource,
     GenerationRequest,
+    SummaryOptions,
     TextSource,
     UrlSource,
 )
@@ -59,8 +61,16 @@ _OPERATIONS = {
 
 def _outputs_in_dependency_order(
     request: GenerationRequest,
+    extra_edges: dict[str, str] | None = None,
 ) -> list[tuple[int, object]]:
-    """(index, output) pairs, upstream outputs first (from_outputs DAG)."""
+    """(index, output) pairs, upstream outputs first (from_outputs DAG).
+
+    ``extra_edges`` (dependent id -> upstream id) carries the planner's
+    *implicit* references — a plain pdf that will render a sibling summary
+    (ADR 0028). They order planning exactly like a declared ``from_outputs``,
+    so the sibling's step exists by the time the renderer asks for it; the
+    request itself is never rewritten (it is user intent, not strategy).
+    """
     indexed = {
         output.id: (index, output) for index, output in enumerate(request.outputs)
     }
@@ -68,8 +78,39 @@ def _outputs_in_dependency_order(
         output.id: [ref for ref in output.from_outputs if ref in indexed]
         for _, output in indexed.values()
     }
+    for dependent, upstream in (extra_edges or {}).items():
+        if dependent in graph and upstream in indexed:
+            graph[dependent].append(upstream)
     order = TopologicalSorter(graph).static_order()
     return [indexed[output_id] for output_id in order]
+
+
+def _human_list(items: list[str], conjunction: str = "or") -> str:
+    if not items:
+        return ""
+    if len(items) == 1:
+        return items[0]
+    return f"{', '.join(items[:-1])} {conjunction} {items[-1]}"
+
+
+def _cannot_produce_message(output_type: str, source_id: str, reason) -> str:
+    """The feasibility refusal, in user terms (ADR 0028 C): what is missing and
+    on which side — the source (materials), this installation (runners), or the
+    server policy — instead of a bare "cannot be produced" that names neither.
+    """
+    base = f"'{output_type}' cannot be produced from source '{source_id}'"
+    if reason is None:
+        return f"{base}."
+    if reason.code == "missing_material" and reason.missing_materials:
+        materials = _human_list(reason.missing_materials)
+        return f"{base}: the source carries no {materials} to build it from."
+    if reason.code == "implementation_unavailable" and reason.missing_operations:
+        operations = _human_list(reason.missing_operations)
+        return f"{base}: this installation has no implementation for {operations}."
+    if reason.code == "policy_restricted" and reason.blocked_operations:
+        operations = _human_list(reason.blocked_operations)
+        return f"{base}: the server policy blocks {operations}."
+    return f"{base}."
 
 
 def _reader_for(source, source_analysis, providers):
@@ -1190,102 +1231,139 @@ def _plan_summary(
         if dependency_id is None:
             return  # the referenced output failed feasibility
     else:
-        # From a source: synthesize the whole transcript chain (subtitles or
-        # speech-to-text, per the shared variant selection), mutualized with
-        # any identical bound steps by the builder.
         if source is None or source_analysis is None:
             return  # source-level errors already reported
-
-        # A readable resource (article, document) needs no transcript at all:
-        # extract the text and summarize it (variant `summary.from_text`). This
-        # branch is what keeps the planner honest with the resolver (R3) —
-        # without it the catalog would advertise a path the planner refuses.
-        if source_analysis.text.has_text:
-            text_provider = _reader_for(source, source_analysis, providers)
-            if text_provider is not None:
-                dependency_id = builder.acquisition_step(
-                    operation=T.TEXT_EXTRACT,
-                    provider=text_provider.name,
-                    source_id=source.id,
-                    params={
-                        **_source_params(source, credential_id),
-                        # Plain text: the summarizer wants prose, not syntax.
-                        "format": "text",
-                    },
-                    resource_key=source_analysis.resource_key,
-                )
-                return _bind_summary(
-                    output, builder, runner, source, options, dependency_id
-                )
-
-        transcript_capability = output_feasibility(
-            "transcript", source_analysis, providers
-        )
-        if transcript_capability.status != "available":
-            errors.append(
-                ValidationIssue(
-                    code=codes.CAPABILITY_UNAVAILABLE,
-                    path=path,
-                    message=(
-                        "A summary requires a transcript, which cannot be "
-                        "derived from this source."
-                    ),
-                )
-            )
-            return
-        chain = _transcript_chain(
+        dependency_id = _summary_dependency_chain(
             request,
             builder,
             source,
             source_analysis,
-            transcript_capability,
             provider,
             providers,
             path,
-            "auto",
-            "auto",
             errors,
             warnings,
             credential_id,
             preferred_languages,
         )
-        if chain is None:
+        if dependency_id is None:
             return
-        acquisition_id, transcript_op, transcript_runner, t_language, t_model = chain
-        transcript_params: dict = {"language": t_language, "format": "json"}
-        if t_model:
-            transcript_params["model"] = t_model
-        dependency_id = builder.acquisition_step(
-            operation=transcript_op,
-            provider=transcript_runner,
-            source_id=source.id,
-            params=transcript_params,
-            depends_on=[acquisition_id],
-            resource_key=source_analysis.resource_key,
-        )
 
     _bind_summary(output, builder, runner, source, options, dependency_id)
+
+
+def _summary_dependency_chain(
+    request: GenerationRequest,
+    builder: PlanBuilder,
+    source,
+    source_analysis: SourceAnalysis,
+    provider,
+    providers: ProviderRegistry,
+    path: str,
+    errors: list[ValidationIssue],
+    warnings: list[ValidationIssue],
+    credential_id: str | None,
+    preferred_languages: tuple[str, ...],
+) -> str | None:
+    """The step whose text material a summarizer consumes, synthesized from a
+    bare source: extracted text when the source carries some, else the whole
+    transcript chain (subtitles or speech-to-text, per the shared variant
+    selection), mutualized with any identical bound steps by the builder.
+
+    Shared by ``_plan_summary`` and the implicit derivations of pdf/markdown
+    (ADR 0028), so "what feeds a summary" has exactly one answer. Returns None
+    after recording an error.
+    """
+    # A readable resource (article, document) needs no transcript at all:
+    # extract the text and summarize it (variant `summary.from_text`). This
+    # branch is what keeps the planner honest with the resolver (R3) —
+    # without it the catalog would advertise a path the planner refuses.
+    if source_analysis.text.has_text:
+        text_provider = _reader_for(source, source_analysis, providers)
+        if text_provider is not None:
+            return builder.acquisition_step(
+                operation=T.TEXT_EXTRACT,
+                provider=text_provider.name,
+                source_id=source.id,
+                params={
+                    **_source_params(source, credential_id),
+                    # Plain text: the summarizer wants prose, not syntax.
+                    "format": "text",
+                },
+                resource_key=source_analysis.resource_key,
+            )
+
+    transcript_capability = output_feasibility("transcript", source_analysis, providers)
+    if transcript_capability.status != "available":
+        errors.append(
+            ValidationIssue(
+                code=codes.CAPABILITY_UNAVAILABLE,
+                path=path,
+                message=(
+                    "A summary requires a transcript, which cannot be "
+                    "derived from this source."
+                ),
+            )
+        )
+        return None
+    chain = _transcript_chain(
+        request,
+        builder,
+        source,
+        source_analysis,
+        transcript_capability,
+        provider,
+        providers,
+        path,
+        "auto",
+        "auto",
+        errors,
+        warnings,
+        credential_id,
+        preferred_languages,
+    )
+    if chain is None:
+        return None
+    acquisition_id, transcript_op, transcript_runner, t_language, t_model = chain
+    transcript_params: dict = {"language": t_language, "format": "json"}
+    if t_model:
+        transcript_params["model"] = t_model
+    return builder.acquisition_step(
+        operation=transcript_op,
+        provider=transcript_runner,
+        source_id=source.id,
+        params=transcript_params,
+        depends_on=[acquisition_id],
+        resource_key=source_analysis.resource_key,
+    )
+
+
+def _summarize_params(runner, options) -> dict:
+    """The summarize step's params, from one place: the explicit summary output
+    and the implicit derivation behind a plain pdf/markdown (ADR 0028) must
+    describe the same work identically, or the builder cannot mutualize it."""
+    model = ""
+    resolve_model = getattr(runner, "resolve_model", None)
+    if callable(resolve_model):
+        model = resolve_model()
+    return {
+        "language": options.language,
+        "length": options.length,
+        "style": options.style,
+        "format": options.format,
+        "model": model,
+    }
 
 
 def _bind_summary(output, builder, runner, source, options, dependency_id) -> None:
     """Bind the summarize step. Shared by every path into a summary (transcript,
     speech-to-text, extracted text) so they cannot drift apart."""
-    model = ""
-    resolve_model = getattr(runner, "resolve_model", None)
-    if callable(resolve_model):
-        model = resolve_model()
     builder.bound_step(
         output.id,
         operation="text.summarize",
         provider=runner.name,
         source_id=getattr(source, "id", None),
-        params={
-            "language": options.language,
-            "length": options.length,
-            "style": options.style,
-            "format": options.format,
-            "model": model,
-        },
+        params=_summarize_params(runner, options),
         depends_on=[dependency_id],
         resource_key=builder.step_resource_key(dependency_id),
     )
@@ -1475,12 +1553,15 @@ def _plan_pdf(
     outputs_by_id: dict,
     source,
     source_analysis: SourceAnalysis | None,
+    capability: OutputFeasibility | None,
+    provider,
     providers: ProviderRegistry,
     settings: ContentSettings,
     resolved_output_ids: list[str],
     errors: list[ValidationIssue],
     warnings: list[ValidationIssue],
     credential_id: str | None = None,
+    preferred_languages: tuple[str, ...] = (),
 ) -> None:
     path = f"outputs[{index}]"
     options = output.options
@@ -1492,6 +1573,31 @@ def _plan_pdf(
     if resolved_output_ids:
         dependency_id = _pdf_from_output(
             outputs_by_id, builder, resolved_output_ids[0], path, errors, warnings
+        )
+    elif (
+        source is not None
+        and source_analysis is not None
+        and not source_analysis.text.has_text
+        and capability is not None
+        and capability.status == "available"
+    ):
+        # The source definitely carries no readable text, yet the shared
+        # resolver judged the pdf derivable — the `pdf.render.via_summary` variants
+        # (ADR 0028): summarize what the source says, render that. The status
+        # guard keeps the inconclusive-analysis case ("unknown") on the
+        # attempt-extraction path below, exactly as before.
+        dependency_id = _derived_summary_step(
+            request,
+            builder,
+            source,
+            source_analysis,
+            provider,
+            providers,
+            path,
+            errors,
+            warnings,
+            credential_id,
+            preferred_languages,
         )
     else:
         dependency_id = _pdf_from_source(
@@ -1630,6 +1736,53 @@ def _select_renderer(
 def _renderer_remedy(runner) -> str:
     describe = getattr(runner, "unavailable_message", None)
     return describe() if callable(describe) else f"'{runner.name}' is unavailable."
+
+
+def _derived_summary_step(
+    request: GenerationRequest,
+    builder: PlanBuilder,
+    source,
+    source_analysis: SourceAnalysis,
+    provider,
+    providers: ProviderRegistry,
+    path: str,
+    errors: list[ValidationIssue],
+    warnings: list[ValidationIssue],
+    credential_id: str | None,
+    preferred_languages: tuple[str, ...],
+) -> str | None:
+    """The implicit derivation behind a plain pdf/markdown on a text-less
+    source (ADR 0028): the default summary, as an internal step. Default
+    options on purpose — a caller who wants a particular summary (length,
+    language) declares the summary output and references it, which always
+    wins. Identical params mean the builder mutualizes this step with any
+    same-request summary asked with defaults."""
+    runner = _select_llm_runner(request, providers, path, errors, warnings)
+    if runner is None:
+        return None
+    dependency_id = _summary_dependency_chain(
+        request,
+        builder,
+        source,
+        source_analysis,
+        provider,
+        providers,
+        path,
+        errors,
+        warnings,
+        credential_id,
+        preferred_languages,
+    )
+    if dependency_id is None:
+        return None
+    return builder.acquisition_step(
+        operation=T.TEXT_SUMMARIZE,
+        provider=runner.name,
+        source_id=source.id,
+        params=_summarize_params(runner, SummaryOptions()),
+        depends_on=[dependency_id],
+        resource_key=builder.step_resource_key(dependency_id),
+    )
 
 
 def _pdf_from_output(
@@ -2044,6 +2197,124 @@ def build_plan(
         ) from exc
 
 
+# What a plain pdf prefers to render when the request already carries a text
+# output (ADR 0028): the summary first — it is also the default derivation, so
+# the answer is the same with or without the sibling — then the precise forms.
+_IMPLICIT_RENDER_PREFERENCE = ("summary", "transcript", "translation")
+
+
+def _implicit_render_references(
+    request: GenerationRequest, resolved: dict, analysis: ResourceAnalysis
+) -> tuple[dict[str, str], dict[str, str]]:
+    """ADR 0028: what a plain pdf/markdown on a text-less source will actually
+    contain.
+
+    Returns ``(renders, presented)``: ``renders`` maps a plain pdf output to
+    the sibling text output it should render instead of deriving a second one;
+    ``presented`` maps every implicitly derived output to the kind it presents
+    ("summary", or the sibling's type), so its artifact name says what is
+    inside ("… - summary.pdf") rather than claiming the bare resource name.
+
+    Only conclusively text-less sources take part: when the analysis could not
+    decide, planning keeps its attempt-at-runtime path untouched.
+    """
+    renders: dict[str, str] = {}
+    presented: dict[str, str] = {}
+    for output in request.outputs:
+        if output.type not in ("pdf", "markdown") or output.scope != "single":
+            continue
+        source_ids, output_ids = resolved.get(output.id, ([], []))
+        if output_ids or len(source_ids) != 1:
+            continue  # a declared reference always wins; arity errors elsewhere
+        source_analysis = analysis.for_source(source_ids[0]) if analysis else None
+        if source_analysis is None or source_analysis.text.has_text:
+            continue  # the source's own text keeps today's path
+        if not facts_from_analysis(source_analysis).conclusive:
+            continue  # "unknown" stays an attempt, not a silent derivation
+        if output.type == "pdf":
+            sibling = _render_sibling(request, resolved, output, source_ids[0])
+            if sibling is not None:
+                renders[output.id] = sibling.id
+                presented[output.id] = sibling.type
+                continue
+        presented[output.id] = "summary"
+    return renders, presented
+
+
+def _render_sibling(request: GenerationRequest, resolved: dict, output, source_id: str):
+    """The text output of this request a plain pdf should render, if any:
+    first summary, then transcript, then translation — same source, single
+    scope, first declared wins within a type."""
+    for preferred_type in _IMPLICIT_RENDER_PREFERENCE:
+        for candidate in request.outputs:
+            if candidate.id == output.id or candidate.type != preferred_type:
+                continue
+            if candidate.scope != "single":
+                continue
+            candidate_sources = resolved.get(candidate.id, ([], []))[0]
+            if candidate_sources == [source_id] or (
+                not candidate_sources and _roots_at(candidate, request) == source_id
+            ):
+                return candidate
+    return None
+
+
+def _roots_at(candidate, request: GenerationRequest) -> str | None:
+    """The source a reference chain bottoms out at (a summary built
+    ``from_outputs`` a transcript still summarizes that transcript's source)."""
+    outputs_by_id = {output.id: output for output in request.outputs}
+    seen: set[str] = set()
+    current = candidate
+    while current.from_outputs and current.id not in seen:
+        seen.add(current.id)
+        parent = outputs_by_id.get(current.from_outputs[0])
+        if parent is None:
+            return None
+        current = parent
+    if current.from_sources:
+        return current.from_sources[0]
+    if len(request.sources) == 1:
+        return request.sources[0].id
+    return None
+
+
+def _plan_markdown_via_summary(
+    output,
+    index: int,
+    request: GenerationRequest,
+    builder: PlanBuilder,
+    source,
+    source_analysis: SourceAnalysis,
+    provider,
+    providers: ProviderRegistry,
+    errors: list[ValidationIssue],
+    warnings: list[ValidationIssue],
+    credential_id: str | None,
+    preferred_languages: tuple[str, ...],
+) -> None:
+    """A Markdown export of a source that carries no text of its own: the
+    default summary, whose canonical format already is Markdown (ADR 0028).
+    The step is the same `_derived_summary_step` a plain pdf uses, so asking
+    for both costs one summarization, not two."""
+    path = f"outputs[{index}]"
+    step_id = _derived_summary_step(
+        request,
+        builder,
+        source,
+        source_analysis,
+        provider,
+        providers,
+        path,
+        errors,
+        warnings,
+        credential_id,
+        preferred_languages,
+    )
+    if step_id is None:
+        return
+    builder.bind_output(output.id, step_id)
+
+
 def _resolve_delivery(
     request: GenerationRequest, settings: ContentSettings
 ) -> list[OutputDelivery]:
@@ -2122,7 +2393,21 @@ def _build_plan(
     # here (not at module load) avoids a circular import during migration.
     from content.planning.recipes.video import plan_video
 
-    for index, output in _outputs_in_dependency_order(request):
+    # ADR 0028: a plain pdf on a text-less source renders the text output the
+    # caller already asked for when there is one (a summary first — it is the
+    # default derivation — then a transcript, then a translation), instead of
+    # deriving a second summary beside it. Declared `from_outputs` always wins;
+    # `presented` tells the naming plan what such an output actually contains.
+    implicit_renders, presented = _implicit_render_references(
+        request, resolved, analysis
+    )
+    for pdf_id, sibling_id in implicit_renders.items():
+        # From here on the pdf *is* a render of that sibling: no source of its
+        # own, no source-capability gate — the same treatment the declared
+        # `from_outputs` form gets, because it is the same composition.
+        resolved[pdf_id] = ([], [sibling_id])
+
+    for index, output in _outputs_in_dependency_order(request, implicit_renders):
         path = f"outputs[{index}]"
 
         if output.type not in EXECUTABLE_OUTPUT_TYPES:
@@ -2207,9 +2492,8 @@ def _build_plan(
                     ValidationIssue(
                         code=codes.CAPABILITY_UNAVAILABLE,
                         path=path,
-                        message=(
-                            f"'{output.type}' cannot be produced from source "
-                            f"'{source_id}'."
+                        message=_cannot_produce_message(
+                            output.type, source_id, capability.reason
                         ),
                         details=capability.details,
                     )
@@ -2332,7 +2616,9 @@ def _build_plan(
 
         if output.type == "pdf":
             # Before the source guard: a PDF of a sibling output needs no source
-            # of its own (the referenced output already consumed one).
+            # of its own (the referenced output already consumed one). An
+            # implicit sibling reference (ADR 0028) was folded into `resolved`
+            # upstream, so it rides this same path as if it had been declared.
             _plan_pdf(
                 output,
                 index,
@@ -2341,12 +2627,43 @@ def _build_plan(
                 outputs_by_id,
                 source,
                 source_analysis,
+                capability,
+                provider,
                 providers,
                 settings,
                 output_ids,
                 errors,
                 warnings,
                 credential_id,
+                preferred_languages,
+            )
+            continue
+
+        if (
+            output.type == "markdown"
+            and source is not None
+            and source_analysis is not None
+            and not source_analysis.text.has_text
+            and capability is not None
+            and capability.status == "available"
+        ):
+            # A text-less source exporting Markdown: the artifact is the
+            # summary, in Markdown, and its name says so (ADR 0028). The
+            # status guard keeps the inconclusive-analysis case ("unknown")
+            # on the attempt-extraction tail, exactly as before.
+            _plan_markdown_via_summary(
+                output,
+                index,
+                request,
+                builder,
+                source,
+                source_analysis,
+                provider,
+                providers,
+                errors,
+                warnings,
+                credential_id,
+                preferred_languages,
             )
             continue
 
@@ -2563,7 +2880,7 @@ def _build_plan(
         analysis_id=analysis.analysis_id,
         steps=builder.steps,
         output_bindings=builder.bindings,
-        naming=resolve_naming_plan(request, analysis),
+        naming=resolve_naming_plan(request, analysis, presented=presented),
         delivery=_resolve_delivery(request, settings),
         warnings=warnings,
     )
