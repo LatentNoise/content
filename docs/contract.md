@@ -117,6 +117,7 @@ A union discriminated by `type` (a logical result, never a tool):
 | `document_text` | `format` (`text` flattens the reading\|`markdown` keeps its structure). Input: a readable source (a web page, a `.txt`/`.md` file, an inline `text` source) | 1 |
 | `markdown` | *(none yet)* — Markdown is the extractor's canonical form. Input: a readable source | 1 |
 | `pdf` | `page_size` (`a4`\|`letter`), `title` (empty = taken from the rendered material). Input: a readable source **or**, through `from_outputs`, any readable output (`summary`, `transcript`, `translation`, `chapters`, `markdown`, `document_text`). Rendered by an operator-selected implementation (Typst or ReportLab) — the renderer, its template and its fonts are **operator configuration, never contract**; the chosen backend appears in the artifact's provenance. See [operations/pdf-rendering.md](operations/pdf-rendering.md) | 1 |
+| `speech` | `voice` (empty = one that speaks `language`), `language` (`auto` = from the material), `format` (`mp3`; `wav`/`opus` are declared and refused with `option_not_supported` until a transcoding step exists), `speed` (0.5–2.0, 1.0 = natural). Input: the same readable source **or** readable output as `pdf` — speaking and rendering differ in what comes out, not in what goes in. Synthesised by an installed runner; the shipped one (`edge_tts`) is **`location: cloud`**, so the text leaves the machine and `constraints.privacy.allow_cloud_providers: false` refuses it. The voice and rate appear in the artifact's provenance | 1 |
 
 ### Types declared but not executed in V1
 

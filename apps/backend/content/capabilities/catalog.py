@@ -113,6 +113,22 @@ OPTION_GROUPS: dict[str, tuple[OptionSpec, ...]] = {
             "Empty = take it from the rendered material.",
         ),
     ),
+    "speech": (
+        OptionSpec(
+            "voice",
+            "string",
+            "Voice",
+            "A synthesiser voice name. Empty = one that speaks `language`.",
+        ),
+        OptionSpec(
+            "language",
+            "string",
+            "Language",
+            "auto = take it from the material being read.",
+        ),
+        OptionSpec("format", "enum", "Audio format", "mp3, wav or opus."),
+        OptionSpec("speed", "float", "Speaking rate", "1.0 is the natural pace."),
+    ),
 }
 
 
@@ -345,6 +361,25 @@ CAPABILITY_CATALOG: tuple[CapabilityDef, ...] = (
         ),
     ),
     CapabilityDef(
+        "speech.generate",
+        "Read aloud",
+        "Synthesise spoken audio from readable content.",
+        "speech",
+        (
+            # Only the source-level chain, exactly as `pdf.render` declares:
+            # speaking *another output* — a summary, a translation — is a
+            # composition expressed with `from_outputs`, not a property of the
+            # source.
+            _v(
+                "speech.generate.from_text",
+                "speech.generate",
+                (T.TEXT_EXTRACT, T.TEXT_SPEAK),
+                (T.TEXT,),
+                ("speech",),
+            ),
+        ),
+    ),
+    CapabilityDef(
         "summary.generate",
         "Generate summary",
         "Summarize the content with an LLM, via a transcript.",
@@ -439,6 +474,7 @@ OUTPUT_CAPABILITY: dict[str, str] = {
     "document_text": "text.extract",
     "markdown": "markdown.export",
     "pdf": "pdf.render",
+    "speech": "speech.generate",
     # thumbnail keeps mapping to the download: it is the preferred path when the
     # source publishes an image, and the planner switches to thumbnail.generate
     # from the request's options (as it does for video.clip).

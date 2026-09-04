@@ -32,6 +32,12 @@ dev = [
 stt = [
     "faster-whisper>=1.0",
 ]
+# Optional text-to-speech runner (text.speak): installing it activates the
+# `speech` output. Pure Python and tiny, unlike the STT wheels — but it is a
+# *cloud* runner, so it stays behind an extra rather than being assumed.
+tts = [
+    "edge-tts>=7.0",
+]
 # Optional document *reader* (a `.pdf` file source): installing it lets the
 # document provider extract a PDF's text layer. pypdf is BSD-3-Clause and a
 # pure-Python wheel — the same two properties that decided reportlab below, so

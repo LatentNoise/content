@@ -109,7 +109,7 @@ RUN python3 -c "\
 import tomllib;\
 p = tomllib.load(open('pyproject.toml','rb'))['project'];\
 extras = p.get('optional-dependencies', {});\
-deps = p['dependencies'] + extras.get('pdf', []) + extras.get('read', []);\
+deps = p['dependencies'] + extras.get('pdf', []) + extras.get('read', []) + extras.get('tts', []);\
 open('/tmp/requirements.txt','w').write(chr(10).join(deps))" \
     && cat /tmp/requirements.txt \
     && pip install --no-cache-dir --only-binary=:all: --no-compile \

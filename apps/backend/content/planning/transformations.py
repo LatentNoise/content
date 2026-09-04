@@ -40,6 +40,12 @@ TEXT = "text"
 # *presentation* — reflowing it back into content is lossy, which is exactly why
 # rendering is its own step rather than a `format` on every text output.
 PDF = "pdf"
+# Spoken audio synthesised from readable material. Distinct from AUDIO, which
+# is a track *acquired from a source*: this one has no source track behind it,
+# it is text that was read aloud. Terminal, like PDF — nothing downstream
+# consumes it, and turning it back into text would be a transcription, not an
+# inverse.
+SPEECH = "speech"
 
 # --- operation names (stable, provider-independent verbs) ----------------------
 ACQUIRE_VIDEO = "media.acquire_video"
@@ -64,6 +70,10 @@ TEXT_EXTRACT = "text.extract"
 # to share a name. One capability, one transformation, several implementations
 # (content.pdf.typst, content.pdf.reportlab).
 RENDER_PDF = "document.render_pdf"
+# Read text aloud. Same reasoning as RENDER_PDF: `speech.generate` is the public
+# capability id, `text.speak` is the transformation, and one may have several
+# implementations (a cloud voice service, a local synthesiser).
+TEXT_SPEAK = "text.speak"
 
 
 @dataclass(frozen=True)
@@ -228,6 +238,20 @@ DEFINITIONS: tuple[TransformationDefinition, ...] = (
         operation=RENDER_PDF,
         input_kinds=(TEXT, SUMMARY, TRANSCRIPT, TRANSLATION, CHAPTERS),
         output_kinds=(PDF,),
+        lossy=True,
+    ),
+    # Read readable material aloud. It takes the same text-bearing kinds as
+    # RENDER_PDF and for the same reason: speaking is orthogonal to *what*
+    # produced the text, so it is a step rather than a `voice` option repeated
+    # on summary, transcript, translation and chapters (R1 — one declaration).
+    # `lossy`, and not deterministic: a synthesiser is free to phrase the same
+    # sentence differently between versions, so the step is not cacheable on
+    # its inputs alone.
+    TransformationDefinition(
+        operation=TEXT_SPEAK,
+        input_kinds=(TEXT, SUMMARY, TRANSCRIPT, TRANSLATION, CHAPTERS),
+        output_kinds=(SPEECH,),
+        deterministic=False,
         lossy=True,
     ),
 )
