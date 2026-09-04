@@ -10,6 +10,8 @@ source where no derivation exists is still refused — with the missing piece
 named.
 """
 
+import pathlib
+
 import pytest
 
 from content.capabilities.catalog import capability
@@ -134,6 +136,60 @@ def test_text_extract_still_means_text_the_source_itself_carries():
     assert caps["text.extract"].status == "unavailable"
     assert caps["text.extract"].reason.code == "missing_material"
     assert caps["text.extract"].reason.missing_materials == ["text"]
+
+
+def test_the_derivation_chain_says_what_the_document_will_contain():
+    """The public answer for "derived how?": the whole material chain, read
+    from the registry's own declarations — the difference between "a PDF from
+    subtitles" and the truth, a PDF *of the summary* (ADR 0028)."""
+    caps = _resolved(_video_with_subs(), _providers())
+    assert caps["pdf.render"].derivation == [
+        "subtitles",
+        "transcript",
+        "summary",
+        "pdf",
+    ]
+    assert caps["markdown.export"].derivation == [
+        "subtitles",
+        "transcript",
+        "summary",
+    ]
+    assert caps["summary.generate"].derivation == [
+        "subtitles",
+        "transcript",
+        "summary",
+    ]
+    assert caps["transcript.generate"].derivation == ["subtitles", "transcript"]
+    # A direct capability's chain collapses to its own material: nothing to say.
+    assert caps["subtitles.download"].derivation == ["subtitles"]
+    # And a blocked capability has no selected variant, so no chain to claim.
+    assert caps["text.extract"].derivation == []
+
+
+def test_the_derivation_chain_reaches_the_public_capability_feed():
+    """Clients read /capabilities, not the resolver — the chain must survive
+    the trip so a UI can render "subtitles → transcript → summary → pdf"."""
+    import tempfile
+
+    from content.config import ContentSettings
+
+    with tempfile.TemporaryDirectory() as tmp:
+        settings = ContentSettings(
+            data_dir=pathlib.Path(tmp), db_path=pathlib.Path(tmp) / "c.db"
+        )
+        with _api(settings, _providers()) as client:
+            response = client.post(
+                "/api/v1/capabilities",
+                json={"sources": [{"id": "d", "type": "url", "uri": "https://x/talk"}]},
+            )
+    assert response.status_code == 200, response.text
+    caps = {c["id"]: c for c in response.json()["sources"][0]["capabilities"]}
+    assert caps["pdf.render"]["derivation"] == [
+        "subtitles",
+        "transcript",
+        "summary",
+        "pdf",
+    ]
 
 
 def test_planner_builds_exactly_the_variant_the_resolver_selected():

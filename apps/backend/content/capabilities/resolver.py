@@ -193,6 +193,27 @@ def select_variant(
     return classify_capability(cap, facts, registry, providers, policy)[1]
 
 
+def _derivation_for(
+    variant: RecipeVariant, registry: TransformationRegistry
+) -> list[str]:
+    """The material chain the variant walks, source first, artifact last —
+    read from the registry's own ``output_kinds`` declarations (R1: one
+    declaration), so ``pdf.render.via_summary`` answers
+    ["subtitles", "transcript", "summary", "pdf"] without any per-capability
+    hand-writing. Consecutive duplicates collapse (an acquisition *of* the
+    required material adds nothing to the story)."""
+    chain = [_material_name(kind) for kind in variant.requires_materials]
+    for op in variant.operations:
+        definition = registry.definition(op)
+        if definition is None:
+            continue
+        for kind in definition.output_kinds:
+            name = _material_name(kind)
+            if not chain or chain[-1] != name:
+                chain.append(name)
+    return chain
+
+
 def _resolve_one(
     cap: CapabilityDef,
     facts: SourceFacts,
@@ -216,6 +237,7 @@ def _resolve_one(
         status=status,
         selected_variant=variant.id if variant is not None else None,
         derived_from=derived_from,
+        derivation=_derivation_for(variant, registry) if variant is not None else [],
         reason=reason,
     )
 

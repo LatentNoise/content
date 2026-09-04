@@ -55,7 +55,7 @@ This document defines the concepts, their invariants and the state machines. The
 Level 3 is exposed by `POST /capabilities` (not in the analysis), as a list of `ResolvedCapability` objects from the **public catalog** (`video.download`, `summary.generate`, …), with the statuses:
 
 - `available` — a direct download (the material is the output);
-- `derivable` — produced by transformation (`derived_from: [...]`);
+- `derivable` — produced by transformation (`derived_from: [...]`, full chain in `derivation: [...]`);
 - `unavailable` — impossible, with a **structured reason** (`missing_material` = incompatible source; `implementation_unavailable` = missing runner; `policy_restricted`);
 - `restricted` — feasible but blocked by the effective policy;
 - `unknown` — no proven impossibility, insufficient facts; never presented as `available`, an attempt is allowed, the uncertainty is traceable (R8).

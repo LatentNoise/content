@@ -508,11 +508,18 @@ with tab_caps:
             )
             for c in res["capabilities"]:
                 icon, color = capability_display(c["status"])
-                derived = (
-                    f" ← {', '.join(c['derived_from'])}"
-                    if c.get("derived_from")
-                    else ""
-                )
+                # The full chain when the engine reports one (ADR 0028):
+                # "subtitles → transcript → summary → pdf" says what a
+                # derivable actually contains — a PDF *of the summary* —
+                # where the bare "← subtitles" left that unsaid. Older
+                # engines without `derivation` keep the old display.
+                chain = c.get("derivation") or []
+                if c["status"] == "derivable" and len(chain) > 1:
+                    derived = "  ·  " + " → ".join(chain)
+                elif c.get("derived_from"):
+                    derived = f" ← {', '.join(c['derived_from'])}"
+                else:
+                    derived = ""
                 reason = _reason_str(c.get("reason"))
                 st.markdown(
                     f"<div class='step'>{icon} <b>{c['id']}</b> "
