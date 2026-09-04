@@ -124,12 +124,25 @@ def _base_for(output, outputs_by_id, resolved, sources_by_id, analysis) -> str:
     return ""
 
 
-def _qualifier_for(output, primary_id, outputs_by_id, seen: frozenset = frozenset()):
+def _qualifier_for(
+    output,
+    primary_id,
+    outputs_by_id,
+    seen: frozenset = frozenset(),
+    presented: dict[str, str] | None = None,
+):
     """The primary output is bare; a presentation output (pdf, translation)
     inherits the qualifier of the declared output it derives from (a PDF of
-    the summary is a summary); everything else is named for what it is."""
+    the summary is a summary); everything else is named for what it is.
+
+    ``presented`` carries the planner's implicit derivations (ADR 0028): a
+    plain pdf on a video contains the summary the planner inserted, and its
+    name must say so exactly as the declared form would ("… - summary.pdf") —
+    the two requests produce the same artifact, so they get the same name."""
     if output.id == primary_id:
         return ""
+    if presented and output.id in presented:
+        return presented[output.id]
     if (
         output.type in INHERIT_QUALIFIER_TYPES
         and output.from_outputs
@@ -141,27 +154,37 @@ def _qualifier_for(output, primary_id, outputs_by_id, seen: frozenset = frozense
     return output.type
 
 
-def _bare_eligible(output, outputs_by_id) -> bool:
+def _bare_eligible(
+    output, outputs_by_id, presented: dict[str, str] | None = None
+) -> bool:
     """Can this output legitimately carry the unqualified name?
 
     Only if it *is* the resource. A presentation type (a PDF, a translation)
     is judged by what it presents: a PDF of the page is the page, a PDF of the
     summary is a summary and keeps that word — which is also what the
-    qualifier inheritance says, so the two rules cannot disagree.
+    qualifier inheritance says, so the two rules cannot disagree. The same
+    judgement covers the planner's implicit derivations (``presented``,
+    ADR 0028): a plain pdf that will contain a summary is a summary too.
     """
+    if presented and output.id in presented:
+        return presented[output.id] in PRIMARY_PRECEDENCE
     root = _root_output(output, outputs_by_id)
     if output.type in INHERIT_QUALIFIER_TYPES and root.id != output.id:
         return root.type in PRIMARY_PRECEDENCE
     return output.type in PRIMARY_PRECEDENCE
 
 
-def _primary_output_id(outputs, outputs_by_id) -> str | None:
+def _primary_output_id(
+    outputs, outputs_by_id, presented: dict[str, str] | None = None
+) -> str | None:
     """The one output named bare, or ``None`` when the request asked for
     nothing that is the resource itself — in which case every artifact says
     what it is, which is the honest answer for a transcript-only request."""
     for output_type in PRIMARY_PRECEDENCE:
         for output in outputs:
-            if output.type == output_type and _bare_eligible(output, outputs_by_id):
+            if output.type == output_type and _bare_eligible(
+                output, outputs_by_id, presented
+            ):
                 return output.id
     return None
 
@@ -262,13 +285,19 @@ def suggest_base_name(resource) -> str:
     return display_name(title) or display_name(resource.provider_id)
 
 
-def resolve_naming_plan(request, analysis: ResourceAnalysis | None) -> NamingPlan:
+def resolve_naming_plan(
+    request,
+    analysis: ResourceAnalysis | None,
+    presented: dict[str, str] | None = None,
+) -> NamingPlan:
     """Planning phase: fix every output's display base and qualifier. Pure and
-    deterministic — identical request + analysis give an identical plan."""
+    deterministic — identical request + analysis give an identical plan.
+    ``presented`` maps implicitly derived outputs (ADR 0028) to the kind they
+    actually contain, so their names are as honest as the declared form's."""
     resolved, _ = resolve_inputs(request)
     outputs_by_id = {output.id: output for output in request.outputs}
     sources_by_id = {source.id: source for source in request.sources}
-    primary_id = _primary_output_id(request.outputs, outputs_by_id)
+    primary_id = _primary_output_id(request.outputs, outputs_by_id, presented)
 
     entries: list[OutputNaming] = []
     for output in request.outputs:
@@ -280,7 +309,9 @@ def resolve_naming_plan(request, analysis: ResourceAnalysis | None) -> NamingPla
         base = client_base or _base_for(
             output, outputs_by_id, resolved, sources_by_id, analysis
         )
-        qualifier = _qualifier_for(output, primary_id, outputs_by_id)
+        qualifier = _qualifier_for(
+            output, primary_id, outputs_by_id, presented=presented
+        )
 
         item_bases: dict[str, str] = {}
         if output.scope == "each_item":

@@ -18,6 +18,7 @@ from content.capabilities.facts import facts_from_analysis
 from content.capabilities.policy import EffectivePolicy
 from content.capabilities.resolver import classify_capability
 from content.domain.analysis import SourceAnalysis
+from content.domain.capability import CapabilityReason
 from content.planning.transformations import build_registry
 from content.providers.base import ProviderRegistry
 
@@ -29,6 +30,11 @@ class OutputFeasibility:
     output_type: str
     status: str  # "available" | "unknown" | "unavailable"
     details: dict = field(default_factory=dict)
+    # The resolver's structured verdict when status is "unavailable" — what the
+    # feasibility error tells the caller in user terms, instead of the bare
+    # "cannot be produced" that named neither the missing material nor the
+    # remedy (ADR 0028 C).
+    reason: CapabilityReason | None = None
 
 
 def _details_for(
@@ -78,10 +84,11 @@ def output_feasibility(
     effective = policy or EffectivePolicy()
     cap_id = OUTPUT_CAPABILITY.get(output_type)
     status = "available"
+    reason = None
     if cap_id is not None:
         cap = capability(cap_id)
         if cap is not None:
-            resolved, _variant, _reason = classify_capability(
+            resolved, _variant, reason = classify_capability(
                 cap, facts, registry, providers, effective
             )
             # available/derivable → plannable; unknown → attempt with a warning;
@@ -93,4 +100,5 @@ def output_feasibility(
         output_type=output_type,
         status=status,
         details=_details_for(output_type, analysis, providers),
+        reason=reason,
     )

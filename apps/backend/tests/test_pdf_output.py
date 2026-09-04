@@ -287,14 +287,14 @@ def test_a_pdf_of_a_media_output_is_refused_with_a_usable_message(settings, docs
     ), errors
 
 
-def test_a_pdf_of_a_source_with_no_text_is_refused_like_every_other_output(
+def test_a_pdf_of_a_source_with_no_text_and_no_summarizer_is_refused(
     settings,
 ):
-    """R3: `pdf.render` needs TEXT, the resolver says a video has none, and the
-    planner's shared feasibility gate refuses with the same message shape every
-    other output type gets. Consistency here is the invariant — a bespoke error
-    for PDF would mean the gate had been bypassed."""
-    with _api(settings, _providers(media=True)) as client:
+    """R3, post-ADR 0028: a plain pdf on a video *derives* the summary — so the
+    refusal only remains when the derivation itself is impossible. It still
+    comes from the shared feasibility gate, same shape as every other output,
+    and now says which side is missing what (here: this installation)."""
+    with _api(settings, _providers(media=True, with_summarizer=False)) as client:
         response = client.post(
             "/api/v1/jobs",
             json={
@@ -307,6 +307,7 @@ def test_a_pdf_of_a_source_with_no_text_is_refused_like_every_other_output(
     error = response.json()["detail"]["errors"][0]
     assert error["code"] == "capability_unavailable"
     assert error["path"] == "outputs[0]"
+    assert "text.summarize" in error["message"]
 
 
 def test_a_json_transcript_rendered_as_pdf_warns_rather_than_refuses(settings):
@@ -372,9 +373,13 @@ def test_capabilities_offer_pdf_render_on_a_readable_source(settings, docs_root)
     assert caps["pdf.render"]["selected_variant"] == "pdf.render.from_text"
 
 
-def test_capabilities_refuse_pdf_render_on_a_source_with_no_text(settings, docs_root):
-    """R3: the resolver and the planner must agree. The planner refuses a PDF of
-    a media source, so the catalog must not advertise one."""
+def test_capabilities_announce_the_summary_derivation_on_a_media_source(
+    settings, docs_root
+):
+    """R3: the resolver and the planner must agree. The planner now derives a
+    summary behind a plain pdf on a video (ADR 0028), so the catalog must
+    advertise exactly that — and stop advertising it the moment the
+    installation cannot summarize."""
     with _api(settings, _providers(media=True)) as client:
         response = client.post(
             "/api/v1/capabilities",
@@ -382,8 +387,16 @@ def test_capabilities_refuse_pdf_render_on_a_source_with_no_text(settings, docs_
         )
     assert response.status_code == 200, response.text
     caps = {c["id"]: c for c in response.json()["sources"][0]["capabilities"]}
+    assert caps["pdf.render"]["status"] == "derivable"
+    assert caps["pdf.render"]["selected_variant"] == "pdf.render.via_summary"
+    with _api(settings, _providers(media=True, with_summarizer=False)) as client:
+        response = client.post(
+            "/api/v1/capabilities",
+            json={"sources": [{"id": "d", "type": "url", "uri": "https://x/talk"}]},
+        )
+    caps = {c["id"]: c for c in response.json()["sources"][0]["capabilities"]}
     assert caps["pdf.render"]["status"] == "unavailable"
-    assert caps["pdf.render"]["reason"]["code"] == "missing_material"
+    assert caps["pdf.render"]["reason"]["code"] == "implementation_unavailable"
 
 
 # --- real bytes -----------------------------------------------------------------
