@@ -947,8 +947,9 @@ with st.expander("⚙️ Advanced"):
         value="",
         key=f"extra-{wk}",
         help="Power users only — forwarded to yt-dlp, e.g. "
-        "--limit-rate 2M --proxy http://host:8080. Command-execution and "
-        "output/cookies overrides are rejected by the server.",
+        "--limit-rate 2M --proxy http://host:8080. Only network, geo, "
+        "pacing and user-agent flags are accepted; the server rejects "
+        "everything else.",
     )
 try:
     provider_args = shlex.split(extra_args_raw) if extra_args_raw.strip() else []
