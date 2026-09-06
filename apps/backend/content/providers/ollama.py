@@ -68,10 +68,10 @@ def _context_for(prompt: str, ceiling: int) -> int | None:
     fifty percent of the source. The same halving reproduced at a requested
     window of 49 152, where a 50 319-token prompt came back as 24 579.
 
-    So the window is not something to hope about. The daemon's default is one
-    global number chosen with no knowledge of the prompt — and when
-    `OLLAMA_CONTEXT_LENGTH` is unset entirely, that number is 4 096, which
-    halves the transcript of a twenty-minute video. Asking per request is both
+    So the window is not something to hope about. The daemon's default is
+    chosen with no knowledge of the prompt — unset, Ollama 0.32 sizes it by
+    available VRAM (4 096, 32 768 or 262 144 tokens), so the same source can
+    be read whole on one machine and halved on another. Asking per request is both
     more correct and cheaper: a short summary no longer reserves a window sized
     for the longest job the operator once anticipated.
     """
@@ -86,8 +86,10 @@ def _warn_if_truncated(prompt, payload, model, ctx) -> None:
 
     Measured on the real deployment (Ollama 0.32, gemma3:4b): a 32 400-word
     transcript and a 90 000-word one both came back with
-    ``prompt_eval_count`` of exactly 16 387 — the default
-    ``OLLAMA_CONTEXT_LENGTH`` of 16 384 plus the chat scaffolding. The prompt is
+    ``prompt_eval_count`` of exactly 16 387 — half of the daemon's
+    32 768-token window, the overflow cliff ``_context_for`` documents (there
+    is no fixed 16 384 default: unset, Ollama 0.32 sizes the window by
+    available VRAM — 4 096, 32 768 or 262 144). The prompt is
     **cut, not refused**: the job succeeds, the artifact looks right, and the
     summary covers the beginning of a recording while appearing to cover all of
     it. Nothing in the response says so; ``prompt_eval_count`` is the only

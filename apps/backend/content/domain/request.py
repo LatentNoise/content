@@ -100,25 +100,48 @@ class BaseSource(StrictModel):
     auth: SourceAuth | None = None
 
 
-# yt-dlp flags a client must never set: they run commands or redirect the
-# engine's controlled output/config/cookies. Rejected in provider_args.
-_UNSAFE_PROVIDER_ARGS = {
-    "--exec",
-    "--exec-before-download",
-    "-o",
-    "--output",
-    "-P",
-    "--paths",
-    "--load-info-json",
-    "--load-info",
-    "-a",
-    "--batch-file",
-    "--config-location",
-    "--config",
-    "--cookies",
-    "--cookies-from-browser",
-    "--cache-dir",
-    "--print-to-file",
+# yt-dlp flags a client may set through provider_args, mapped to whether the
+# flag consumes a value. This is everything the escape hatch exists for —
+# network routing, geo handling, pacing, request identity — and nothing that
+# touches the filesystem, names a program to run, or redirects the engine's
+# output/config/cookies. This used to be a denylist of fifteen dangerous
+# flags; against a tool with hundreds of options that gains more every
+# release, a denylist is structurally losing (it already missed
+# `--config-locations`, `--downloader`, `--use-postprocessor`,
+# `--ffmpeg-location` — each one a path to running a caller-chosen binary),
+# so anything not listed here is rejected.
+_ALLOWED_PROVIDER_ARGS: dict[str, bool] = {
+    # network routing
+    "--proxy": True,
+    "--geo-verification-proxy": True,
+    "--source-address": True,
+    "-4": False,
+    "--force-ipv4": False,
+    "-6": False,
+    "--force-ipv6": False,
+    # geo restriction workarounds
+    "--geo-bypass": False,
+    "--no-geo-bypass": False,
+    "--geo-bypass-country": True,
+    "--xff": True,
+    # pacing and resilience
+    "-r": True,
+    "--limit-rate": True,
+    "--throttled-rate": True,
+    "--retries": True,
+    "--fragment-retries": True,
+    "--retry-sleep": True,
+    "--socket-timeout": True,
+    "--sleep-requests": True,
+    "--sleep-interval": True,
+    "--min-sleep-interval": True,
+    "--max-sleep-interval": True,
+    "-N": True,
+    "--concurrent-fragments": True,
+    "--http-chunk-size": True,
+    # request identity
+    "--user-agent": True,
+    "--referer": True,
 }
 
 
@@ -128,23 +151,46 @@ class UrlSource(BaseSource):
     # Advanced escape hatch: extra arguments forwarded to the acquisition
     # provider (yt-dlp for URLs), e.g. ["--proxy", "http://p:8080"]. Explicitly
     # provider-specific — a documented exception to keep the contract otherwise
-    # clean. Command-execution and output/config/cookies overrides are rejected.
+    # clean. Only the flags in _ALLOWED_PROVIDER_ARGS are accepted.
     provider_args: list[str] = Field(default_factory=list)
 
     @field_validator("provider_args")
     @classmethod
     def _guard_provider_args(cls, value: list[str]) -> list[str]:
         cleaned: list[str] = []
+        awaiting_value_for: str | None = None
         for token in value:
             token = token.strip()
             if not token:
                 continue
-            flag = token.split("=", 1)[0]
-            if flag in _UNSAFE_PROVIDER_ARGS:
+            if awaiting_value_for is not None:
+                # The value promised by the previous flag. It must not look
+                # like a flag itself: none of the allowed options take values
+                # starting with '-', and letting one through would hand yt-dlp
+                # an argument this validator never saw.
+                if token.startswith("-"):
+                    raise ValueError(
+                        f"provider argument '{awaiting_value_for}' expects a "
+                        f"value, got '{token}'"
+                    )
+                cleaned.append(token)
+                awaiting_value_for = None
+                continue
+            flag, eq, _ = token.partition("=")
+            takes_value = _ALLOWED_PROVIDER_ARGS.get(flag)
+            if takes_value is None:
                 raise ValueError(
                     f"provider argument '{flag}' is not allowed for safety"
                 )
+            if eq and not takes_value:
+                raise ValueError(f"provider argument '{flag}' does not take a value")
             cleaned.append(token)
+            if takes_value and not eq:
+                awaiting_value_for = flag
+        if awaiting_value_for is not None:
+            raise ValueError(
+                f"provider argument '{awaiting_value_for}' expects a value"
+            )
         return cleaned
 
 
