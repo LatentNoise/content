@@ -104,6 +104,20 @@ OPTION_GROUPS: dict[str, tuple[OptionSpec, ...]] = {
         OptionSpec("start", "time", "Range start"),
         OptionSpec("end", "time", "Range end"),
     ),
+    "synced_audio": (
+        OptionSpec(
+            "lrc_sidecar",
+            "bool",
+            "Also write an .lrc",
+            "ID3 lyrics are read by few players; .lrc is what phones open.",
+        ),
+        OptionSpec(
+            "language",
+            "string",
+            "Language tag",
+            "auto = take it from the transcript.",
+        ),
+    ),
     "pdf": (
         OptionSpec("page_size", "enum", "Page size", "a4 or letter."),
         OptionSpec(

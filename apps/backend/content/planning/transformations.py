@@ -40,6 +40,10 @@ TEXT = "text"
 # *presentation* — reflowing it back into content is lossy, which is exactly why
 # rendering is its own step rather than a `format` on every text output.
 PDF = "pdf"
+# An audio file carrying its own words, timed. Distinct from AUDIO: the bytes
+# are an audio track either way, but this one has had text written into it, and
+# nothing downstream can recover the pairing from the audio alone.
+SYNCED_AUDIO = "synced_audio"
 
 # --- operation names (stable, provider-independent verbs) ----------------------
 ACQUIRE_VIDEO = "media.acquire_video"
@@ -64,6 +68,10 @@ TEXT_EXTRACT = "text.extract"
 # to share a name. One capability, one transformation, several implementations
 # (content.pdf.typst, content.pdf.reportlab).
 RENDER_PDF = "document.render_pdf"
+# Write a timed transcript into an audio file, so a player can show the words
+# as they are spoken. `synced_audio.generate` is the public capability id;
+# this is the transformation, as with document.render_pdf / pdf.render.
+AUDIO_SYNC_TEXT = "audio.sync_text"
 
 
 @dataclass(frozen=True)
@@ -224,6 +232,14 @@ DEFINITIONS: tuple[TransformationDefinition, ...] = (
     # the text, which is why it is a step and not a `format` option repeated on
     # summary, transcript, translation and chapters (R1 — one declaration).
     # `lossy`: the rendered page cannot be turned back into its source material.
+    # audio + timed text -> the same audio, carrying the text. Two input kinds
+    # on purpose, and the only transformation here that takes two: the pairing
+    # *is* the product, and neither half can be inferred from the other.
+    TransformationDefinition(
+        operation=AUDIO_SYNC_TEXT,
+        input_kinds=(AUDIO, TRANSCRIPT, SUBTITLES),
+        output_kinds=(SYNCED_AUDIO,),
+    ),
     TransformationDefinition(
         operation=RENDER_PDF,
         input_kinds=(TEXT, SUMMARY, TRANSCRIPT, TRANSLATION, CHAPTERS),
