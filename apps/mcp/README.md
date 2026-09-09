@@ -235,6 +235,8 @@ Something you need that is not here? The gap list is the roadmap's front door:
 | `retry_job` | Run a finished job's request again, as a new job. The **whole** request — see *What is coming* for the finer version |
 | `list_jobs` | Recent jobs |
 | `get_artifact` | Artifact metadata; **small text is inlined**, larger/binary returns a download reference (never raw bytes over MCP) |
+| `download_artifact` | Save an artifact onto the machine running this server — the counterpart to delivery. Bounded by `CONTENT_MCP_DOWNLOAD_DIR`; a destination outside it is refused, not clamped (see *Where downloaded files land*) |
+| `delete_upload` | Take back bytes this server uploaded from a local file, before the TTL expires. Removes only that upload — never an artifact, never a file in the library |
 | `get_config` | Request-building context: credential ids, whether delivery-by-default is on, the existing library folders |
 
 ## Resources (read-only, `content://` namespace)
