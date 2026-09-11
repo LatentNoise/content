@@ -34,42 +34,30 @@ Revenir en arrière : `helm rollback content -n content`
 2. **`strategy: Recreate`.** Un rolling update ferait cohabiter deux pods sur le même volume et la même base, même quelques secondes.
 3. **Un tag de version explicite, jamais `latest`.** Un tag mutable force `imagePullPolicy: Always` : un simple redémarrage devient un déploiement non décidé, et deux pods démarrés à deux moments peuvent porter deux versions.
 
-## Pourquoi deux Deployments, deux Services, et (par défaut) deux Ingress
+## Quatre surfaces, quatre Services, quatre Ingress — et pourquoi ce ne sont pas des répliques
 
-C'est la question qui revient : *« je pensais qu'on aurait un seul ingress, un seul service, et juste plusieurs répliques. »* Les deux notions n'ont rien à voir, et voici la différence.
+*« Je pensais qu'on aurait un seul ingress, un seul service, et juste plusieurs répliques. »* Les deux notions n'ont rien à voir.
 
-**Une réplique, c'est le MÊME conteneur lancé plusieurs fois.** Même image, même rôle, même port. On en met plusieurs pour encaisser la charge ou survivre à la perte d'un pod. **Kubernetes les met derrière un seul `Service`, qui répartit tout seul.** Un `Deployment` à 3 répliques = un seul Service, un seul Ingress.
+**Une réplique, c'est le MÊME conteneur lancé plusieurs fois** — même image, même rôle, même port. On en met plusieurs pour la charge ou la tolérance de panne, et **Kubernetes les met derrière UN seul `Service`, qui répartit tout seul**. Un Deployment à 3 répliques = 1 Service, 1 Ingress.
 
-**Content et Studio ne sont pas des répliques l'un de l'autre : ce sont deux applications différentes.**
+**Ici, ce sont quatre applications différentes**, chacune avec son image, son rôle et son public :
 
-| | Content | Studio |
-|---|---|---|
-| Image | `ghcr.io/latentnoise/content` | `ghcr.io/latentnoise/content-studio` |
-| Ce que c'est | le moteur : l'API, les jobs, le stockage | une UI Streamlit qui *appelle* cette API |
-| Port | 8000 | 8501 |
-| Sans l'autre | fonctionne (c'est une API) | ne sert à rien |
+| Surface | Image | Port | Pour qui |
+|---|---|---|---|
+| **moteur** | `content` | 8000 | l'API — les clients, les SDK, les autres UI |
+| **Studio** | `content-studio` | 8501 | l'opérateur, en création |
+| **Console** | `content-console` | 8501 | l'opérateur, en exploitation |
+| **HomeTube** | `content-hometube` | 8501 | quelqu'un qui veut télécharger une vidéo |
 
-Deux images, deux ports, deux rôles → **deux `Deployment` et deux `Service`, nécessairement**. Un Service pointe vers un ensemble de pods identiques ; il ne peut pas servir deux applications sur deux ports différents.
+Un `Service` pointe vers un ensemble de pods **identiques** : il ne peut pas servir quatre applications. Donc **quatre Services**, nécessairement. Et comme chacune doit être atteignable directement, **quatre Ingress** — un nom de domaine par surface.
 
-**En revanche, le nombre d'Ingress est un choix, et il y en a deux.**
+**Ajouter une surface = une entrée dans `uis`**, rien d'autre : le template les traite génériquement (elles sont toutes en Streamlit sur 8501, healthcheck `/_stcore/health`).
 
-### Option A — deux noms de domaine (le défaut actuel)
+### Les URLs des surfaces sœurs, injectées automatiquement
 
-`content.k3s.lab` → le moteur · `studio.k3s.lab` → l'UI. Chaque application a son nom. Pratique en LAN, chaque brique se teste séparément.
+Chaque UI reçoit `CONTENT_<AUTRE_SURFACE>_URL` pour **les surfaces effectivement activées et exposées** — jamais un lien en dur, parce qu'un opérateur qui auto-héberge n'aura ni les mêmes surfaces ni les mêmes URLs.
 
-### Option B — **un seul nom de domaine** (`ingress.singleHost: true`)
-
-`content.k3s.lab/` → l'UI · `content.k3s.lab/api` → le moteur. **Un seul Ingress, un seul nom, un seul certificat.**
-
-🔑 **Et ça marche sans reconfigurer quoi que ce soit, parce que l'API de Content vit déjà sous `/api/v1/…`** — il n'y a pas de collision de chemins, rien à réécrire, aucun `baseUrlPath` à régler côté Streamlit.
-
-**C'est la forme à choisir pour une mise en ligne publique** : une seule URL à donner, un seul nom dans le tunnel Cloudflare, un seul certificat. Bascule :
-
-```bash
-helm upgrade content ./deploy/charts/content -n content --reuse-values --set ingress.singleHost=true
-```
-
-*(L'Ingress de Studio disparaît automatiquement dans ce mode — le template le sait.)*
+⚠️ **Ces variables ne sont pas encore lues par les applications.** Le déploiement est prêt, le code non : voir `~/Independence/Services/Content/2026-09-11 La navigation entre les surfaces…`, qui dit aussi **quels liens ne pas ouvrir** (la Console n'a pas d'authentification — ADR 0024 — et ne doit jamais être atteignable depuis une surface publique).
 
 ## Les secrets
 
