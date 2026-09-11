@@ -31,3 +31,23 @@ app.kubernetes.io/component: engine
 {{- define "content.image" -}}
 {{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}
 {{- end -}}
+
+{{/*
+The worker workload. It follows the same shape as the UI workloads: one app
+name for the release, a `component` label that separates the Deployments.
+The API's selector already carries `component: engine`, so the two never
+match each other's pods.
+*/}}
+{{- define "content.workerFullname" -}}
+{{- printf "%s-worker" (include "content.fullname" .) | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+
+{{- define "content.workerSelectorLabels" -}}
+{{ include "content.selectorLabelsBase" . }}
+app.kubernetes.io/component: worker
+{{- end -}}
+
+{{- define "content.workerLabels" -}}
+{{ include "content.labels" . }}
+app.kubernetes.io/component: worker
+{{- end -}}

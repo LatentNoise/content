@@ -1,26 +1,47 @@
+{{- if .Values.worker.enabled }}
+# The worker deployment: the same image and the same code as the API, told by
+# one environment variable to do the work instead of answering requests.
+#
+# Why this is safe: `claim_next_queued()` takes the oldest queued job under
+# `BEGIN IMMEDIATE` and marks it running in the same transaction, so several
+# processes draw from the queue without ever claiming the same job.
+#
+# ⛔ Two hard limits, both about the single SQLite file and the node-bound
+# volume:
+#   - every pod must land on the SAME node. A ReadWriteOnce local-path volume
+#     cannot be mounted by a second node, and network-shared SQLite corrupts.
+#   - this adds NO CPU. The API stops waiting behind a transcode, which is a
+#     latency win; throughput is still governed by maxConcurrentJobs.
+#
+# ⚠️ Before enabling continuous backup with Litestream, check how it behaves
+# with more than one writing process against the same database. The chart's
+# single-replica note was written on the assumption of one writer.
+#
+# The pods are told apart by `component`, exactly like the UI workloads: the
+# API's selector already carries `component: engine`, so neither Deployment
+# ever adopts the other's pods.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "content.fullname" . }}
-  labels: {{- include "content.labels" . | nindent 4 }}
+  name: {{ include "content.workerFullname" . }}
+  labels: {{- include "content.workerLabels" . | nindent 4 }}
 spec:
-  replicas: {{ .Values.replicaCount }}
+  replicas: {{ .Values.worker.replicaCount }}
   strategy:
-    type: {{ .Values.strategy }}
+    type: {{ .Values.worker.strategy }}
   selector:
-    matchLabels: {{- include "content.selectorLabels" . | nindent 6 }}
+    matchLabels: {{- include "content.workerSelectorLabels" . | nindent 6 }}
   template:
     metadata:
-      labels: {{- include "content.selectorLabels" . | nindent 8 }}
+      labels: {{- include "content.workerSelectorLabels" . | nindent 8 }}
       annotations:
-        # Redémarre le pod quand la configuration change.
         checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
     spec:
       {{- with .Values.podSecurityContext }}
       securityContext: {{- toYaml . | nindent 8 }}
       {{- end }}
       containers:
-        - name: content
+        - name: content-worker
           image: {{ include "content.image" . | quote }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           {{- with .Values.securityContext }}
@@ -36,26 +57,20 @@ spec:
             - secretRef:
                 name: {{ .Values.existingSecret }}
             {{- end }}
-          {{- if .Values.worker.enabled }}
           env:
-            # A separate worker deployment exists, so this one only answers
-            # requests. `env` wins over `envFrom`, so the ConfigMap stays
-            # shared between the two workloads.
+            # `env` wins over `envFrom`, so the shared ConfigMap stays shared.
             - name: CONTENT_WORKER_ENABLED
-              value: "false"
-          {{- end }}
+              value: "true"
+          # The worker serves no traffic, so it gets no Service and no
+          # readiness probe — nothing routes to it. Liveness still uses the
+          # HTTP endpoint, which is the cheapest proof the process is alive.
           livenessProbe:
             httpGet: {path: /api/v1/health, port: http}
             initialDelaySeconds: 20
             periodSeconds: 30
             timeoutSeconds: 5
             failureThreshold: 5
-          readinessProbe:
-            httpGet: {path: /api/v1/health, port: http}
-            initialDelaySeconds: 10
-            periodSeconds: 10
-            timeoutSeconds: 5
-          resources: {{- toYaml .Values.resources | nindent 12 }}
+          resources: {{- toYaml .Values.worker.resources | nindent 12 }}
           volumeMounts:
             {{- if .Values.persistence.data.enabled }}
             - name: data
@@ -85,3 +100,4 @@ spec:
       {{- with .Values.tolerations }}
       tolerations: {{- toYaml . | nindent 8 }}
       {{- end }}
+{{- end }}

@@ -70,6 +70,12 @@ class ContentSettings:
     # request. The rest of the codebase never branches on this — it always
     # receives an owner id.
     auth_mode: str = "none"
+    # Whether this process runs the job worker. The API and the worker are the
+    # same image and the same code: a deployment that answers requests sets
+    # this to false and stays responsive, while one that does the heavy work
+    # sets it to true. `claim_next_queued()` takes a job under BEGIN IMMEDIATE,
+    # so several worker processes on one machine share the queue safely.
+    worker_enabled: bool = True
     allow_private_networks: bool = False
     allowed_input_roots: tuple[Path, ...] = field(default_factory=tuple)
     ollama_url: str = "http://localhost:11434"
@@ -294,6 +300,15 @@ def describe_environment(
             settings.auth_mode,
             "Identity mode: 'none' (self-hosted, single implicit user) "
             "or 'token' (hosted, credential required).",
+        ),
+        (
+            "CONTENT_WORKER_ENABLED",
+            "execution",
+            False,
+            str(settings.worker_enabled).lower(),
+            "Whether this process runs the job worker. False keeps the "
+            "process answering requests only; the same image with True does "
+            "the work.",
         ),
         (
             "CONTENT_ALLOW_PRIVATE_NETWORKS",
@@ -551,6 +566,7 @@ def settings_from_env() -> ContentSettings:
         ),
         upload_ttl_hours=_to_float(os.getenv("CONTENT_UPLOAD_TTL_HOURS"), 24.0),
         auth_mode=auth_mode_raw,
+        worker_enabled=_to_bool(os.getenv("CONTENT_WORKER_ENABLED"), True),
         allow_private_networks=_to_bool(
             os.getenv("CONTENT_ALLOW_PRIVATE_NETWORKS"), False
         ),

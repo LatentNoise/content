@@ -75,5 +75,24 @@ helm upgrade content ./deploy/charts/content -n content --reuse-values \
 - **Ollama** — `CONTENT_OLLAMA_URL` est vide : les résumés ne fonctionneront pas. Ni `192.168.21.30:11434` ni `.85` ne répondaient depuis le cluster. À brancher quand le port sera joignable.
 - **Les cookies YouTube** (`CONTENT_CREDENTIALS`) — neutralisés : aucun fichier n'est monté. À ajouter via un Secret + un `volumeMount` si les sources authentifiées deviennent nécessaires.
 - **`/input`** — le docker-compose monte un dossier de sources locales en lecture seule ; sans équivalent ici, seules les sources par URL et les envois de fichiers fonctionnent.
+### Séparer l'API du worker (`worker.enabled`)
+
+Même image, même code, une variable d'environnement (ADR 0032). Avec
+`worker.enabled=true`, le déploiement principal ne fait plus tourner les
+travaux et se contente de répondre aux requêtes, tandis qu'un second
+déploiement fait le travail lourd. L'API n'attend plus derrière un transcodage.
+
+```bash
+helm upgrade content deploy/charts/content --reuse-values --set worker.enabled=true
+```
+
+⛔ **Ce que ça n'ajoute pas : du CPU.** Tous les pods d'un nœud se partagent les
+mêmes cœurs ; le débit reste réglé par `maxConcurrentJobs`. Et **tous les pods
+doivent rester sur UN SEUL nœud** : le volume de données est ReadWriteOnce et
+lié au nœud, et un fichier SQLite atteint par le réseau se corrompt.
+
+⚠️ Avant d'activer la sauvegarde continue Litestream *en même temps* que le
+worker, vérifier son comportement avec plus d'un processus écrivain.
+
 - **Litestream** — la sauvegarde continue vers S3 n'est pas dans ce chart (elle demande un bucket et des identifiants). Le manifest de référence est dans `~/Independence/Services/Content/k8s/02-content.yaml`.
 - **TLS** — `ingress.tls.enabled: false` : en LAN, en HTTP. Le tunnel Cloudflare terminera le TLS quand il sera en place.

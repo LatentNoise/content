@@ -21,6 +21,22 @@ replicaCount: 1
 # base, même quelques secondes, c'est exactement ce que l'ADR interdit.
 strategy: Recreate
 
+# Separating the API from the worker (added 2026-09-12).
+#
+# Same image, same code, one environment variable: with `worker.enabled`, the
+# main deployment stops running jobs and answers requests only, while a second
+# deployment does the heavy work. The API then never waits behind a transcode.
+#
+# ⛔ What this does NOT do: add CPU. Every pod on a node shares the same cores,
+# so throughput is still set by maxConcurrentJobs. And every pod must stay on
+# ONE node: the data volume is ReadWriteOnce and node-bound, and a SQLite file
+# reached over a network share corrupts.
+worker:
+  enabled: false
+  replicaCount: 1
+  strategy: Recreate
+  resources: {}
+
 nameOverride: ""
 fullnameOverride: ""
 

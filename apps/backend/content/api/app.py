@@ -283,9 +283,13 @@ def create_app(
     *,
     store: Store | None = None,
     providers: ProviderRegistry | None = None,
-    start_worker: bool = True,
+    start_worker: bool | None = None,
 ) -> FastAPI:
     settings = settings or settings_from_env()
+    # None means "ask the configuration"; an explicit argument still wins, so
+    # a test can pin the behaviour whatever the environment says.
+    if start_worker is None:
+        start_worker = settings.worker_enabled
     store = store or Store(settings.db_path)
     if providers is None:
         summarizers: list = [
