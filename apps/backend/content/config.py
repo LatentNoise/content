@@ -42,6 +42,19 @@ class ContentSettings:
     # and never doubles disk silently), on in the packaged deployment — the
     # ADR 0010 pattern.
     delivery_default: bool = False
+    # How the delivery library is shared (ADR 0018, revisited 2026-09-12).
+    # This is a POLICY, never a question about the deployment mode — the same
+    # rule as ADR 0030: nothing in the code asks "am I hosted", it asks what
+    # the delivery policy is.
+    #
+    #   shared     one library for everyone. The default, and what a
+    #              self-hosted instance keeps: /output is a library a human
+    #              organises and a media server reads, so inserting an owner
+    #              level would break paths that work today.
+    #   per_owner  everything under <owner_id>/. What a hosted instance sets.
+    #   off        delivery refused. A hosted instance with no server-side
+    #              library at all: the user downloads instead.
+    delivery_scope: str = "shared"
     # Storage roots (docs/storage.md). None = derived from data_dir.
     tmp_dir: Path | None = None  # None = <data_dir>/tmp
     cache_dir: Path | None = None  # None = <data_dir>/cache
@@ -234,6 +247,14 @@ def describe_environment(
             False,
             str(settings.delivery_default).lower(),
             "Deliver every artifact into the library by default (ADR 0018).",
+        ),
+        (
+            "CONTENT_DELIVERY_SCOPE",
+            "storage",
+            False,
+            settings.delivery_scope,
+            "How the library is shared: 'shared' (one for everyone), "
+            "'per_owner' (a subtree each) or 'off' (no delivery).",
         ),
         (
             "CONTENT_TMP_ROOT",
@@ -527,6 +548,14 @@ def settings_from_env() -> ContentSettings:
     cache_dir = Path(cache_raw).resolve() if cache_raw else data_dir / "cache"
     uploads_raw = os.getenv("CONTENT_UPLOADS_ROOT")
     uploads_dir = Path(uploads_raw).resolve() if uploads_raw else data_dir / "uploads"
+    delivery_scope_raw = (
+        (os.getenv("CONTENT_DELIVERY_SCOPE") or "shared").strip().lower()
+    )
+    if delivery_scope_raw not in {"shared", "per_owner", "off"}:
+        raise ValueError(
+            "CONTENT_DELIVERY_SCOPE must be 'shared', 'per_owner' or 'off', "
+            f"got {delivery_scope_raw!r}"
+        )
     auth_mode_raw = (os.getenv("CONTENT_AUTH_MODE") or "none").strip().lower()
     if auth_mode_raw not in {"none", "token"}:
         raise ValueError(
@@ -542,6 +571,7 @@ def settings_from_env() -> ContentSettings:
         db_path=db_path,
         delivery_dir=delivery_dir,
         delivery_default=_to_bool(os.getenv("CONTENT_DELIVERY_DEFAULT"), False),
+        delivery_scope=delivery_scope_raw,
         tmp_dir=tmp_dir,
         cache_dir=cache_dir,
         cache_enabled=_to_bool(os.getenv("CONTENT_CACHE_ENABLED"), False),

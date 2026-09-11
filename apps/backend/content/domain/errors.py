@@ -41,6 +41,10 @@ URL_NOT_ALLOWED = "url_not_allowed"
 OPTION_NOT_SUPPORTED = "option_not_supported"
 CAPABILITY_UNAVAILABLE = "capability_unavailable"
 CONSTRAINT_UNSATISFIABLE = "constraint_unsatisfiable"
+# Delivery into the server-side library is turned off on this installation
+# (CONTENT_DELIVERY_SCOPE=off). "Valid but not offered here" — a different
+# answer from "invalid": the request is well formed and would work elsewhere.
+DELIVERY_NOT_SUPPORTED = "delivery_not_supported"
 CREDENTIAL_NOT_AVAILABLE = "credential_not_available"
 AUTH_METHOD_NOT_SUPPORTED = "auth_method_not_supported"
 ANALYSIS_FAILED = "analysis_failed"

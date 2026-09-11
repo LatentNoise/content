@@ -2447,6 +2447,35 @@ def _resolve_delivery(
     entries: list[OutputDelivery] = []
     for output in request.outputs:
         delivery = output.delivery
+        # `off` has no library to deliver into. An *asked-for* delivery is
+        # refused rather than silently dropped — a caller who names a folder
+        # and gets nothing has been lied to. The server-side default is a
+        # policy, not an intent, so it is simply not applied.
+        if settings.delivery_scope == "off":
+            asked = delivery.mode == "deliver" or bool(
+                delivery.folder or delivery.filename
+            )
+            if asked:
+                raise RequestRejected(
+                    ValidationResult.failure(
+                        [
+                            ValidationIssue(
+                                code=codes.DELIVERY_NOT_SUPPORTED,
+                                path=f"outputs[{output.id}].delivery",
+                                message=(
+                                    "This installation delivers no artifact "
+                                    "into a server-side library. Download the "
+                                    "artifact instead."
+                                ),
+                            )
+                        ],
+                        phase="feasibility",
+                    )
+                )
+            entries.append(
+                OutputDelivery(output_id=output.id, deliver=False, folder="")
+            )
+            continue
         if delivery.mode == "deliver":
             deliver = True
         elif delivery.mode == "none":

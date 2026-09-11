@@ -80,6 +80,11 @@ config:
   CONTENT_DB_PATH: /data/content.db
   CONTENT_DELIVERY_DIR: /output
   CONTENT_DELIVERY_DEFAULT: "true"
+  # How the library is shared: "shared" (one for everyone, the default and
+  # what self-hosting keeps), "per_owner" (a subtree per user, what a hosted
+  # instance sets), or "off" (no server-side library — delivery is refused
+  # and the user downloads instead). ADR 0018, revisited 2026-09-12.
+  CONTENT_DELIVERY_SCOPE: "shared"
   CONTENT_MAX_CONCURRENT_JOBS: "2"
   CONTENT_STEP_TIMEOUT_SECONDS: "3600"
   CONTENT_ALLOW_PRIVATE_NETWORKS: "false"

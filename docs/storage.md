@@ -156,6 +156,7 @@ The analysis probe scratch stays distinct from the cache: it lives under
 | `CONTENT_CACHE_ROOT` | `<data>/cache` | The cache root (reserved) |
 | `CONTENT_CACHE_ENABLED` | `false` | Enables the cross-job cache/reuse |
 | `CONTENT_DELIVERY_DIR` | `<data>/delivery` | The user-facing library root |
+| `CONTENT_DELIVERY_SCOPE` | `shared` | `shared`, `per_owner` (`<root>/<owner_id>/…`) or `off` (no library; delivery refused with `delivery_not_supported`) |
 | `CONTENT_DELIVERY_DEFAULT` | `false` | Deliver every artifact by default (ADR 0018; `true` in compose) |
 | `CONTENT_UPLOADS_ROOT` | `<data>/uploads` | Where client uploads are stored |
 | `CONTENT_MAX_UPLOAD_BYTES` | 2 GiB | Per-upload ceiling, enforced while streaming — a `Content-Length` header is a claim, not a fact |

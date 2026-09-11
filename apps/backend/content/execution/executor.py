@@ -38,7 +38,12 @@ from content.providers.base import (
     ProviderRegistry,
     StepExecutionError,
 )
-from content.storage.layout import DeliveryStore, JobStorage, checksum_sha256
+from content.storage.layout import (
+    DeliveryStore,
+    JobStorage,
+    checksum_sha256,
+    delivery_root_for,
+)
 
 _PROGRESS_MIN_DELTA = 1.0  # percent — event throttling, HomeTube-proven
 
@@ -615,7 +620,7 @@ class JobExecutor:
                 state.count_artifact(output.id)
                 all_artifact_ids.append(artifact_id)
                 delivered, collided_with = self._deliver_artifact(
-                    plan, output, target, display_filename
+                    plan, state.owner_id, output, target, display_filename
                 )
                 if delivered:
                     self._store.set_artifact_delivered(
@@ -650,7 +655,7 @@ class JobExecutor:
         return all_artifact_ids, materials
 
     def _deliver_artifact(
-        self, plan: ExecutionPlan, output, target, display_filename: str
+        self, plan: ExecutionPlan, owner_id: str, output, target, display_filename: str
     ) -> tuple[str, str]:
         """Copy the artifact into the delivery library when the plan says so
         (ADR 0018), under its display name (ADR 0017) — the executor decides
@@ -670,7 +675,14 @@ class JobExecutor:
             deliver, folder = decision.deliver, decision.folder
         if not deliver:
             return "", ""
-        root = self._settings.delivery_dir or (self._settings.data_dir / "delivery")
+        # Where this owner's library is — `shared`, `per_owner` or `off` is
+        # resolved in one place (ADR 0018, revisited). `off` normally never
+        # reaches here, because the planner refuses an asked-for delivery; a
+        # plan snapshotted before the policy changed still can, and must not
+        # write into someone else's tree.
+        root = delivery_root_for(self._settings, owner_id)
+        if root is None:
+            return "", ""
         store = DeliveryStore(root)
         try:
             delivered = store.deliver(target, folder, display_filename)

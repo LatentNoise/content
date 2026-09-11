@@ -23,9 +23,13 @@ from content.identity import LOCAL_OWNER
 #
 # The rule for this list: a route belongs here only if it returns facts about
 # the *installation* — never a byte that a caller stored. When the hosted
-# offering ships, the three marked OPERATOR stop being public and become
+# offering ships, the ones marked OPERATOR stop being public and become
 # operator-only; they are not owner-filtered because they have no owner, not
 # because they are harmless.
+#
+# `/api/v1/folders` used to be here. It left the list when the delivery library
+# gained a per-owner policy: under `per_owner` it lists the caller's own
+# subtree, so it has an owner and is filtered like any other data route.
 OWNERLESS = {
     ("GET", "/"): "service banner",
     ("GET", "/api/v1/health"): "liveness for the container healthcheck",
@@ -36,7 +40,6 @@ OWNERLESS = {
     ("GET", "/api/v1/storage"): "OPERATOR: disk occupancy of the instance",
     ("GET", "/api/v1/cache"): "OPERATOR: shared resource-fact cache",
     ("POST", "/api/v1/cache/purge"): "OPERATOR: clears the shared fact cache",
-    ("GET", "/api/v1/folders"): "OPERATOR: delivery folders of the instance",
     ("POST", "/api/v1/capabilities"): "resolves against the installation",
 }
 # (The OpenAPI schema and its UIs are not APIRoutes, so they never reach this

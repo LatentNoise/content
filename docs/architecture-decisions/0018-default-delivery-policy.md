@@ -1,6 +1,8 @@
 # ADR 0018 — The delivery library is the default destination
 
-Status: accepted (2026-08-07) · Builds on ADR 0017 · Follows the ADR 0010 pattern
+Status: accepted (2026-08-07) · Builds on ADR 0017 · Follows the ADR 0010
+pattern · **Annotated 2026-09-12: the library learned who it belongs to —
+see the closing section**
 
 ## Context
 
@@ -104,3 +106,41 @@ the effective destination before submitting instead of guessing.
 - Disk usage doubles for delivered artifacts in the packaged deployment — the
   known, accepted cost of a browsable library (same trade ADR 0010 made for
   the cache); `/api/v1/storage` already reports both families.
+
+
+## Annotation, 2026-09-12 — one library, or one each
+
+This ADR assumed a single library because it assumed a single user. ADR 0030
+ended that assumption, and the question came back: does `/output` gain an
+owner level the way `jobs/` and `tmp/` did?
+
+**No, not unconditionally — and the asymmetry is the point.** `jobs/` and
+`tmp/` are internal folders nobody looks at, so an owner level there costs
+nothing. `/output` is the opposite: it is a library a human organises, with
+folders named Tech and Films, read by Jellyfin or Plex. Inserting `local/`
+into an existing self-hosted library would break paths that work today, to
+solve a problem that installation does not have.
+
+So the behaviour became a **policy**, `CONTENT_DELIVERY_SCOPE`:
+
+| Value | Behaviour |
+| --- | --- |
+| `shared` | this ADR, unchanged. The default. |
+| `per_owner` | everything under `<owner_id>/`. What a hosted instance sets. |
+| `off` | no server-side library; the user downloads instead. |
+
+Two properties were kept deliberately.
+
+**No code asks whether it is hosted.** It asks what the delivery policy is,
+which is the same rule ADR 0030 imposes for identity. A policy is a value; a
+mode is a branch, and branches multiply.
+
+**`off` refuses, it does not silently drop.** A caller who names a folder and
+receives nothing has been lied to, so an asked-for delivery is rejected with
+the stable code `delivery_not_supported` — "valid but not offered here", which
+is a different answer from "invalid". The *server-side default* is a policy
+rather than an intent, so under `off` it is simply not applied.
+
+One consequence worth noting: `GET /api/v1/folders` left the ownerless
+exemption list. Under `per_owner` it lists the caller's own subtree, so it has
+an owner and is filtered like any other data route.

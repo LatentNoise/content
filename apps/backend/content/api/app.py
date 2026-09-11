@@ -85,6 +85,7 @@ from content.storage.layout import (
     JobStorage,
     UploadStore,
     UploadTooLarge,
+    delivery_root_for,
 )
 from content.storage.migrate_owner import migrate_jobs_to_owner
 from content.storage.paths import storage_report
@@ -567,10 +568,18 @@ def create_app(
         }
 
     @app.get("/api/v1/folders", tags=["system"])
-    def list_folders() -> dict:
-        """Existing sub-folders of the delivery root, so a client can offer them
-        as destination choices. The empty string denotes the root itself."""
-        root = settings.delivery_dir or (settings.data_dir / "delivery")
+    def list_folders(owner_id: str = owner) -> dict:
+        """Existing sub-folders of this caller's delivery library, so a client
+        can offer them as destination choices. The empty string denotes the
+        root itself.
+
+        Under `per_owner` this is the caller's own subtree, which is why the
+        route resolves an owner instead of describing the installation. Under
+        `off` there is no library, so the list is empty.
+        """
+        root = delivery_root_for(settings, owner_id)
+        if root is None:
+            return {"folders": []}
         folders = [""] + DeliveryStore(root).list_folders()
         return {"folders": folders}
 
