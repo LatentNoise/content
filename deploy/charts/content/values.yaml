@@ -91,6 +91,19 @@ config:
   CONTENT_CACHE_ENABLED: "true"
   CONTENT_ANALYSIS_TTL_HOURS: "72"
   CONTENT_CORS_ORIGINS: ""
+  # Signing in (ADR 0033). "none" = one implicit local user, the self-hosted
+  # contract. "token" = the hosted door; do NOT switch it on before a mailer
+  # is reachable, or nobody can sign in.
+  CONTENT_AUTH_MODE: "none"
+  CONTENT_PUBLIC_BASE_URL: ""
+  # The PARENT domain, so one session is recognised by all four surfaces.
+  CONTENT_SESSION_COOKIE_DOMAIN: ""
+  CONTENT_SESSION_COOKIE_SECURE: "true"
+  CONTENT_ALLOWED_REDIRECT_ORIGINS: ""
+  # The outbound-email service (ADR 0031), by service name inside the cluster.
+  # Empty = the sign-in link is written to the log instead of being sent.
+  CONTENT_MAILER_URL: ""
+  # ⛔ CONTENT_MAILER_API_KEY belongs in the Secret, never here.
   # Résumés : l'URL d'un Ollama joignable depuis le cluster.
   # ⚠️ Vide = pas de résumé. Voir README, § « Ce qui n'est pas branché ».
   CONTENT_OLLAMA_URL: ""

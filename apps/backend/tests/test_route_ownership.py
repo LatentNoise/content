@@ -41,17 +41,46 @@ OWNERLESS = {
     ("GET", "/api/v1/cache"): "OPERATOR: shared resource-fact cache",
     ("POST", "/api/v1/cache/purge"): "OPERATOR: clears the shared fact cache",
     ("POST", "/api/v1/capabilities"): "resolves against the installation",
+    # The sign-in door (ADR 0033). These four run *before* anyone is known —
+    # they are what establishes an identity, so requiring one would be
+    # circular. They are the only routes in the codebase allowed to be in
+    # that position, which is why they are named one by one rather than
+    # exempted by prefix.
+    ("POST", "/api/v1/auth/link"): "AUTH: asks for a sign-in link",
+    ("GET", "/api/v1/auth/callback"): "AUTH: burns a token, opens a session",
+    ("GET", "/auth/sign-in"): "AUTH: the sign-in form",
+    ("POST", "/auth/sign-in"): "AUTH: the sign-in form's submission",
+    ("GET", "/auth/check-your-mail"): "AUTH: confirmation page, holds nothing",
 }
 # (The OpenAPI schema and its UIs are not APIRoutes, so they never reach this
 # check and need no exemption.)
 
 
 def _routes(app):
-    for route in app.routes:
-        if not isinstance(route, APIRoute):
-            continue
+    """Every APIRoute the application actually serves, routers included.
+
+    Walking `app.routes` alone is not enough and the difference is a hole, not
+    a detail: a router mounted with `include_router` appears as one opaque
+    entry whose own routes never surface. Every route added that way — the
+    sign-in door was the first — would have been exempt from this guard
+    without ever being listed as an exemption.
+    """
+    for route in _walk(app.routes):
         for method in sorted(route.methods - {"HEAD", "OPTIONS"}):
             yield method, route.path, route
+
+
+def _walk(routes):
+    for route in routes:
+        if isinstance(route, APIRoute):
+            yield route
+            continue
+        # FastAPI wraps an included router; its real routes hang off it.
+        nested = getattr(route, "original_router", None)
+        if nested is not None:
+            yield from _walk(nested.routes)
+        elif hasattr(route, "routes"):
+            yield from _walk(route.routes)
 
 
 def test_every_data_route_resolves_an_owner():

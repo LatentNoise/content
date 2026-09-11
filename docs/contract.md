@@ -304,6 +304,23 @@ copy was made. Artifacts registered before the naming engine have an empty
 
 **Inputs: `sources` XOR `analysis_id` (ADR 0014).** `POST /capabilities` and `POST /jobs` accept **exactly one** of the two: either inline `sources` (stateless, direct usage), or an addressable `analysis_id` (resuming a workflow from any client). The exclusivity is declared in the public models (`oneOf` in the OpenAPI) and rejected with stable codes: `sources_or_analysis_id_required` (neither), `sources_and_analysis_id_conflict` (both). The `analysis_id` mode resolves to the memorized `sources` then follows the unchanged pipeline.
 
+**Signing in (ADR 0033).** How a caller becomes an owner, when the engine is
+configured for it. The routes exist in both modes; in `none` mode nothing needs
+them, because every request already belongs to the single implicit user.
+
+| Method | Path | Role |
+| --- | --- | --- |
+| `POST` | `/auth/link` | Ask for a sign-in link. **Always 202 with the same body** — a different answer for a known address would be an account-enumeration oracle |
+| `GET` | `/auth/callback` | Follow the link: the token is burnt, a session cookie is set, the browser is redirected to a `next` that must be on the allowlist |
+| `GET` | `/auth/me` | The current owner, and the address behind it when there is an account |
+| `POST` | `/auth/logout` | Revoke this session (204) |
+
+The credential is a cookie the server sets, never something a client builds:
+**the client sends a secret, the server derives the identity** (ADR 0030). A
+request never carries a `user_id` in a body, a query string or a custom header.
+Outside `/api/v1`, the engine also serves `/auth/sign-in` and
+`/auth/check-your-mail` — two HTML *protocol* pages, not a product UI.
+
 Reserved (declared, not implemented): `POST /plans` (a planning dry-run), `GET /plans/{id}`. A simple client posts a `GenerationRequest` directly; an advanced client analyzes then submits (`analysis_id`) — both converge on the same internal pipeline. The backend has no UI of its own (`/` redirects to `/docs`); the official UIs are separate applications (HomeTube, Studio, Console).
 
 ## 9. What "stable" means for v1

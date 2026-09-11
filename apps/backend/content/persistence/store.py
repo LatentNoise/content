@@ -123,6 +123,36 @@ CREATE TABLE IF NOT EXISTS analysis_records (
 );
 CREATE INDEX IF NOT EXISTS idx_analysis_records_created
     ON analysis_records(created_at);
+
+-- Accounts, magic-link tokens and sessions (ADR 0030, decision 4).
+-- A fingerprint is stored, never a secret: see content/identity/credentials.py.
+-- A self-hosted instance creates no row in any of these three — `local` is a
+-- real owner id that simply never had to sign in.
+CREATE TABLE IF NOT EXISTS users (
+    owner_id      TEXT PRIMARY KEY,
+    email         TEXT NOT NULL UNIQUE,   -- normalized: trimmed, lower-cased
+    created_at    TEXT NOT NULL,
+    last_seen_at  TEXT NOT NULL DEFAULT ''
+);
+CREATE TABLE IF NOT EXISTS auth_tokens (
+    token_hash  TEXT PRIMARY KEY,         -- sha256 of the token, never the token
+    email       TEXT NOT NULL,
+    created_at  TEXT NOT NULL,
+    expires_at  TEXT NOT NULL,
+    used_at     TEXT NOT NULL DEFAULT ''  -- non-empty = burnt, never reusable
+);
+CREATE INDEX IF NOT EXISTS idx_auth_tokens_email
+    ON auth_tokens(email, created_at);
+CREATE TABLE IF NOT EXISTS sessions (
+    session_hash  TEXT PRIMARY KEY,       -- sha256 of the cookie value
+    owner_id      TEXT NOT NULL,
+    created_at    TEXT NOT NULL,
+    expires_at    TEXT NOT NULL,
+    last_seen_at  TEXT NOT NULL,
+    revoked_at    TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_sessions_owner
+    ON sessions(owner_id, created_at);
 """
 
 
@@ -209,6 +239,44 @@ _MIGRATIONS: list[list[str]] = [
         "CREATE INDEX IF NOT EXISTS idx_artifacts_owner "
         "ON artifacts(owner_id, created_at)",
         "CREATE INDEX IF NOT EXISTS idx_uploads_owner ON uploads(owner_id, created_at)",
+    ],
+    # 7: accounts, magic-link tokens and sessions (ADR 0030, decision 4).
+    #
+    # Three tables and one rule: **a fingerprint is stored, never a secret**
+    # (content/identity/credentials.py). A leaked backup must be a list of
+    # useless hashes, not a working keyring.
+    #
+    # `users` is the only place an email lives. It is deliberately separate
+    # from `owner_id`: the owner id is what every other table joins on and it
+    # never changes, while an address can be corrected without rewriting a
+    # single row anywhere else.
+    #
+    # A self-hosted instance creates no row here at all. `local` is a real
+    # owner id that simply never signed in — there is no account behind it,
+    # and none is invented.
+    [
+        "CREATE TABLE IF NOT EXISTS users ("
+        "  owner_id TEXT PRIMARY KEY,"
+        "  email TEXT NOT NULL UNIQUE,"
+        "  created_at TEXT NOT NULL,"
+        "  last_seen_at TEXT NOT NULL DEFAULT '')",
+        "CREATE TABLE IF NOT EXISTS auth_tokens ("
+        "  token_hash TEXT PRIMARY KEY,"
+        "  email TEXT NOT NULL,"
+        "  created_at TEXT NOT NULL,"
+        "  expires_at TEXT NOT NULL,"
+        "  used_at TEXT NOT NULL DEFAULT '')",
+        "CREATE INDEX IF NOT EXISTS idx_auth_tokens_email "
+        "ON auth_tokens(email, created_at)",
+        "CREATE TABLE IF NOT EXISTS sessions ("
+        "  session_hash TEXT PRIMARY KEY,"
+        "  owner_id TEXT NOT NULL,"
+        "  created_at TEXT NOT NULL,"
+        "  expires_at TEXT NOT NULL,"
+        "  last_seen_at TEXT NOT NULL,"
+        "  revoked_at TEXT NOT NULL DEFAULT '')",
+        "CREATE INDEX IF NOT EXISTS idx_sessions_owner "
+        "ON sessions(owner_id, created_at)",
     ],
 ]
 
@@ -772,3 +840,181 @@ class Store:
         """
         with self._conn() as conn:
             conn.execute("DELETE FROM uploads WHERE id = ?", (upload_id,))
+
+    # --- accounts, tokens and sessions (ADR 0030, decision 4) ------------------
+    #
+    # ⚠️ These methods deliberately do NOT take `owner_id` first, and they are
+    # the only ones in this class that do not. Everything else in the Store
+    # receives an identity because identity has already been established;
+    # these are the methods that *establish* it. A method here that took an
+    # owner id would be asking the caller for the answer it exists to produce.
+    #
+    # They are grouped and named so that grep finds them as a set: nothing
+    # outside content/api/auth.py and the auth routes should call them.
+
+    def account_for_email(self, email: str) -> dict | None:
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT owner_id, email, created_at, last_seen_at "
+                "FROM users WHERE email = ?",
+                (email,),
+            ).fetchone()
+        return dict(row) if row else None
+
+    def account_for_owner(self, owner_id: str) -> dict | None:
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT owner_id, email, created_at, last_seen_at "
+                "FROM users WHERE owner_id = ?",
+                (owner_id,),
+            ).fetchone()
+        return dict(row) if row else None
+
+    def create_account(self, owner_id: str, email: str) -> dict:
+        """Create the account for an address, or return the one that exists.
+
+        Racing sign-ins for the same new address are ordinary — someone clicks
+        twice, or two links arrive together — so a UNIQUE violation is a normal
+        outcome here, not an error: the loser reads back the winner's row.
+        """
+        now = utcnow()
+        try:
+            with self._conn() as conn:
+                conn.execute(
+                    "INSERT INTO users (owner_id, email, created_at, last_seen_at) "
+                    "VALUES (?, ?, ?, ?)",
+                    (owner_id, email, now, now),
+                )
+        except sqlite3.IntegrityError:
+            existing = self.account_for_email(email)
+            if existing is None:
+                raise
+            return existing
+        account = self.account_for_email(email)
+        assert account is not None
+        return account
+
+    def touch_account(self, owner_id: str) -> None:
+        with self._conn() as conn:
+            conn.execute(
+                "UPDATE users SET last_seen_at = ? WHERE owner_id = ?",
+                (utcnow(), owner_id),
+            )
+
+    def create_auth_token(self, token_hash: str, email: str, expires_at: str) -> None:
+        with self._conn() as conn:
+            conn.execute(
+                "INSERT INTO auth_tokens (token_hash, email, created_at, expires_at) "
+                "VALUES (?, ?, ?, ?)",
+                (token_hash, email, utcnow(), expires_at),
+            )
+
+    def burn_auth_token(self, token_hash: str, now: str) -> dict | None:
+        """Claim a token exactly once, and say which address it was for.
+
+        The check and the burn are one statement under one transaction: a
+        token that arrives twice — a double click, a mail client prefetching
+        the link, a replay — finds `used_at` already set and gets nothing. A
+        read followed by an update would leave a window in which both callers
+        see an unused token, which on a sign-in endpoint means two sessions
+        from one link.
+        """
+        with self._conn() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute(
+                "SELECT token_hash, email, expires_at FROM auth_tokens "
+                "WHERE token_hash = ? AND used_at = '' AND expires_at > ?",
+                (token_hash, now),
+            ).fetchone()
+            if row is None:
+                conn.execute("COMMIT")
+                return None
+            conn.execute(
+                "UPDATE auth_tokens SET used_at = ? WHERE token_hash = ?",
+                (now, token_hash),
+            )
+            conn.execute("COMMIT")
+        return dict(row)
+
+    def count_recent_auth_tokens(self, email: str, since: str) -> int:
+        """How many links this address asked for lately — the rate limit."""
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT COUNT(*) AS n FROM auth_tokens "
+                "WHERE email = ? AND created_at > ?",
+                (email, since),
+            ).fetchone()
+        return int(row["n"])
+
+    def delete_expired_auth_tokens(self, now: str) -> int:
+        """Housekeeping: a spent or stale token is a hash of nothing useful,
+        but it still occupies a row and names an address."""
+        with self._conn() as conn:
+            cursor = conn.execute(
+                "DELETE FROM auth_tokens WHERE expires_at <= ? OR used_at != ''",
+                (now,),
+            )
+        return cursor.rowcount
+
+    def create_session(self, session_hash: str, owner_id: str, expires_at: str) -> None:
+        now = utcnow()
+        with self._conn() as conn:
+            conn.execute(
+                "INSERT INTO sessions (session_hash, owner_id, created_at, "
+                "expires_at, last_seen_at) VALUES (?, ?, ?, ?, ?)",
+                (session_hash, owner_id, now, expires_at, now),
+            )
+
+    def live_session(self, session_hash: str, now: str) -> dict | None:
+        """The live session behind a cookie, or None.
+
+        A session row exists so that a session can be *revoked*: a cookie a
+        client still holds stops working the moment the row says so. That is
+        the whole reason the session is not a self-contained signed token.
+
+        `last_seen_at` comes back with it so the caller can decide whether the
+        expiry is worth sliding — writing on every single request would turn a
+        read-only page view into a database write.
+        """
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT owner_id, expires_at, last_seen_at FROM sessions "
+                "WHERE session_hash = ? AND revoked_at = '' AND expires_at > ?",
+                (session_hash, now),
+            ).fetchone()
+        return dict(row) if row else None
+
+    def touch_session(self, session_hash: str, expires_at: str) -> None:
+        """Slide the expiry forward for a session in active use."""
+        with self._conn() as conn:
+            conn.execute(
+                "UPDATE sessions SET last_seen_at = ?, expires_at = ? "
+                "WHERE session_hash = ? AND revoked_at = ''",
+                (utcnow(), expires_at, session_hash),
+            )
+
+    def revoke_session(self, session_hash: str) -> None:
+        with self._conn() as conn:
+            conn.execute(
+                "UPDATE sessions SET revoked_at = ? WHERE session_hash = ? "
+                "AND revoked_at = ''",
+                (utcnow(), session_hash),
+            )
+
+    def revoke_all_sessions(self, owner_id: str) -> int:
+        """Sign this account out everywhere. The answer to a lost laptop."""
+        with self._conn() as conn:
+            cursor = conn.execute(
+                "UPDATE sessions SET revoked_at = ? WHERE owner_id = ? "
+                "AND revoked_at = ''",
+                (utcnow(), owner_id),
+            )
+        return cursor.rowcount
+
+    def delete_expired_sessions(self, now: str) -> int:
+        with self._conn() as conn:
+            cursor = conn.execute(
+                "DELETE FROM sessions WHERE expires_at <= ? OR revoked_at != ''",
+                (now,),
+            )
+        return cursor.rowcount

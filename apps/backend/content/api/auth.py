@@ -22,16 +22,26 @@ Because both modes return an owner id, no route and no service ever branches
 on the mode. A self-hosted instance is simply an instance with one user.
 """
 
+from datetime import datetime, timedelta, timezone
+
 from fastapi import Depends, HTTPException, Request, status
 
-from content.identity import LOCAL_OWNER, AuthMode
+from content.identity import LOCAL_OWNER, AuthMode, credentials
+from content.persistence.store import utcnow
+
+# How stale a session's last_seen_at must be before the expiry is slid
+# forward. Sliding on every request would make a page view a write; never
+# sliding would sign out someone who uses the product daily.
+_SLIDE_AFTER_SECONDS = 3600
 
 
 class Identity:
     """Resolves the owner of a request. One instance per application."""
 
-    def __init__(self, mode: str = AuthMode.NONE.value):
+    def __init__(self, mode: str = AuthMode.NONE.value, store=None, settings=None):
         self.mode = AuthMode(mode)
+        self._store = store
+        self._settings = settings
 
     async def __call__(self, request: Request) -> str:
         if self.mode is AuthMode.NONE:
@@ -50,13 +60,41 @@ class Identity:
 
         Two carriers, one outcome — the API key of a program and the session
         cookie of a browser are different transports for the same question.
-
-        Not implemented yet: this is the seam the hosted work plugs into
-        (API keys from the Console, then magic-link sessions). Until then
-        ``token`` mode refuses every request rather than letting one through,
-        which is the only safe direction for an unfinished check.
+        Only the cookie is wired today; API keys join here and change nothing
+        else in the codebase.
         """
-        return None
+        if self._store is None or self._settings is None:
+            # Nothing to check against: refuse rather than let one through.
+            # An unfinished check fails closed.
+            return None
+        return self._from_session_cookie(request)
+
+    def _from_session_cookie(self, request: Request) -> str | None:
+        presented = request.cookies.get(self._settings.session_cookie_name, "")
+        if not presented:
+            return None
+        session_hash = credentials.fingerprint(presented)
+        now = utcnow()
+        session = self._store.live_session(session_hash, now)
+        if session is None:
+            return None
+        self._maybe_slide(session_hash, session)
+        return session["owner_id"]
+
+    def _maybe_slide(self, session_hash: str, session: dict) -> None:
+        """Keep an actively used session alive, without writing every time."""
+        try:
+            last_seen = datetime.fromisoformat(session["last_seen_at"])
+        except (ValueError, KeyError):
+            return
+        age = (datetime.now(timezone.utc) - last_seen).total_seconds()
+        if age < _SLIDE_AFTER_SECONDS:
+            return
+        expires_at = (
+            datetime.now(timezone.utc)
+            + timedelta(hours=self._settings.session_ttl_hours)
+        ).isoformat()
+        self._store.touch_session(session_hash, expires_at)
 
 
 def owner_dependency(identity: Identity):

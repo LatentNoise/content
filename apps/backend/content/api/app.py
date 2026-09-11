@@ -40,6 +40,7 @@ from content.analysis.service import (
     AnalysisService,
 )
 from content.api.auth import Identity
+from content.api.auth_routes import build_auth_router, build_session_router
 from content.application.collections import attach_collection_runner
 from content.application.submit import submit_generation
 from content.application.uploads import sweep_expired_uploads
@@ -63,6 +64,7 @@ from content.domain.job import JOB_TERMINAL
 from content.domain.request import GenerationRequest, SourceDescriptor
 from content.execution.executor import JobExecutor
 from content.execution.worker import JobQueue
+from content.mail import build_mailer
 from content.naming.engine import suggest_base_name
 from content.naming.sanitize import sanitize_filename
 from content.notifications import build_notifications
@@ -285,6 +287,7 @@ def create_app(
     store: Store | None = None,
     providers: ProviderRegistry | None = None,
     start_worker: bool | None = None,
+    mailer=None,
 ) -> FastAPI:
     settings = settings or settings_from_env()
     # None means "ask the configuration"; an explicit argument still wins, so
@@ -338,7 +341,7 @@ def create_app(
     # Identity is resolved once, here, and injected into every route that
     # touches user data. `owner` below is a FastAPI dependency: adding a route
     # without it is what tests/test_route_ownership.py refuses to let happen.
-    identity = Identity(settings.auth_mode)
+    identity = Identity(settings.auth_mode, store=store, settings=settings)
     owner = Depends(identity)
     analysis_service = AnalysisService(store, providers, settings)
     # A collection orchestrates the canonical pipeline for its members
@@ -1002,6 +1005,13 @@ def create_app(
             # naming engine fall back to their technical name.
             filename=artifact.get("display_filename") or artifact["filename"],
         )
+
+    # The sign-in door (ADR 0033). Two routers rather than one, because the
+    # first runs *before* anyone is known and the second runs after: keeping
+    # them apart is what keeps the ownership guard-rail readable.
+    mailer = mailer or build_mailer(settings)
+    app.include_router(build_auth_router(settings, store, mailer), tags=["auth"])
+    app.include_router(build_session_router(settings, store, owner), tags=["auth"])
 
     return app
 

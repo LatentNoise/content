@@ -89,6 +89,35 @@ class ContentSettings:
     # sets it to true. `claim_next_queued()` takes a job under BEGIN IMMEDIATE,
     # so several worker processes on one machine share the queue safely.
     worker_enabled: bool = True
+    # --- signing in (ADR 0030 decision 4; ADR 0033) -------------------------
+    # Where the sign-in link points, and where the cookie is valid. These are
+    # deployment facts, not code: the same binary serves a LAN under
+    # `content.k3s.lab` and production under `latentnoise.dev`.
+    public_base_url: str = ""  # e.g. https://api.latentnoise.dev
+    # The cookie's Domain. Empty = host-only, which is correct for a single
+    # host. Set it to the PARENT (".latentnoise.dev") so one session is
+    # recognised by all four surfaces — that is the whole reason they share a
+    # parent.
+    session_cookie_domain: str = ""
+    session_cookie_name: str = "content_session"
+    # Secure is on by default and turning it off is a local-development
+    # affordance, never a production one: a session cookie over plain HTTP is
+    # readable by anything on the path.
+    session_cookie_secure: bool = True
+    session_ttl_hours: float = 720.0  # 30 days, slid forward on use
+    magic_link_ttl_minutes: float = 15.0
+    magic_link_max_per_hour: int = 5
+    # Where a sign-in may send the browser afterwards. An open redirect on a
+    # sign-in endpoint is how a phishing link borrows your domain, so `next`
+    # is checked against this list and nothing else is accepted.
+    allowed_redirect_origins: tuple[str, ...] = field(default_factory=tuple)
+    # The outbound-email service (ADR 0031). Empty URL = no mail is sent and
+    # the link is logged instead, which is what a self-hosted instance and the
+    # test suite do.
+    mailer_url: str = ""
+    mailer_api_key: str = ""
+    mailer_timeout_seconds: float = 10.0
+    product_name: str = "Content"
     allow_private_networks: bool = False
     allowed_input_roots: tuple[Path, ...] = field(default_factory=tuple)
     ollama_url: str = "http://localhost:11434"
@@ -330,6 +359,71 @@ def describe_environment(
             "Whether this process runs the job worker. False keeps the "
             "process answering requests only; the same image with True does "
             "the work.",
+        ),
+        (
+            "CONTENT_PUBLIC_BASE_URL",
+            "security",
+            False,
+            settings.public_base_url,
+            "Public base URL of this engine, used to build sign-in links.",
+        ),
+        (
+            "CONTENT_SESSION_COOKIE_DOMAIN",
+            "security",
+            False,
+            settings.session_cookie_domain,
+            "Domain of the session cookie. The PARENT domain makes one "
+            "session work across every surface; empty = host-only.",
+        ),
+        (
+            "CONTENT_SESSION_COOKIE_SECURE",
+            "security",
+            False,
+            str(settings.session_cookie_secure).lower(),
+            "Send the session cookie over HTTPS only. Off is a local-"
+            "development affordance, never a production one.",
+        ),
+        (
+            "CONTENT_SESSION_TTL_HOURS",
+            "security",
+            False,
+            f"{settings.session_ttl_hours:g}",
+            "How long a session lives, slid forward while it is used.",
+        ),
+        (
+            "CONTENT_MAGIC_LINK_TTL_MINUTES",
+            "security",
+            False,
+            f"{settings.magic_link_ttl_minutes:g}",
+            "How long a sign-in link stays valid.",
+        ),
+        (
+            "CONTENT_MAGIC_LINK_MAX_PER_HOUR",
+            "security",
+            False,
+            str(settings.magic_link_max_per_hour),
+            "How many sign-in links one address may ask for per hour.",
+        ),
+        (
+            "CONTENT_ALLOWED_REDIRECT_ORIGINS",
+            "security",
+            False,
+            ",".join(settings.allowed_redirect_origins),
+            "Origins a sign-in may redirect to. Everything else is refused.",
+        ),
+        (
+            "CONTENT_MAILER_URL",
+            "security",
+            False,
+            settings.mailer_url,
+            "The outbound-email service (ADR 0031). Empty = no mail is sent.",
+        ),
+        (
+            "CONTENT_MAILER_API_KEY",
+            "security",
+            True,
+            _mask_secret(settings.mailer_api_key),
+            "Credential this engine presents to the mailer.",
         ),
         (
             "CONTENT_ALLOW_PRIVATE_NETWORKS",
@@ -597,6 +691,38 @@ def settings_from_env() -> ContentSettings:
         upload_ttl_hours=_to_float(os.getenv("CONTENT_UPLOAD_TTL_HOURS"), 24.0),
         auth_mode=auth_mode_raw,
         worker_enabled=_to_bool(os.getenv("CONTENT_WORKER_ENABLED"), True),
+        public_base_url=(os.getenv("CONTENT_PUBLIC_BASE_URL") or "")
+        .strip()
+        .rstrip("/"),
+        session_cookie_domain=(
+            os.getenv("CONTENT_SESSION_COOKIE_DOMAIN") or ""
+        ).strip(),
+        session_cookie_name=(
+            os.getenv("CONTENT_SESSION_COOKIE_NAME") or "content_session"
+        ).strip(),
+        session_cookie_secure=_to_bool(
+            os.getenv("CONTENT_SESSION_COOKIE_SECURE"), True
+        ),
+        session_ttl_hours=_to_float(os.getenv("CONTENT_SESSION_TTL_HOURS"), 720.0),
+        magic_link_ttl_minutes=_to_float(
+            os.getenv("CONTENT_MAGIC_LINK_TTL_MINUTES"), 15.0
+        ),
+        magic_link_max_per_hour=max(
+            1, _to_int(os.getenv("CONTENT_MAGIC_LINK_MAX_PER_HOUR"), 5)
+        ),
+        allowed_redirect_origins=tuple(
+            origin.strip().rstrip("/")
+            for origin in (os.getenv("CONTENT_ALLOWED_REDIRECT_ORIGINS") or "").split(
+                ","
+            )
+            if origin.strip()
+        ),
+        mailer_url=(os.getenv("CONTENT_MAILER_URL") or "").strip().rstrip("/"),
+        mailer_api_key=(os.getenv("CONTENT_MAILER_API_KEY") or "").strip(),
+        mailer_timeout_seconds=_to_float(
+            os.getenv("CONTENT_MAILER_TIMEOUT_SECONDS"), 10.0
+        ),
+        product_name=(os.getenv("CONTENT_PRODUCT_NAME") or "Content").strip(),
         allow_private_networks=_to_bool(
             os.getenv("CONTENT_ALLOW_PRIVATE_NETWORKS"), False
         ),
