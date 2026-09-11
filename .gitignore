@@ -26,6 +26,18 @@
 !apps/browser-extension-chromium/**/*.css
 !apps/browser-extension-chromium/**/*.svg
 !apps/browser-extension-chromium/**/*.png
+# Helm chart (deploy/charts/**): its sources ARE these YAML files — templates,
+# Chart.yaml, values.yaml. Without this the allowlist silently kept the whole
+# chart out of every clone: only its README was tracked, so the deployment that
+# runs the engine in Kubernetes existed on one disk and nowhere else.
+# Scoped to the chart path rather than allowing *.yaml repo-wide, so a stray
+# config or a downloaded manifest elsewhere still stays out.
+!deploy/charts/**/*.yaml
+!deploy/charts/**/*.tpl
+# ⛔ Except the operator's own cluster values: site-specific hosts, IPs and
+# sizing belong to that operator's infrastructure repository, not to a public
+# chart. The chart ships defaults; a deployment ships its own file.
+deploy/charts/**/values-home.yaml
 !pyproject.toml
 # The MCP registry's manifest for `content-mcp` (apps/mcp): one file at the
 # repository root, published by `mcp-publisher` from exactly this copy. It is

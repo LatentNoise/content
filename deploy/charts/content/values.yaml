@@ -1,0 +1,147 @@
+# Valeurs par défaut du chart Content.
+# Ne pas éditer ce fichier pour un déploiement : copier values-home.yaml,
+# ou passer --set / -f. Ce fichier documente ce qui existe.
+
+image:
+  repository: ghcr.io/latentnoise/content
+  # ⚠️ Toujours un tag de version explicite, jamais `latest` :
+  # un tag mutable fait qu'un simple redémarrage de pod devient un
+  # déploiement non décidé, et que deux répliques peuvent différer.
+  # Vide = on prend .Chart.appVersion (0.7.1).
+  tag: ""
+  pullPolicy: IfNotPresent
+
+# Un seul réplica, et ce n'est pas provisoire :
+# SQLite est la source de vérité ET la file de travaux (ADR 0006), avec des
+# verrous POSIX locaux ; Litestream (sauvegarde) suppose un seul writer.
+# Le parallélisme se règle avec maxConcurrentJobs, pas avec des répliques.
+replicaCount: 1
+
+# Recreate, jamais RollingUpdate : deux pods sur le même volume et la même
+# base, même quelques secondes, c'est exactement ce que l'ADR interdit.
+strategy: Recreate
+
+nameOverride: ""
+fullnameOverride: ""
+
+service:
+  type: ClusterIP
+  port: 8000
+
+# 🔑 Les quatre surfaces vivent sous UN PARENT COMMUN (décidé le 11/09).
+# Raison : un cookie de session posé sur le parent (`Domain=content.k3s.lab`)
+# est envoyé par le navigateur à TOUS ses sous-domaines — c'est ce qui permet
+# une authentification unique partagée entre le moteur, Studio, la Console et
+# HomeTube, sans fusionner les applications ni les servir sous des chemins.
+# En production le parent devient `latentnoise.dev`.
+ingress:
+  enabled: true
+  className: traefik
+  host: api.content.k3s.lab
+  annotations: {}
+  tls:
+    enabled: false
+    secretName: ""
+
+persistence:
+  # /data : la base SQLite, les jobs, les artefacts, le cache d'analyse.
+  data:
+    enabled: true
+    size: 5Gi
+    storageClass: local-path
+    accessMode: ReadWriteOnce
+  # /output : la bibliothèque de livraison (ADR 0018).
+  output:
+    enabled: true
+    size: 5Gi
+    storageClass: local-path
+    accessMode: ReadWriteOnce
+
+# Toute la configuration du moteur. Les clés vides sont omises du ConfigMap.
+config:
+  TZ: Europe/Paris
+  CONTENT_DATA_DIR: /data
+  CONTENT_DB_PATH: /data/content.db
+  CONTENT_DELIVERY_DIR: /output
+  CONTENT_DELIVERY_DEFAULT: "true"
+  CONTENT_MAX_CONCURRENT_JOBS: "2"
+  CONTENT_STEP_TIMEOUT_SECONDS: "3600"
+  CONTENT_ALLOW_PRIVATE_NETWORKS: "false"
+  CONTENT_CACHE_ENABLED: "true"
+  CONTENT_ANALYSIS_TTL_HOURS: "72"
+  CONTENT_CORS_ORIGINS: ""
+  # Résumés : l'URL d'un Ollama joignable depuis le cluster.
+  # ⚠️ Vide = pas de résumé. Voir README, § « Ce qui n'est pas branché ».
+  CONTENT_OLLAMA_URL: ""
+  CONTENT_OLLAMA_MODEL: ""
+  # Pas de cookies montés en Kubernetes pour l'instant : on neutralise le
+  # défaut du docker-compose, qui pointerait vers un fichier absent.
+  CONTENT_CREDENTIALS: ""
+
+# Secrets (clés d'API LLM). Le Secret se crée HORS de git :
+#   kubectl -n content create secret generic content-secrets \
+#     --from-literal=CONTENT_ANTHROPIC_API_KEY=...
+existingSecret: ""
+
+resources:
+  requests:
+    cpu: 200m
+    memory: 512Mi
+  limits:
+    # ffmpeg et yt-dlp sont gourmands par rafales ; le nœud a 12 Go.
+    cpu: "3"
+    memory: 4Gi
+
+# L'entrypoint démarre root puis redescend en uid 1000 (su-exec) après avoir
+# adopté /data et /output. Ne pas forcer runAsNonRoot : ça casserait l'adoption.
+podSecurityContext: {}
+securityContext: {}
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# L'URL de l'API vue par le NAVIGATEUR (utilisée par toutes les UI pour les
+# liens de téléchargement d'artefacts).
+publicApiUrl: http://content.k3s.lab
+
+# Les trois UI. Elles sont identiques côté déploiement (Streamlit, port 8501) :
+# ajouter une surface = une entrée ici, rien d'autre.
+#
+# Chaque UI reçoit automatiquement l'URL publique des AUTRES surfaces activées,
+# sous la forme CONTENT_STUDIO_URL / CONTENT_CONSOLE_URL / CONTENT_HOMETUBE_URL.
+# ⚠️ Ces variables ne sont PAS encore lues par les applications — voir le brief
+# « La navigation entre les surfaces » : le déploiement est prêt, le code non.
+uis:
+  studio:
+    enabled: true
+    image: {repository: ghcr.io/latentnoise/content-studio, tag: ""}
+    ingress: {enabled: true, className: "", host: studio.content.k3s.lab}
+    resources:
+      requests: {cpu: 50m, memory: 128Mi}
+      limits: {cpu: 500m, memory: 512Mi}
+    extraEnv: []
+  console:
+    enabled: true
+    image: {repository: ghcr.io/latentnoise/content-console, tag: ""}
+    ingress: {enabled: true, className: "", host: console.content.k3s.lab}
+    resources:
+      requests: {cpu: 50m, memory: 128Mi}
+      limits: {cpu: 500m, memory: 512Mi}
+    extraEnv: []
+  hometube:
+    enabled: true
+    image: {repository: ghcr.io/latentnoise/content-hometube, tag: ""}
+    ingress: {enabled: true, className: "", host: hometube.content.k3s.lab}
+    resources:
+      requests: {cpu: 50m, memory: 128Mi}
+      limits: {cpu: 500m, memory: 512Mi}
+    extraEnv: []
+
+# ⚠️ Content n'expose PAS d'endpoint /metrics aujourd'hui (vérifié le 11/09) :
+# ce ServiceMonitor reste désactivé tant que l'application n'en publie pas.
+# Les métriques CPU/mémoire du pod remontent déjà via cAdvisor/kube-state-metrics.
+serviceMonitor:
+  enabled: false
+  interval: 30s
+  path: /metrics

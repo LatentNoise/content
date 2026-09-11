@@ -1,0 +1,79 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "content.fullname" . }}
+  labels: {{- include "content.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  strategy:
+    type: {{ .Values.strategy }}
+  selector:
+    matchLabels: {{- include "content.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels: {{- include "content.selectorLabels" . | nindent 8 }}
+      annotations:
+        # Redémarre le pod quand la configuration change.
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+    spec:
+      {{- with .Values.podSecurityContext }}
+      securityContext: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: content
+          image: {{ include "content.image" . | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{- with .Values.securityContext }}
+          securityContext: {{- toYaml . | nindent 12 }}
+          {{- end }}
+          ports:
+            - name: http
+              containerPort: 8000
+          envFrom:
+            - configMapRef:
+                name: {{ include "content.fullname" . }}-config
+            {{- if .Values.existingSecret }}
+            - secretRef:
+                name: {{ .Values.existingSecret }}
+            {{- end }}
+          livenessProbe:
+            httpGet: {path: /api/v1/health, port: http}
+            initialDelaySeconds: 20
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 5
+          readinessProbe:
+            httpGet: {path: /api/v1/health, port: http}
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+          resources: {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            {{- if .Values.persistence.data.enabled }}
+            - name: data
+              mountPath: /data
+            {{- end }}
+            {{- if .Values.persistence.output.enabled }}
+            - name: output
+              mountPath: /output
+            {{- end }}
+      volumes:
+        {{- if .Values.persistence.data.enabled }}
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ include "content.fullname" . }}-data
+        {{- end }}
+        {{- if .Values.persistence.output.enabled }}
+        - name: output
+          persistentVolumeClaim:
+            claimName: {{ include "content.fullname" . }}-output
+        {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations: {{- toYaml . | nindent 8 }}
+      {{- end }}

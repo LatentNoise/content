@@ -1,0 +1,32 @@
+{{- if .Values.persistence.data.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "content.fullname" . }}-data
+  labels: {{- include "content.labels" . | nindent 4 }}
+  annotations:
+    # On garde le volume si la release est désinstallée : il porte la base.
+    helm.sh/resource-policy: keep
+spec:
+  accessModes: [{{ .Values.persistence.data.accessMode | quote }}]
+  storageClassName: {{ .Values.persistence.data.storageClass }}
+  resources:
+    requests:
+      storage: {{ .Values.persistence.data.size }}
+{{- end }}
+{{- if .Values.persistence.output.enabled }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "content.fullname" . }}-output
+  labels: {{- include "content.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  accessModes: [{{ .Values.persistence.output.accessMode | quote }}]
+  storageClassName: {{ .Values.persistence.output.storageClass }}
+  resources:
+    requests:
+      storage: {{ .Values.persistence.output.size }}
+{{- end }}

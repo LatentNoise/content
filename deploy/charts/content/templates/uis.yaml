@@ -1,0 +1,108 @@
+{{- /*
+Les trois UI (studio, console, hometube) sont identiques du point de vue du
+déploiement : même base Streamlit, port 8501, healthcheck /_stcore/health.
+Un seul template les couvre toutes — ajouter une surface = une entrée dans
+`uis`, rien d'autre.
+*/ -}}
+{{- range $key, $ui := .Values.uis }}
+{{- if $ui.enabled }}
+{{- $fullname := printf "%s-%s" (include "content.fullname" $) $key }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $fullname }}
+  labels:
+    {{- include "content.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $key }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "content.selectorLabelsBase" $ | nindent 6 }}
+      app.kubernetes.io/component: {{ $key }}
+  template:
+    metadata:
+      labels:
+        {{- include "content.selectorLabelsBase" $ | nindent 8 }}
+        app.kubernetes.io/component: {{ $key }}
+    spec:
+      containers:
+        - name: {{ $key }}
+          image: "{{ $ui.image.repository }}:{{ $ui.image.tag | default $.Chart.AppVersion }}"
+          imagePullPolicy: {{ $.Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8501
+          env:
+            - name: TZ
+              value: {{ $.Values.config.TZ | quote }}
+            # L'API vue par le POD (DNS interne du Service).
+            - name: CONTENT_API_URL
+              value: "http://{{ include "content.fullname" $ }}:{{ $.Values.service.port }}"
+            # L'API vue par le NAVIGATEUR de l'utilisateur.
+            - name: CONTENT_PUBLIC_API_URL
+              value: {{ $.Values.publicApiUrl | quote }}
+            {{- /* Les surfaces sœurs, déclarées par le déploiement et non
+                   codées en dur : chaque UI reçoit l'URL publique des autres
+                   surfaces effectivement déployées. Voir le brief navigation. */}}
+            {{- range $sib, $sibUi := $.Values.uis }}
+            {{- if and $sibUi.enabled $sibUi.ingress.enabled (ne $sib $key) }}
+            - name: CONTENT_{{ $sib | upper }}_URL
+              value: "http://{{ $sibUi.ingress.host }}"
+            {{- end }}
+            {{- end }}
+            {{- with $ui.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          readinessProbe:
+            httpGet: {path: /_stcore/health, port: http}
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: {path: /_stcore/health, port: http}
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            failureThreshold: 5
+          resources: {{- toYaml $ui.resources | nindent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $fullname }}
+  labels:
+    {{- include "content.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $key }}
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 8501
+      targetPort: http
+  selector:
+    {{- include "content.selectorLabelsBase" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $key }}
+{{- if $ui.ingress.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ $fullname }}
+  labels:
+    {{- include "content.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $key }}
+spec:
+  ingressClassName: {{ $ui.ingress.className | default $.Values.ingress.className }}
+  rules:
+    - host: {{ $ui.ingress.host | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ $fullname }}
+                port: {name: http}
+{{- end }}
+---
+{{- end }}
+{{- end }}
