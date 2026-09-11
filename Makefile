@@ -78,6 +78,18 @@ test-ui: ui-venv  ## Streamlit UI non-regression AppTests (in a Streamlit venv)
 test-ui-live: ui-venv  ## Drive the three UIs against a live backend (slow)
 	.venv-ui/bin/python -m pytest -q apps/web-tests -m release -rs
 
+# The mailer (services/mailer) is a separate service with its own dependencies
+# and no import of the engine, so it gets its own venv rather than widening the
+# backend's. Opt-in like the UI tests; `validate` stays the engine's gate.
+mailer-venv:
+	uv venv services/mailer/.venv --python 3.13
+	uv pip install --python services/mailer/.venv/bin/python -q -e "services/mailer[test,dev]"
+
+test-mailer: mailer-venv  ## The outbound-email service test suite (ADR 0031)
+	cd services/mailer && .venv/bin/python -m ruff format --check . \
+		&& .venv/bin/python -m ruff check . \
+		&& .venv/bin/python -m pytest -q tests
+
 # The official gate (docs/development/validation.md). Format is checked, not
 # rewritten, so a dirty tree fails loudly instead of being silently fixed.
 validate:  ## format --check + lint + hermetic tests (backend + cli)

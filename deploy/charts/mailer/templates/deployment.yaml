@@ -1,0 +1,90 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "mailer.fullname" . }}
+  labels:
+    {{- include "mailer.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  strategy:
+    type: {{ .Values.strategy }}
+  selector:
+    matchLabels:
+      {{- include "mailer.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "mailer.selectorLabels" . | nindent 8 }}
+      annotations:
+        # Roll the pod when the non-secret configuration changes. The secret is
+        # deliberately not hashed here: reading it to compute a hash would put
+        # its content in the release manifest Helm stores in the cluster.
+        checksum/config: {{ toYaml .Values.config | sha256sum }}
+    spec:
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: mailer
+          image: {{ include "mailer.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          ports:
+            - name: http
+              containerPort: 8000
+          envFrom:
+            # Host, user, password and the product API keys. Never in values.
+            - secretRef:
+                name: {{ required "existingSecret is required: create the secret out of band" .Values.existingSecret }}
+          env:
+            - name: MAILER_SMTP_SECURITY
+              value: {{ .Values.config.smtpSecurity | quote }}
+            - name: MAILER_SMTP_PORT
+              value: {{ .Values.config.smtpPort | quote }}
+            - name: MAILER_DEFAULT_FROM
+              value: {{ .Values.config.defaultFrom | quote }}
+            - name: MAILER_MAX_ATTEMPTS
+              value: {{ .Values.config.maxAttempts | quote }}
+            - name: MAILER_RETRY_BASE_SECONDS
+              value: {{ .Values.config.retryBaseSeconds | quote }}
+            - name: MAILER_DRY_RUN
+              value: {{ .Values.config.dryRun | quote }}
+            - name: MAILER_DB_PATH
+              value: /data/mailer.db
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: data
+          {{- if .Values.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "mailer.fullname" . }}-data
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
