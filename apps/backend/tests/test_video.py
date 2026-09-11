@@ -9,6 +9,7 @@ from content.analysis.service import AnalysisService
 from content.application.submit import submit_generation
 from content.domain.errors import RequestRejected
 from content.execution.executor import JobExecutor
+from content.identity import LOCAL_OWNER
 from content.persistence.store import IdempotencyKeyActive
 from content.planning.planner import build_plan
 from content.providers.base import ProviderRegistry
@@ -39,7 +40,7 @@ def plan_url(store, providers, settings):
 
     def _plan(payload):
         request = make_request(payload)
-        analysis = service.analyze_sources(list(request.sources))
+        analysis = service.analyze_sources(LOCAL_OWNER, list(request.sources))
         return build_plan(request, analysis, providers, settings)
 
     return _plan
@@ -247,7 +248,7 @@ def plan_file(store, settings):
 
     def _plan(payload):
         request = make_request(payload)
-        analysis = service.analyze_sources(list(request.sources))
+        analysis = service.analyze_sources(LOCAL_OWNER, list(request.sources))
         return build_plan(request, analysis, registry, settings)
 
     return _plan
@@ -399,6 +400,7 @@ def test_video_job_end_to_end(store, providers, settings):
     payload = video_payload({"container": "mkv"})
     request = make_request(payload)
     result = submit_generation(
+        LOCAL_OWNER,
         payload,
         request,
         store=store,
@@ -409,8 +411,8 @@ def test_video_job_end_to_end(store, providers, settings):
     claimed = store.claim_next_queued()
     JobExecutor(store, settings, providers).execute(claimed)
 
-    assert store.get_job(result.job_id)["status"] == "succeeded"
-    artifact = store.list_artifacts(result.job_id)[0]
+    assert store.get_job(LOCAL_OWNER, result.job_id)["status"] == "succeeded"
+    artifact = store.list_artifacts(LOCAL_OWNER, result.job_id)[0]
     assert artifact["type"] == "video"
     assert artifact["filename"] == "video_main.mkv"
 
@@ -419,14 +421,14 @@ def test_video_job_end_to_end(store, providers, settings):
 
 
 def test_second_active_job_with_same_key_is_blocked_by_store(store):
-    store.create_job({"a": 1}, "required_only", "race-key")
+    store.create_job(LOCAL_OWNER, {"a": 1}, "required_only", "race-key")
     with pytest.raises(IdempotencyKeyActive):
-        store.create_job({"a": 1}, "required_only", "race-key")
+        store.create_job(LOCAL_OWNER, {"a": 1}, "required_only", "race-key")
 
 
 def test_key_released_after_terminal_failure(store):
-    job_id = store.create_job({"a": 1}, "required_only", "release-key")
+    job_id = store.create_job(LOCAL_OWNER, {"a": 1}, "required_only", "release-key")
     for status in ("validating", "planning", "queued", "running", "failed"):
         store.transition_job(job_id, status)
     # Key released: a new job may claim it.
-    store.create_job({"a": 1}, "required_only", "release-key")
+    store.create_job(LOCAL_OWNER, {"a": 1}, "required_only", "release-key")

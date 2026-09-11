@@ -117,7 +117,11 @@ class CollectionMemberRunner:
         # 1. Canonical analysis of the concrete member — cached per resource,
         #    so re-running a collection re-reads instead of re-probing.
         try:
-            analysis = self._analysis.analyze_sources(list(request.sources))
+            # The member is analyzed for the owner of the parent job: a
+            # collection never crosses an identity, it fans out inside one.
+            analysis = self._analysis.analyze_sources(
+                ctx.owner_id, list(request.sources)
+            )
         except RequestRejected as exc:
             raise StepExecutionError(
                 "member_analysis_failed",

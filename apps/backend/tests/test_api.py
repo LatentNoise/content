@@ -5,6 +5,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from content.api.app import create_app
+from content.identity import LOCAL_OWNER
 from content.processors.transcript import TranscriptProcessor
 from content.providers.base import ProviderRegistry
 from tests.conftest import FakeProvider, minimal_payload
@@ -289,6 +290,7 @@ def test_job_rows_carry_a_human_artifact_label(client):
     without one artifacts fetch per row — the console's job list runs on it."""
     store = client.app.state.store
     job_id = store.create_job(
+        LOCAL_OWNER,
         {"schema_version": "1.0", "sources": [], "outputs": []},
         failure_policy="required_only",
         idempotency_key=None,
@@ -297,6 +299,7 @@ def test_job_rows_carry_a_human_artifact_label(client):
         [("v_main.mp4", "My Conference.mp4"), ("a_main.opus", "")]
     ):
         store.register_artifact(
+            LOCAL_OWNER,
             {
                 "id": f"art_label_{n}",
                 "job_id": job_id,
@@ -308,7 +311,7 @@ def test_job_rows_carry_a_human_artifact_label(client):
                 "size_bytes": 1,
                 "checksum": "sha256:x",
                 "provenance": {},
-            }
+            },
         )
 
     rows = client.get("/api/v1/jobs").json()
@@ -324,6 +327,7 @@ def test_job_rows_carry_a_human_artifact_label(client):
     # A job with no artifacts simply has no label fields — clients fall back
     # to the job id, they never see a null name.
     empty_id = store.create_job(
+        LOCAL_OWNER,
         {"schema_version": "1.0", "sources": [], "outputs": []},
         failure_policy="required_only",
         idempotency_key=None,

@@ -11,6 +11,7 @@ import pytest
 
 from content.analysis.cache import AnalysisJsonCache
 from content.analysis.service import AnalysisService
+from content.identity import LOCAL_OWNER
 from content.persistence.store import Store
 from content.providers.base import ProviderRegistry
 from tests.conftest import FakeProvider, make_request, minimal_payload
@@ -63,7 +64,7 @@ def test_analysis_persists_json_file_when_cache_enabled(cache_settings):
     service = AnalysisService(store, ProviderRegistry([provider]), cache_settings)
     request = make_request(minimal_payload())
 
-    service.analyze_sources(list(request.sources))
+    service.analyze_sources(LOCAL_OWNER, list(request.sources))
     assert provider.analyze_calls == 1
     files = list((cache_settings.data_dir / "cache" / "analysis").glob("*.json"))
     assert len(files) == 1  # the URL JSON is persisted as a source of truth
@@ -76,7 +77,7 @@ def test_db_miss_is_served_from_file_cache_without_reprobing(cache_settings, tmp
     store1 = Store(cache_settings.db_path)
     p1 = CountingProvider()
     AnalysisService(store1, ProviderRegistry([p1]), cache_settings).analyze_sources(
-        list(request.sources)
+        LOCAL_OWNER, list(request.sources)
     )
     assert p1.analyze_calls == 1
 
@@ -85,7 +86,7 @@ def test_db_miss_is_served_from_file_cache_without_reprobing(cache_settings, tmp
     store2 = Store(settings2.db_path)
     p2 = CountingProvider()
     result = AnalysisService(store2, ProviderRegistry([p2]), settings2).analyze_sources(
-        list(request.sources)
+        LOCAL_OWNER, list(request.sources)
     )
     assert p2.analyze_calls == 0  # served from the durable JSON cache
     assert result.sources[0].resource.title == "Fake conference"
@@ -96,14 +97,14 @@ def test_db_hit_rewrites_missing_source_of_truth(cache_settings):
     provider = CountingProvider()
     service = AnalysisService(store, ProviderRegistry([provider]), cache_settings)
     request = make_request(minimal_payload())
-    service.analyze_sources(list(request.sources))
+    service.analyze_sources(LOCAL_OWNER, list(request.sources))
     assert provider.analyze_calls == 1
 
     cache_dir = cache_settings.data_dir / "cache" / "analysis"
     for f in cache_dir.glob("*.json"):
         f.unlink()  # durable file lost, DB still warm
 
-    service.analyze_sources(list(request.sources))
+    service.analyze_sources(LOCAL_OWNER, list(request.sources))
     assert provider.analyze_calls == 1  # DB hit, no re-probe
     assert list(cache_dir.glob("*.json"))  # write-through recreated the file
 
@@ -112,5 +113,5 @@ def test_file_cache_inactive_when_cache_disabled(settings):
     store = Store(settings.db_path)
     provider = CountingProvider()
     service = AnalysisService(store, ProviderRegistry([provider]), settings)
-    service.analyze_sources(list(make_request(minimal_payload()).sources))
+    service.analyze_sources(LOCAL_OWNER, list(make_request(minimal_payload()).sources))
     assert not (settings.data_dir / "cache").exists()  # no cache/ when disabled

@@ -11,6 +11,7 @@ import pytest
 from content.analysis.service import AnalysisService
 from content.domain.errors import RequestRejected
 from content.domain.request import GenerationRequest
+from content.identity import LOCAL_OWNER
 from content.planning.planner import build_plan
 from tests.conftest import make_request, minimal_payload
 
@@ -18,7 +19,7 @@ from tests.conftest import make_request, minimal_payload
 @pytest.fixture
 def analyze(store, providers, settings):
     service = AnalysisService(store, providers, settings)
-    return lambda request: service.analyze_sources(list(request.sources))
+    return lambda request: service.analyze_sources(LOCAL_OWNER, list(request.sources))
 
 
 def _playlist_sources() -> list[dict]:
@@ -194,6 +195,7 @@ def pipeline(store, providers, settings):
     def run(payload: dict) -> str:
         request = make_request(payload)
         result = submit_generation(
+            LOCAL_OWNER,
             payload,
             request,
             store=store,
@@ -270,8 +272,8 @@ def test_each_item_execution_yields_one_artifact_per_entry(pipeline, store, sett
     as its own artifact, named by the naming engine with the collection's
     ordinal in front."""
     job_id = pipeline(_each_item_video_payload())
-    assert store.get_job(job_id)["status"] == "succeeded"
-    artifacts = store.list_artifacts(job_id)
+    assert store.get_job(LOCAL_OWNER, job_id)["status"] == "succeeded"
+    artifacts = store.list_artifacts(LOCAL_OWNER, job_id)
     assert len(artifacts) == 2
 
     names = sorted(a["display_filename"] for a in artifacts)
@@ -287,7 +289,7 @@ def test_member_artifacts_are_attributable_without_parsing_the_filename(
     provenance has to say which concrete member each came from — and where it
     sat in the collection."""
     job_id = pipeline(_each_item_video_payload())
-    artifacts = store.list_artifacts(job_id)
+    artifacts = store.list_artifacts(LOCAL_OWNER, job_id)
     by_index = {
         a["provenance"]["attributes"]["member_index"]: a["provenance"]["attributes"]
         for a in artifacts
@@ -335,7 +337,7 @@ def test_members_get_isolated_workdirs(pipeline, store, monkeypatch):
     monkeypatch.setattr(FakeProvider, "execute", record_workdir)
 
     job_id = pipeline(_each_item_video_payload())
-    assert store.get_job(job_id)["status"] == "succeeded"
+    assert store.get_job(LOCAL_OWNER, job_id)["status"] == "succeeded"
 
     workdirs = list(seen.values())
     assert len(workdirs) == 2
@@ -377,14 +379,16 @@ def test_one_incapable_member_is_admitted_not_hidden(pipeline, store, monkeypatc
     # The output produced *something*, but a step failed — so the honest
     # terminal status is partial, not success (ADR 0021). The per-member
     # detail is in the events below; the status is what a script reads.
-    assert store.get_job(job_id)["status"] == "partially_succeeded"
+    assert store.get_job(LOCAL_OWNER, job_id)["status"] == "partially_succeeded"
 
-    artifacts = store.list_artifacts(job_id)
+    artifacts = store.list_artifacts(LOCAL_OWNER, job_id)
     assert len(artifacts) == 1, "the capable member is still produced"
     assert artifacts[0]["provenance"]["attributes"]["member_index"] == 1
 
     failed = [
-        event for event in store.list_events(job_id) if event["type"] == "step.failed"
+        event
+        for event in store.list_events(LOCAL_OWNER, job_id)
+        if event["type"] == "step.failed"
     ]
     assert len(failed) == 1
     assert failed[0]["data"]["code"] == "member_not_feasible"

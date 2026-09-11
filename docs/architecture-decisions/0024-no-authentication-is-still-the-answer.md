@@ -2,6 +2,9 @@
 
 Status: proposed (2026-08-15) · Records a position inherited rather than decided
 · Related: ADR 0020 (uploads made the API a write primitive)
+· **Completed by ADR 0030 (2026-09-11)**: trigger 2 below — a hosted offering —
+  arrived. This ADR still governs the self-hosted deployment, unchanged and by
+  default; 0030 adds the hosted mode beside it rather than replacing it.
 
 ## Context
 

@@ -13,7 +13,15 @@ import os
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
-from fastapi import FastAPI, HTTPException, Query, Request, Response, UploadFile
+from fastapi import (
+    Depends,
+    FastAPI,
+    HTTPException,
+    Query,
+    Request,
+    Response,
+    UploadFile,
+)
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import (
@@ -31,6 +39,7 @@ from content.analysis.service import (
     AnalysisNotFound,
     AnalysisService,
 )
+from content.api.auth import Identity
 from content.application.collections import attach_collection_runner
 from content.application.submit import submit_generation
 from content.application.uploads import sweep_expired_uploads
@@ -77,6 +86,7 @@ from content.storage.layout import (
     UploadStore,
     UploadTooLarge,
 )
+from content.storage.migrate_owner import migrate_jobs_to_owner
 from content.storage.paths import storage_report
 
 
@@ -199,6 +209,7 @@ def _xor_source_input_error(code: str, message: str) -> HTTPException:
 
 
 def _resolve_source_input(
+    owner_id: str,
     sources: list[SourceDescriptor] | None,
     analysis_id: str | None,
     analysis_service: "AnalysisService",
@@ -218,7 +229,7 @@ def _resolve_source_input(
         )
     if analysis_id is not None:
         try:
-            return analysis_service.sources_for_analysis(analysis_id)
+            return analysis_service.sources_for_analysis(owner_id, analysis_id)
         except AnalysisNotFound as exc:
             raise HTTPException(
                 status_code=404,
@@ -319,6 +330,11 @@ def create_app(
                 *summarizers,
             ],
         )
+    # Identity is resolved once, here, and injected into every route that
+    # touches user data. `owner` below is a FastAPI dependency: adding a route
+    # without it is what tests/test_route_ownership.py refuses to let happen.
+    identity = Identity(settings.auth_mode)
+    owner = Depends(identity)
     analysis_service = AnalysisService(store, providers, settings)
     # A collection orchestrates the canonical pipeline for its members
     # (ADR 0019), so its runner needs the analysis service and the very
@@ -337,6 +353,10 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
+        # Filing existing work under its owner runs before the first request
+        # and before the worker claims anything: no job may be executed while
+        # its directory is mid-move. Idempotent, so this stays on every start.
+        migrate_jobs_to_owner(settings.data_dir, tmp_root=settings.tmp_dir)
         if start_worker:
             await queue.start()
         try:
@@ -553,7 +573,7 @@ def create_app(
     # --- uploads (ADR 0020) ------------------------------------------------------
 
     @app.post("/api/v1/uploads", tags=["uploads"], status_code=201)
-    async def create_upload(file: UploadFile) -> dict:
+    async def create_upload(file: UploadFile, owner_id: str = owner) -> dict:
         """Store bytes a client supplied, and return the id that references them.
 
         The one endpoint that lets a caller write to the engine's disk, so the
@@ -604,12 +624,12 @@ def create_app(
             "sha256": written["sha256"],
             "path": written["path"],
         }
-        store.register_upload(record)
-        return _upload_view(store.get_upload(upload_id))
+        store.register_upload(owner_id, record)
+        return _upload_view(store.get_upload(owner_id, upload_id))
 
     @app.get("/api/v1/uploads/{upload_id}", tags=["uploads"])
-    def get_upload(upload_id: str) -> dict:
-        row = store.get_upload(upload_id)
+    def get_upload(upload_id: str, owner_id: str = owner) -> dict:
+        row = store.get_upload(owner_id, upload_id)
         if row is None:
             raise HTTPException(
                 status_code=404,
@@ -618,34 +638,34 @@ def create_app(
         return _upload_view(row)
 
     @app.delete("/api/v1/uploads/{upload_id}", tags=["uploads"], status_code=204)
-    def delete_upload(upload_id: str) -> Response:
+    def delete_upload(upload_id: str, owner_id: str = owner) -> Response:
         """Remove an upload before its TTL. Idempotent: deleting an unknown id
         succeeds, since the caller's intent — that it be gone — already holds."""
-        row = store.get_upload(upload_id)
+        row = store.get_upload(owner_id, upload_id)
         if row is not None:
             store_root = settings.uploads_dir or (settings.data_dir / "uploads")
             UploadStore(store_root).remove(upload_id)
-            store.delete_upload(upload_id)
+            store.delete_upload(owner_id, upload_id)
         return Response(status_code=204)
 
     # --- analyses --------------------------------------------------------------
 
     @app.post("/api/v1/analyses", tags=["analyses"])
-    def create_analysis(body: AnalysisRequest) -> dict:
+    def create_analysis(body: AnalysisRequest, owner_id: str = owner) -> dict:
         _reject_duplicate_source_ids(body.sources)
         try:
-            analysis = analysis_service.analyze_sources(list(body.sources))
+            analysis = analysis_service.analyze_sources(owner_id, list(body.sources))
         except RequestRejected as exc:
             raise HTTPException(status_code=422, detail=exc.result.model_dump())
         return analysis.model_dump(mode="json")
 
     @app.get("/api/v1/analyses/{analysis_id}", tags=["analyses"])
-    def get_analysis(analysis_id: str) -> dict:
+    def get_analysis(analysis_id: str, owner_id: str = owner) -> dict:
         """Fetch a previously produced analysis by id (ADR 0014). A safe read:
         it never re-runs analysis. 404 if unknown, 410 if the record or its
         referenced facts have expired."""
         try:
-            analysis = analysis_service.get_analysis(analysis_id)
+            analysis = analysis_service.get_analysis(owner_id, analysis_id)
         except AnalysisNotFound as exc:
             raise HTTPException(
                 status_code=404,
@@ -665,7 +685,9 @@ def create_app(
         response_model=CapabilitiesResponse,
         tags=["capabilities"],
     )
-    def resolve_capabilities(body: CapabilitiesRequest) -> CapabilitiesResponse:
+    def resolve_capabilities(
+        body: CapabilitiesRequest, owner_id: str = owner
+    ) -> CapabilitiesResponse:
         """Resolve, per source, the public capabilities the engine can offer —
         the single feed a dynamic UI renders from (ADR 0013). Analysis stays a
         separate concern; availability is recomputed here against the live
@@ -673,11 +695,11 @@ def create_app(
 
         Accepts either inline ``sources`` or an ``analysis_id`` (ADR 0014)."""
         sources = _resolve_source_input(
-            body.sources, body.analysis_id, analysis_service
+            owner_id, body.sources, body.analysis_id, analysis_service
         )
         _reject_duplicate_source_ids(sources)
         try:
-            analysis = analysis_service.analyze_sources(list(sources))
+            analysis = analysis_service.analyze_sources(owner_id, list(sources))
         except RequestRejected as exc:
             raise HTTPException(status_code=422, detail=exc.result.model_dump())
         overlay = RequestConstraints(
@@ -707,11 +729,13 @@ def create_app(
     @app.post(
         "/api/v1/jobs", response_model=JobSubmitted, status_code=201, tags=["jobs"]
     )
-    def submit_job(request: GenerationRequest, response: Response) -> JobSubmitted:
+    def submit_job(
+        request: GenerationRequest, response: Response, owner_id: str = owner
+    ) -> JobSubmitted:
         # Accept sources XOR analysis_id (ADR 0014); resolve to concrete sources
         # so the pipeline (validation → planning) is unchanged downstream.
         sources = _resolve_source_input(
-            request.sources, request.analysis_id, analysis_service
+            owner_id, request.sources, request.analysis_id, analysis_service
         )
         if request.analysis_id is not None:
             request = request.model_copy(
@@ -719,6 +743,7 @@ def create_app(
             )
         try:
             result = submit_generation(
+                owner_id,
                 request.model_dump(mode="json", exclude_unset=True),
                 request,
                 store=store,
@@ -741,12 +766,14 @@ def create_app(
 
     @app.get("/api/v1/jobs", tags=["jobs"])
     def list_jobs(
-        status: str | None = Query(None), limit: int = Query(200, le=1000)
+        status: str | None = Query(None),
+        limit: int = Query(200, le=1000),
+        owner_id: str = owner,
     ) -> list[dict]:
-        rows = store.list_jobs(status=status, limit=limit)
+        rows = store.list_jobs(owner_id, status=status, limit=limit)
         # Human labels (first artifact's display name + count), one query for
         # the whole page: rows become recognizable without a per-job fetch.
-        labels = store.artifact_labels([row["id"] for row in rows])
+        labels = store.artifact_labels(owner_id, [row["id"] for row in rows])
         views = []
         for row in rows:
             view = _job_view(row)
@@ -754,7 +781,7 @@ def create_app(
             views.append(view)
         return views
 
-    def _step_labels(job_id: str) -> dict[str, dict]:
+    def _step_labels(owner_id: str, job_id: str) -> dict[str, dict]:
         """Human context per step, from the plan snapshot.
 
         A collection step's params carry the member's title and ordinal
@@ -762,7 +789,9 @@ def create_app(
         execution state, so the presentation join happens here — once, for
         every client — instead of each UI re-deriving titles from slugs.
         """
-        path = JobStorage.from_settings(settings, job_id).snapshots / "plan.json"
+        path = (
+            JobStorage.from_settings(settings, owner_id, job_id).snapshots / "plan.json"
+        )
         try:
             plan = json.loads(path.read_text())
         except (OSError, json.JSONDecodeError):
@@ -780,24 +809,24 @@ def create_app(
         return labels
 
     @app.get("/api/v1/jobs/{job_id}", tags=["jobs"])
-    def get_job(job_id: str) -> dict:
-        row = store.get_job(job_id)
+    def get_job(job_id: str, owner_id: str = owner) -> dict:
+        row = store.get_job(owner_id, job_id)
         if row is None:
             raise HTTPException(status_code=404, detail="job not found")
         view = _job_view(row)
-        view.update(store.artifact_labels([job_id]).get(job_id, {}))
-        steps = store.list_steps(job_id)
-        labels = _step_labels(job_id)
+        view.update(store.artifact_labels(owner_id, [job_id]).get(job_id, {}))
+        steps = store.list_steps(owner_id, job_id)
+        labels = _step_labels(owner_id, job_id)
         for step in steps:
             step.update(labels.get(step["step_id"], {}))
         view["steps"] = steps
         return view
 
     @app.post("/api/v1/jobs/{job_id}/cancel", tags=["jobs"])
-    def cancel_job(job_id: str) -> dict:
-        if store.get_job(job_id) is None:
+    def cancel_job(job_id: str, owner_id: str = owner) -> dict:
+        if store.get_job(owner_id, job_id) is None:
             raise HTTPException(status_code=404, detail="job not found")
-        store.request_cancel(job_id)
+        store.request_cancel(owner_id, job_id)
         return {"job_id": job_id, "cancel_requested": True}
 
     @app.post(
@@ -806,10 +835,10 @@ def create_app(
         status_code=201,
         tags=["jobs"],
     )
-    def retry_job(job_id: str) -> JobSubmitted:
+    def retry_job(job_id: str, owner_id: str = owner) -> JobSubmitted:
         """A retry is a NEW job re-running the same normalized request
         (fresh analysis + plan); terminal jobs are never resurrected."""
-        row = store.get_job(job_id)
+        row = store.get_job(owner_id, job_id)
         if row is None:
             raise HTTPException(status_code=404, detail="job not found")
         if row["status"] not in JOB_TERMINAL:
@@ -827,6 +856,7 @@ def create_app(
         request = GenerationRequest.model_validate(payload)
         try:
             result = submit_generation(
+                owner_id,
                 payload,
                 request,
                 store=store,
@@ -842,19 +872,24 @@ def create_app(
         )
 
     @app.get("/api/v1/jobs/{job_id}/events", tags=["jobs"])
-    def job_events(job_id: str, after_sequence: int = Query(0, ge=0)) -> list[dict]:
-        if store.get_job(job_id) is None:
+    def job_events(
+        job_id: str, after_sequence: int = Query(0, ge=0), owner_id: str = owner
+    ) -> list[dict]:
+        if store.get_job(owner_id, job_id) is None:
             raise HTTPException(status_code=404, detail="job not found")
-        return store.list_events(job_id, after_sequence=after_sequence)
+        return store.list_events(owner_id, job_id, after_sequence=after_sequence)
 
     @app.get("/api/v1/jobs/{job_id}/events/stream", tags=["jobs"])
     async def job_events_stream(
-        job_id: str, request: Request, after_sequence: int = Query(0, ge=0)
+        job_id: str,
+        request: Request,
+        after_sequence: int = Query(0, ge=0),
+        owner_id: str = owner,
     ) -> StreamingResponse:
         """Server-Sent Events over the persisted, replayable event log.
         Supports resuming via `Last-Event-ID` (or `after_sequence`); ends with
         an explicit `stream.end` event once the job is terminal."""
-        if store.get_job(job_id) is None:
+        if store.get_job(owner_id, job_id) is None:
             raise HTTPException(status_code=404, detail="job not found")
         last_event_id = request.headers.get("last-event-id", "")
         if last_event_id.isdigit():
@@ -864,7 +899,9 @@ def create_app(
             last = after_sequence
             idle_seconds = 0.0
             while True:
-                events = await asyncio.to_thread(store.list_events, job_id, last)
+                events = await asyncio.to_thread(
+                    store.list_events, owner_id, job_id, last
+                )
                 for event in events:
                     last = event["sequence"]
                     payload = json.dumps(event["data"])
@@ -873,7 +910,7 @@ def create_app(
                         f"event: {event['type']}\n"
                         f"data: {payload}\n\n"
                     )
-                job = await asyncio.to_thread(store.get_job, job_id)
+                job = await asyncio.to_thread(store.get_job, owner_id, job_id)
                 if not events and job["status"] in JOB_TERMINAL:
                     yield "event: stream.end\ndata: {}\n\n"
                     return
@@ -895,18 +932,20 @@ def create_app(
         )
 
     @app.get("/api/v1/jobs/{job_id}/artifacts", tags=["artifacts"])
-    def job_artifacts(job_id: str) -> list[dict]:
-        if store.get_job(job_id) is None:
+    def job_artifacts(job_id: str, owner_id: str = owner) -> list[dict]:
+        if store.get_job(owner_id, job_id) is None:
             raise HTTPException(status_code=404, detail="job not found")
-        return store.list_artifacts(job_id)
+        return store.list_artifacts(owner_id, job_id)
 
     @app.get("/api/v1/jobs/{job_id}/logs", tags=["jobs"])
-    def job_logs(job_id: str, tail: int = Query(400, ge=1, le=5000)) -> dict:
+    def job_logs(
+        job_id: str, tail: int = Query(400, ge=1, le=5000), owner_id: str = owner
+    ) -> dict:
         """Per-step stdout/stderr logs for the admin console. Reads only from the
         job's own logs/ directory; each stream is tail-truncated."""
-        if store.get_job(job_id) is None:
+        if store.get_job(owner_id, job_id) is None:
             raise HTTPException(status_code=404, detail="job not found")
-        logs_dir = JobStorage(settings.data_dir, job_id).logs
+        logs_dir = JobStorage(settings.data_dir, owner_id, job_id).logs
         result: dict[str, dict] = {}
         if logs_dir.is_dir():
             for path in sorted(logs_dir.glob("*.log")):
@@ -926,19 +965,19 @@ def create_app(
     # --- artifacts -------------------------------------------------------------
 
     @app.get("/api/v1/artifacts/{artifact_id}", tags=["artifacts"])
-    def get_artifact(artifact_id: str) -> dict:
-        artifact = store.get_artifact(artifact_id)
+    def get_artifact(artifact_id: str, owner_id: str = owner) -> dict:
+        artifact = store.get_artifact(owner_id, artifact_id)
         if artifact is None:
             raise HTTPException(status_code=404, detail="artifact not found")
         return artifact
 
     @app.get("/api/v1/artifacts/{artifact_id}/content", tags=["artifacts"])
-    def artifact_content(artifact_id: str) -> FileResponse:
-        artifact = store.get_artifact(artifact_id)
+    def artifact_content(artifact_id: str, owner_id: str = owner) -> FileResponse:
+        artifact = store.get_artifact(owner_id, artifact_id)
         if artifact is None:
             raise HTTPException(status_code=404, detail="artifact not found")
         path = (
-            JobStorage(settings.data_dir, artifact["job_id"]).artifacts
+            JobStorage(settings.data_dir, owner_id, artifact["job_id"]).artifacts
             / artifact["filename"]
         )
         if not path.is_file():

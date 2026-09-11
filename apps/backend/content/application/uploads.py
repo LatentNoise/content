@@ -27,7 +27,7 @@ from content.storage.layout import UploadStore
 
 
 def resolve_upload_sources(
-    sources: list[SourceDescriptor], store, settings
+    owner_id: str, sources: list[SourceDescriptor], store, settings
 ) -> tuple[list[SourceDescriptor], list[ValidationIssue]]:
     """Swap every `upload` source for the `file` it stands for.
 
@@ -44,7 +44,7 @@ def resolve_upload_sources(
             resolved.append(source)
             continue
         path = f"sources[{index}].upload_id"
-        row = store.get_upload(source.upload_id)
+        row = store.get_upload(owner_id, source.upload_id)
         if row is None:
             issues.append(
                 ValidationIssue(
@@ -66,7 +66,7 @@ def resolve_upload_sources(
                 )
             )
             continue
-        store.touch_upload(source.upload_id)
+        store.touch_upload(owner_id, source.upload_id)
         resolved.append(
             FileSource(
                 id=source.id,
@@ -94,7 +94,7 @@ def _is_expired(row: dict, settings) -> bool:
     return datetime.now(timezone.utc) - last > timedelta(hours=ttl)
 
 
-def resolve_request_uploads(request, store, settings):
+def resolve_request_uploads(owner_id, request, store, settings):
     """Return *request* with every `upload` source replaced by its `file`.
 
     Applied once at the boundary, before analysis and planning, so both see the
@@ -106,7 +106,9 @@ def resolve_request_uploads(request, store, settings):
 
     if not any(isinstance(s, UploadSource) for s in request.sources):
         return request
-    resolved, issues = resolve_upload_sources(list(request.sources), store, settings)
+    resolved, issues = resolve_upload_sources(
+        owner_id, list(request.sources), store, settings
+    )
     if issues:
         raise RequestRejected(
             ValidationResult(valid=False, phase="feasibility", errors=issues)
@@ -138,7 +140,10 @@ def sweep_expired_uploads(store, settings) -> dict:
     if ttl > 0:
         cutoff = (datetime.now(timezone.utc) - timedelta(hours=ttl)).isoformat()
         for row in store.expired_uploads(cutoff):
-            store.delete_upload(row["id"])
+            # Housekeeping acts on nobody's behalf: an expired upload is
+            # reclaimed whoever owns it. The explicit method name is what
+            # keeps this out of any request path.
+            store.delete_upload_any_owner(row["id"])
             uploads.remove(row["id"])
             removed += 1
             reclaimed += int(row.get("size_bytes") or 0)
@@ -146,7 +151,7 @@ def sweep_expired_uploads(store, settings) -> dict:
     orphans = 0
     if uploads.root.exists():
         for directory in uploads.root.iterdir():
-            if directory.is_dir() and store.get_upload(directory.name) is None:
+            if directory.is_dir() and not store.upload_exists_any_owner(directory.name):
                 reclaimed += sum(
                     p.stat().st_size for p in directory.rglob("*") if p.is_file()
                 )

@@ -18,6 +18,7 @@ from content.domain.analysis import (
 )
 from content.domain.request import GenerationRequest
 from content.execution.executor import JobExecutor
+from content.identity import LOCAL_OWNER
 from content.naming.engine import bind_filename, resolve_naming_plan
 from content.naming.sanitize import display_name, item_slug
 from tests.conftest import make_request, minimal_payload
@@ -363,6 +364,7 @@ def pipeline(store, providers, settings):
     def submit_and_run(payload: dict) -> str:
         request = make_request(payload)
         result = submit_generation(
+            LOCAL_OWNER,
             payload,
             request,
             store=store,
@@ -391,10 +393,10 @@ def test_artifacts_carry_display_filenames_end_to_end(pipeline, store, settings)
             ]
         )
     )
-    assert store.get_job(job_id)["status"] == "succeeded"
+    assert store.get_job(LOCAL_OWNER, job_id)["status"] == "succeeded"
     by_display = {
         artifact["display_filename"]: artifact
-        for artifact in store.list_artifacts(job_id)
+        for artifact in store.list_artifacts(LOCAL_OWNER, job_id)
     }
     assert set(by_display) == {
         "Fake conference.m4a",
@@ -408,7 +410,14 @@ def test_artifacts_carry_display_filenames_end_to_end(pipeline, store, settings)
 
     # The NamingPlan is visible in the plan snapshot.
     snapshot = json.loads(
-        (settings.data_dir / "jobs" / job_id / "snapshots" / "plan.json").read_text()
+        (
+            settings.data_dir
+            / "jobs"
+            / LOCAL_OWNER
+            / job_id
+            / "snapshots"
+            / "plan.json"
+        ).read_text()
     )
     resolved = {entry["output_id"]: entry for entry in snapshot["naming"]["outputs"]}
     assert resolved["audio_main"]["base"] == "Fake conference"
@@ -421,7 +430,7 @@ def test_api_download_serves_the_display_name(pipeline, store, settings, provide
     from content.api.app import create_app
 
     job_id = pipeline(minimal_payload())
-    artifact = store.list_artifacts(job_id)[0]
+    artifact = store.list_artifacts(LOCAL_OWNER, job_id)[0]
     app = create_app(settings, providers=providers, start_worker=False)
     with TestClient(app) as client:
         detail = client.get(f"/api/v1/artifacts/{artifact['id']}").json()

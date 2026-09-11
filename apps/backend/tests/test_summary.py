@@ -8,6 +8,7 @@ from content.analysis.service import AnalysisService
 from content.application.submit import submit_generation
 from content.domain.errors import RequestRejected
 from content.execution.executor import JobExecutor
+from content.identity import LOCAL_OWNER
 from content.planning.planner import build_plan
 from content.processors.summarize import build_summary_prompt, strip_thinking
 from content.processors.transcript import TranscriptProcessor
@@ -33,7 +34,7 @@ def registry_with(*processors):
 def plan_with(payload, registry, store, settings):
     service = AnalysisService(store, registry, settings)
     request = make_request(payload)
-    analysis = service.analyze_sources(list(request.sources))
+    analysis = service.analyze_sources(LOCAL_OWNER, list(request.sources))
     return build_plan(request, analysis, registry, settings)
 
 
@@ -192,7 +193,9 @@ def _resolve_summary(registry, store, settings):
     from content.planning.transformations import build_registry
 
     service = AnalysisService(store, registry, settings)
-    analysis = service.analyze_sources(list(make_request(minimal_payload()).sources))
+    analysis = service.analyze_sources(
+        LOCAL_OWNER, list(make_request(minimal_payload()).sources)
+    )
     facts = facts_from_analysis(analysis.sources[0])
     resolver = CapabilityResolver(build_registry(registry), registry)
     caps = {c.id: c for c in resolver.resolve(facts, EffectivePolicy())}
@@ -222,6 +225,7 @@ def test_summary_job_end_to_end(providers, store, settings):
     payload = summary_payload()
     request = make_request(payload)
     result = submit_generation(
+        LOCAL_OWNER,
         payload,
         request,
         store=store,
@@ -232,8 +236,8 @@ def test_summary_job_end_to_end(providers, store, settings):
     claimed = store.claim_next_queued()
     JobExecutor(store, settings, providers).execute(claimed)
 
-    assert store.get_job(result.job_id)["status"] == "succeeded"
-    artifacts = store.list_artifacts(result.job_id)
+    assert store.get_job(LOCAL_OWNER, result.job_id)["status"] == "succeeded"
+    artifacts = store.list_artifacts(LOCAL_OWNER, result.job_id)
     assert len(artifacts) == 1
     artifact = artifacts[0]
     assert artifact["type"] == "summary"
@@ -243,9 +247,16 @@ def test_summary_job_end_to_end(providers, store, settings):
     assert artifact["provenance"]["attributes"]["model"] == "fake-model"
 
     path = (
-        settings.data_dir / "jobs" / result.job_id / "artifacts" / artifact["filename"]
+        settings.data_dir
+        / "jobs"
+        / LOCAL_OWNER
+        / result.job_id
+        / "artifacts"
+        / artifact["filename"]
     )
     assert path.read_text().startswith("# Summary")
 
-    steps = {s["step_id"]: s["status"] for s in store.list_steps(result.job_id)}
+    steps = {
+        s["step_id"]: s["status"] for s in store.list_steps(LOCAL_OWNER, result.job_id)
+    }
     assert len(steps) == 3 and set(steps.values()) == {"succeeded"}

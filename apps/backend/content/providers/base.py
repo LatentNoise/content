@@ -16,6 +16,7 @@ from content.config import ContentSettings
 from content.domain.analysis import SourceAnalysis
 from content.domain.plan import PlanStep
 from content.domain.request import SourceDescriptor
+from content.identity import LOCAL_OWNER
 
 
 @dataclass
@@ -43,6 +44,11 @@ class ExecutionContext:
     stdout_log: Path
     stderr_log: Path
     timeout_seconds: float
+    # Who this work is being done for. A runner never resolves an identity: it
+    # inherits the one the job was created with, so anything it stores or reads
+    # on the way stays inside that owner (ADR 0030). Defaults to the
+    # self-hosted single user so a provider can still be exercised alone.
+    owner_id: str = LOCAL_OWNER
     input_materials: list[Material] = field(default_factory=list)
     cancel_check: Callable[[], bool] = lambda: False
     on_progress: Callable[[float, str], None] = lambda percent, message: None

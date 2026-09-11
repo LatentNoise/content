@@ -12,6 +12,7 @@ from content.analysis.service import AnalysisService
 from content.application.submit import submit_generation
 from content.config import ContentSettings
 from content.execution.executor import JobExecutor
+from content.identity import LOCAL_OWNER
 from content.persistence.store import Store
 from content.planning.feasibility import output_feasibility
 from content.processors.transcript import TranscriptProcessor
@@ -110,7 +111,7 @@ def test_transcript_from_local_file_with_embedded_subs(tmp_path, clip_with_subs)
     }
     request = make_request(payload)
 
-    analysis = service.analyze_sources(list(request.sources))
+    analysis = service.analyze_sources(LOCAL_OWNER, list(request.sources))
     entry = analysis.sources[0]
     transcript = resolved_capabilities(entry, providers)["transcript.generate"]
     assert transcript.status == "derivable"
@@ -121,6 +122,7 @@ def test_transcript_from_local_file_with_embedded_subs(tmp_path, clip_with_subs)
     assert subtitles.details["manual"] == ["fra"]
 
     result = submit_generation(
+        LOCAL_OWNER,
         payload,
         request,
         store=store,
@@ -131,13 +133,18 @@ def test_transcript_from_local_file_with_embedded_subs(tmp_path, clip_with_subs)
     claimed = store.claim_next_queued()
     JobExecutor(store, settings, providers).execute(claimed)
 
-    assert store.get_job(result.job_id)["status"] == "succeeded"
-    artifact = store.list_artifacts(result.job_id)[0]
+    assert store.get_job(LOCAL_OWNER, result.job_id)["status"] == "succeeded"
+    artifact = store.list_artifacts(LOCAL_OWNER, result.job_id)[0]
     assert artifact["type"] == "transcript"
     assert artifact["media_type"] == "application/json"
 
     path = (
-        settings.data_dir / "jobs" / result.job_id / "artifacts" / artifact["filename"]
+        settings.data_dir
+        / "jobs"
+        / LOCAL_OWNER
+        / result.job_id
+        / "artifacts"
+        / artifact["filename"]
     )
     transcript = json.loads(path.read_text())
     assert transcript["language"] == "fra"

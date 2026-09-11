@@ -19,6 +19,7 @@ import dataclasses
 import pytest
 
 from content.analysis.service import AnalysisService
+from content.identity import LOCAL_OWNER
 from content.planning.planner import (
     _resolve_transcript_language as resolve,
 )
@@ -104,7 +105,7 @@ def plan_with(store, providers, settings):
         service = AnalysisService(store, providers, configured)
         payload = minimal_payload(outputs=[{"id": "transcript", "type": "transcript"}])
         request = make_request(payload)
-        analysis = service.analyze_sources(list(request.sources))
+        analysis = service.analyze_sources(LOCAL_OWNER, list(request.sources))
         return build_plan(request, analysis, providers, configured)
 
     return _plan

@@ -18,6 +18,7 @@ prose runs nearer 4), so it can miss a truncation but can never invent one.
 
 from __future__ import annotations
 
+from content.identity import LOCAL_OWNER
 from content.providers.ollama import _context_for, _warn_if_truncated
 
 
@@ -122,6 +123,7 @@ def test_a_step_warning_travels_to_the_artifact_and_the_event_stream(
     executor = JobExecutor(store, settings, providers)
     payload = minimal_payload()
     result = submit_generation(
+        LOCAL_OWNER,
         payload,
         make_request(payload),
         store=store,
@@ -132,16 +134,20 @@ def test_a_step_warning_travels_to_the_artifact_and_the_event_stream(
     executor.execute(store.claim_next_queued())
 
     job_id = result.job_id
-    assert store.get_job(job_id)["status"] == "succeeded", "a warning is not a failure"
+    assert store.get_job(LOCAL_OWNER, job_id)["status"] == "succeeded", (
+        "a warning is not a failure"
+    )
 
     # 1. on the artifact, where a caller holding the file will look
-    artifact = store.list_artifacts(job_id)[0]
+    artifact = store.list_artifacts(LOCAL_OWNER, job_id)[0]
     warnings = artifact["provenance"]["warnings"]
     assert [w["code"] for w in warnings] == ["partial_output"]
     assert warnings[0]["details"]["prompt_eval_count"] == 16387
 
     # 2. in the event stream, where "what happened" is answered
-    events = [e for e in store.list_events(job_id) if e["type"] == "step.warning"]
+    events = [
+        e for e in store.list_events(LOCAL_OWNER, job_id) if e["type"] == "step.warning"
+    ]
     assert len(events) == 1
     assert events[0]["data"]["code"] == "partial_output"
     assert events[0]["data"]["step_id"]
@@ -157,6 +163,7 @@ def test_an_unwarned_step_leaves_the_artifact_clean(store, settings, providers):
 
     payload = minimal_payload()
     result = submit_generation(
+        LOCAL_OWNER,
         payload,
         make_request(payload),
         store=store,
@@ -166,7 +173,10 @@ def test_an_unwarned_step_leaves_the_artifact_clean(store, settings, providers):
     )
     JobExecutor(store, settings, providers).execute(store.claim_next_queued())
 
-    assert store.list_artifacts(result.job_id)[0]["provenance"]["warnings"] == []
+    assert (
+        store.list_artifacts(LOCAL_OWNER, result.job_id)[0]["provenance"]["warnings"]
+        == []
+    )
 
 
 def test_a_warning_does_not_leak_into_the_next_job(store, settings, providers):
@@ -201,6 +211,7 @@ def test_a_warning_does_not_leak_into_the_next_job(store, settings, providers):
     def run() -> str:
         payload = minimal_payload()
         result = submit_generation(
+            LOCAL_OWNER,
             payload,
             make_request(payload),
             store=store,
@@ -215,8 +226,8 @@ def test_a_warning_does_not_leak_into_the_next_job(store, settings, providers):
     warn["on"] = False
     quiet = run()
 
-    assert store.list_artifacts(noisy)[0]["provenance"]["warnings"] != []
-    assert store.list_artifacts(quiet)[0]["provenance"]["warnings"] == []
+    assert store.list_artifacts(LOCAL_OWNER, noisy)[0]["provenance"]["warnings"] != []
+    assert store.list_artifacts(LOCAL_OWNER, quiet)[0]["provenance"]["warnings"] == []
 
 
 # --- asking for a window that fits, instead of hoping ---------------------------

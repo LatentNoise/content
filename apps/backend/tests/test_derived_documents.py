@@ -20,6 +20,7 @@ from content.capabilities.policy import EffectivePolicy
 from content.capabilities.resolver import CapabilityResolver, select_variant
 from content.config import ContentSettings
 from content.domain.analysis import NormalizedResource, SourceAnalysis, SubtitleTrack
+from content.identity import LOCAL_OWNER
 from content.planning import transformations as T
 from content.planning.transformations import build_registry
 from content.processors.pdf import ReportLabPdfProcessor
@@ -63,7 +64,7 @@ def _build_plan(settings, providers, outputs, source=None):
     )
     store = Store(settings.db_path)
     analysis = AnalysisService(store, providers, settings).analyze_sources(
-        request.sources
+        LOCAL_OWNER, request.sources
     )
     return build_plan(request, analysis, providers, settings)
 

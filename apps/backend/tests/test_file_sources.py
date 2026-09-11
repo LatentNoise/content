@@ -12,6 +12,7 @@ from content.config import ContentSettings
 from content.domain.analysis import AnalysisError
 from content.domain.errors import RequestRejected
 from content.execution.executor import JobExecutor
+from content.identity import LOCAL_OWNER
 from content.persistence.store import Store
 from content.providers.base import ProviderRegistry
 from content.providers.ffmpeg import FfmpegProvider, check_path_allowed
@@ -90,7 +91,7 @@ def test_file_source_without_roots_rejected_at_analysis(tmp_path):
         }
     )
     with pytest.raises(RequestRejected) as excinfo:
-        service.analyze_sources(list(request.sources))
+        service.analyze_sources(LOCAL_OWNER, list(request.sources))
     assert excinfo.value.result.errors[0].code == "source_type_not_supported"
 
 
@@ -156,7 +157,7 @@ def test_file_video_to_audio_metadata_thumbnail(tmp_path, sample_video):
     }
     request = make_request(payload)
 
-    analysis = service.analyze_sources(list(request.sources))
+    analysis = service.analyze_sources(LOCAL_OWNER, list(request.sources))
     entry = analysis.sources[0]
     assert entry.resource.resource_type == "video"
     assert entry.resource.title == "Sample clip"
@@ -165,6 +166,7 @@ def test_file_video_to_audio_metadata_thumbnail(tmp_path, sample_video):
     assert capabilities["thumbnail.download"].status == "available"
 
     result = submit_generation(
+        LOCAL_OWNER,
         payload,
         request,
         store=store,
@@ -175,9 +177,10 @@ def test_file_video_to_audio_metadata_thumbnail(tmp_path, sample_video):
     claimed = store.claim_next_queued()
     JobExecutor(store, settings, providers).execute(claimed)
 
-    assert store.get_job(result.job_id)["status"] == "succeeded"
+    assert store.get_job(LOCAL_OWNER, result.job_id)["status"] == "succeeded"
     artifacts = {
-        a["artifact_request_id"]: a for a in store.list_artifacts(result.job_id)
+        a["artifact_request_id"]: a
+        for a in store.list_artifacts(LOCAL_OWNER, result.job_id)
     }
     assert set(artifacts) == {"audio", "meta", "thumb"}
     assert artifacts["audio"]["filename"].endswith(".m4a")  # aac stream-copied
@@ -187,6 +190,7 @@ def test_file_video_to_audio_metadata_thumbnail(tmp_path, sample_video):
         path = (
             settings.data_dir
             / "jobs"
+            / LOCAL_OWNER
             / result.job_id
             / "artifacts"
             / artifact["filename"]

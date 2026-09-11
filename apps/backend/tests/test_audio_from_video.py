@@ -18,6 +18,7 @@ from __future__ import annotations
 import pytest
 
 from content.analysis.service import AnalysisService
+from content.identity import LOCAL_OWNER
 from content.planning.planner import build_plan
 from tests.conftest import make_request, minimal_payload
 
@@ -42,7 +43,7 @@ def plan(store, registry, settings):
         if sources is not None:
             payload["sources"] = sources
         request = make_request(payload)
-        analysis = service.analyze_sources(list(request.sources))
+        analysis = service.analyze_sources(LOCAL_OWNER, list(request.sources))
         return build_plan(request, analysis, providers, settings)
 
     return _plan
@@ -202,7 +203,10 @@ def test_without_the_extractor_the_download_is_kept(store, providers, settings):
     )
     request = make_request(payload)
     result = build_plan(
-        request, service.analyze_sources(list(request.sources)), providers, settings
+        request,
+        service.analyze_sources(LOCAL_OWNER, list(request.sources)),
+        providers,
+        settings,
     )
 
     audio = _by_operation(result, "media.acquire_audio")[0]

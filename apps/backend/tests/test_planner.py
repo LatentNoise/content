@@ -4,6 +4,7 @@ import pytest
 
 from content.analysis.service import AnalysisService
 from content.domain.errors import RequestRejected
+from content.identity import LOCAL_OWNER
 from content.planning.planner import build_plan
 from tests.conftest import make_request, minimal_payload
 
@@ -11,7 +12,7 @@ from tests.conftest import make_request, minimal_payload
 @pytest.fixture
 def analyze(store, providers, settings):
     service = AnalysisService(store, providers, settings)
-    return lambda request: service.analyze_sources(list(request.sources))
+    return lambda request: service.analyze_sources(LOCAL_OWNER, list(request.sources))
 
 
 def plan_for(payload, analyze, providers, settings):

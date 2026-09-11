@@ -12,6 +12,7 @@ from content.api.app import create_app
 from content.application.collections import attach_collection_runner
 from content.application.submit import submit_generation
 from content.execution.executor import JobExecutor
+from content.identity import LOCAL_OWNER
 from content.persistence.store import Store
 from content.processors.transcript import TranscriptProcessor
 from content.providers.base import ProviderRegistry
@@ -60,15 +61,16 @@ def test_legacy_database_is_migrated(tmp_path):
     conn.close()
 
     store = Store(db_path)  # applies migrations
-    row = store.get_job("job_old")
+    row = store.get_job(LOCAL_OWNER, "job_old")
     assert row["retry_of"] == ""  # new column, defaulted
-    store.create_job({"a": 1}, "required_only", None, retry_of="job_old")
+    store.create_job(LOCAL_OWNER, {"a": 1}, "required_only", None, retry_of="job_old")
     assert (
-        store.find_reusable_artifact_group("sig", "any") == []
+        store.find_reusable_artifact_group(LOCAL_OWNER, "sig", "any") == []
     )  # new columns queryable
     # Migration 3 (ADR 0017): pre-naming artifacts read back with an empty
     # display_filename, and new registrations can carry one.
     store.register_artifact(
+        LOCAL_OWNER,
         {
             "id": "art_new",
             "job_id": "job_old",
@@ -79,9 +81,12 @@ def test_legacy_database_is_migrated(tmp_path):
             "media_type": "audio/mp4",
             "size_bytes": 1,
             "checksum": "sha256:x",
-        }
+        },
     )
-    assert store.get_artifact("art_new")["display_filename"] == "My Conference.m4a"
+    assert (
+        store.get_artifact(LOCAL_OWNER, "art_new")["display_filename"]
+        == "My Conference.m4a"
+    )
 
     # idempotent re-open
     Store(db_path)
@@ -115,6 +120,7 @@ def pipeline(store, settings):
     def run(payload: dict, retry_of: str = "") -> str:
         request = make_request(payload)
         result = submit_generation(
+            LOCAL_OWNER,
             payload,
             request,
             store=store,
@@ -144,16 +150,27 @@ def test_identical_job_reuses_artifacts(pipeline, settings):
     assert pipeline.fake.executed_operations == ["media.acquire_audio"]
 
     store = pipeline.store
-    assert store.get_job(second)["status"] == "succeeded"
-    artifact = store.list_artifacts(second)[0]
+    assert store.get_job(LOCAL_OWNER, second)["status"] == "succeeded"
+    artifact = store.list_artifacts(LOCAL_OWNER, second)[0]
     attributes = artifact["provenance"]["attributes"]
-    original = store.list_artifacts(first)[0]
+    original = store.list_artifacts(LOCAL_OWNER, first)[0]
     assert attributes["reused_from_artifact_id"] == original["id"]
     assert artifact["checksum"] == original["checksum"]
-    events = [e for e in store.list_events(second) if e["type"] == "step.succeeded"]
+    events = [
+        e
+        for e in store.list_events(LOCAL_OWNER, second)
+        if e["type"] == "step.succeeded"
+    ]
     assert events[0]["data"]["reused_from_job"] == first
 
-    path = settings.data_dir / "jobs" / second / "artifacts" / artifact["filename"]
+    path = (
+        settings.data_dir
+        / "jobs"
+        / LOCAL_OWNER
+        / second
+        / "artifacts"
+        / artifact["filename"]
+    )
     assert path.is_file()  # a real copy, not a reference
 
 
@@ -163,7 +180,7 @@ def test_reuse_is_independent_of_client_output_ids(pipeline):
         minimal_payload(outputs=[{"id": "totally_different_id", "type": "audio"}])
     )
     assert pipeline.fake.executed_operations == ["media.acquire_audio"]
-    artifact = pipeline.store.list_artifacts(second)[0]
+    artifact = pipeline.store.list_artifacts(LOCAL_OWNER, second)[0]
     assert artifact["filename"] == "totally_different_id.m4a"
 
 
@@ -178,15 +195,22 @@ def test_reuse_existing_false_runs_again(pipeline):
 
 def test_corrupt_cache_falls_back_to_execution(pipeline, settings):
     first = pipeline(minimal_payload())
-    artifact = pipeline.store.list_artifacts(first)[0]
-    (settings.data_dir / "jobs" / first / "artifacts" / artifact["filename"]).unlink()
+    artifact = pipeline.store.list_artifacts(LOCAL_OWNER, first)[0]
+    (
+        settings.data_dir
+        / "jobs"
+        / LOCAL_OWNER
+        / first
+        / "artifacts"
+        / artifact["filename"]
+    ).unlink()
 
     second = pipeline(minimal_payload())
     assert pipeline.fake.executed_operations == [
         "media.acquire_audio",
         "media.acquire_audio",
     ]
-    assert pipeline.store.get_job(second)["status"] == "succeeded"
+    assert pipeline.store.get_job(LOCAL_OWNER, second)["status"] == "succeeded"
 
 
 def test_transcript_chain_reuses_final_step(pipeline):
@@ -197,9 +221,9 @@ def test_transcript_chain_reuses_final_step(pipeline):
     second = pipeline(payload)
     # the internal acquisition reruns (not cached), but the bound transcript
     # step is reused — no second parsing, artifact copied
-    artifact = pipeline.store.list_artifacts(second)[0]
+    artifact = pipeline.store.list_artifacts(LOCAL_OWNER, second)[0]
     assert "reused_from_artifact_id" in artifact["provenance"]["attributes"]
-    original = pipeline.store.list_artifacts(first)[0]
+    original = pipeline.store.list_artifacts(LOCAL_OWNER, first)[0]
     assert artifact["checksum"] == original["checksum"]
     assert pipeline.fake.executed_operations == operations_after_first + [
         "media.acquire_subtitles"
@@ -264,7 +288,7 @@ def test_retry_creates_new_linked_job(client):
     assert events[0]["data"] == {"retry_of": job_id}
     # the retried job never carries the original idempotency key
     store = client.app.state.store
-    assert store.get_job(new_id)["idempotency_key"] is None
+    assert store.get_job(LOCAL_OWNER, new_id)["idempotency_key"] is None
     # original untouched, still terminal
     assert client.get(f"/api/v1/jobs/{job_id}").json()["status"] == "failed"
 
@@ -384,9 +408,9 @@ def test_identical_playlist_reuses_every_entry(pipeline):
     )
 
     store = pipeline.store
-    assert store.get_job(second)["status"] == "succeeded"
-    original_ids = {a["id"] for a in store.list_artifacts(first)}
-    reused = store.list_artifacts(second)
+    assert store.get_job(LOCAL_OWNER, second)["status"] == "succeeded"
+    original_ids = {a["id"] for a in store.list_artifacts(LOCAL_OWNER, first)}
+    reused = store.list_artifacts(LOCAL_OWNER, second)
     assert len(reused) == 2
     for artifact in reused:
         attributes = artifact["provenance"]["attributes"]

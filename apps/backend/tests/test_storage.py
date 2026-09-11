@@ -11,6 +11,7 @@ import pytest
 from content.analysis.service import AnalysisService
 from content.application.submit import submit_generation
 from content.execution.executor import JobExecutor
+from content.identity import LOCAL_OWNER
 from content.storage.layout import JobStorage
 from content.storage.paths import (
     StoragePaths,
@@ -48,7 +49,7 @@ def test_temporary_operation_dir_rejects_traversal(settings):
 
 def test_job_storage_rejects_unsafe_job_id(settings):
     with pytest.raises(ValueError):
-        JobStorage(settings.data_dir, "../escape")
+        JobStorage(settings.data_dir, LOCAL_OWNER, "../escape")
 
 
 # --- roots + cache disabled (INV-STORAGE-009/010) ------------------------------
@@ -220,15 +221,15 @@ def test_the_cross_filesystem_publish_still_preserves_timestamps(tmp_path, monke
 
 
 def test_job_storage_creates_tmp_and_isolates_jobs(settings):
-    a = JobStorage.from_settings(settings, "job_a").ensure()
-    b = JobStorage.from_settings(settings, "job_b").ensure()
+    a = JobStorage.from_settings(settings, LOCAL_OWNER, "job_a").ensure()
+    b = JobStorage.from_settings(settings, LOCAL_OWNER, "job_b").ensure()
     assert a.tmp.is_dir() and a.tmp != b.tmp
     assert a.work != b.work
     assert a.step_tmp("s1").parent == a.tmp
 
 
 def test_purge_tmp_and_work_keep_artifacts(settings):
-    storage = JobStorage.from_settings(settings, "job_keep").ensure()
+    storage = JobStorage.from_settings(settings, LOCAL_OWNER, "job_keep").ensure()
     (storage.work / "inter.bin").write_bytes(b"i")
     (storage.tmp / "scratch.part").write_bytes(b"p")
     art = storage.promote_artifact(_produced(storage.work, b"final"), "final.bin")
@@ -258,6 +259,7 @@ def pipeline(store, providers, settings):
     def run(payload: dict):
         request = make_request(payload)
         result = submit_generation(
+            LOCAL_OWNER,
             payload,
             request,
             store=store,

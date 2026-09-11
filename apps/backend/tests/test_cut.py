@@ -11,6 +11,7 @@ from content.analysis.service import AnalysisService
 from content.application.submit import submit_generation
 from content.domain.request import VideoCut
 from content.execution.executor import JobExecutor
+from content.identity import LOCAL_OWNER
 from content.planning.planner import build_plan
 from content.providers.base import ProviderRegistry
 from tests.conftest import FakeFileProvider, FakeProvider, make_request, minimal_payload
@@ -28,7 +29,7 @@ def plan(store, settings, registry):
 
     def _plan(payload):
         request = make_request(payload)
-        analysis = service.analyze_sources(list(request.sources))
+        analysis = service.analyze_sources(LOCAL_OWNER, list(request.sources))
         return build_plan(request, analysis, registry, settings)
 
     return _plan
@@ -121,6 +122,7 @@ def pipeline(store, settings, registry):
     def run(payload: dict) -> str:
         request = make_request(payload)
         result = submit_generation(
+            LOCAL_OWNER,
             payload,
             request,
             store=store,
@@ -136,24 +138,26 @@ def pipeline(store, settings, registry):
 
 def test_url_cut_executes_end_to_end(pipeline, store):
     job_id = pipeline(_url_video_cut())
-    assert store.get_job(job_id)["status"] == "succeeded"
-    artifacts = store.list_artifacts(job_id)
+    assert store.get_job(LOCAL_OWNER, job_id)["status"] == "succeeded"
+    artifacts = store.list_artifacts(LOCAL_OWNER, job_id)
     assert len(artifacts) == 1 and artifacts[0]["artifact_request_id"] == "video_main"
     assert artifacts[0]["provenance"]["producer"]["operation"] == "video.cut"
 
 
 def test_file_cut_executes_end_to_end(pipeline, store):
     job_id = pipeline(_file_video_cut())
-    assert store.get_job(job_id)["status"] == "succeeded"
+    assert store.get_job(LOCAL_OWNER, job_id)["status"] == "succeeded"
     assert (
-        store.list_artifacts(job_id)[0]["provenance"]["producer"]["operation"]
+        store.list_artifacts(LOCAL_OWNER, job_id)[0]["provenance"]["producer"][
+            "operation"
+        ]
         == "video.cut"
     )
 
 
 def test_precise_cut_executes_end_to_end(pipeline, store):
     job_id = pipeline(_url_video_cut(mode="precise"))
-    assert store.get_job(job_id)["status"] == "succeeded"
+    assert store.get_job(LOCAL_OWNER, job_id)["status"] == "succeeded"
 
 
 # --- ffmpeg arguments (the mode → command projection) ---------------------------

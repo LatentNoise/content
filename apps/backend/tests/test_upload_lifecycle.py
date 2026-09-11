@@ -19,6 +19,7 @@ from fastapi.testclient import TestClient
 from content.api.app import create_app
 from content.application.uploads import sweep_expired_uploads
 from content.config import ContentSettings, uploads_root
+from content.identity import LOCAL_OWNER
 from content.persistence.store import Store
 from content.processors.transcript import TranscriptProcessor
 from content.providers.base import ProviderRegistry
@@ -83,14 +84,14 @@ def test_an_expired_upload_is_actually_deleted(client, settings):
     assert result["removed"] == 1
     assert result["bytes_reclaimed"] == len(MARKDOWN)
     assert not directory.exists(), "the bytes are still on disk"
-    assert store.get_upload(upload_id) is None
+    assert store.get_upload(LOCAL_OWNER, upload_id) is None
 
 
 def test_a_fresh_upload_survives_the_sweep(client, settings):
     upload_id = _upload(client)
     store = Store(settings.db_path)
     assert sweep_expired_uploads(store, settings)["removed"] == 0
-    assert store.get_upload(upload_id) is not None
+    assert store.get_upload(LOCAL_OWNER, upload_id) is not None
 
 
 def test_a_recent_reference_keeps_an_upload_out_of_the_sweep(client, settings):
@@ -103,7 +104,7 @@ def test_a_recent_reference_keeps_an_upload_out_of_the_sweep(client, settings):
         "/api/v1/analyses",
         json={"sources": [{"id": "s", "type": "upload", "upload_id": upload_id}]},
     )
-    _age_check = store.get_upload(upload_id)["last_referenced_at"]
+    _age_check = store.get_upload(LOCAL_OWNER, upload_id)["last_referenced_at"]
     assert _age_check > (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
     assert sweep_expired_uploads(store, settings)["removed"] == 0
 
@@ -130,7 +131,7 @@ def test_an_orphan_directory_is_reclaimed(client, settings):
     a directory nothing points at. The next sweep takes it."""
     upload_id = _upload(client)
     store = Store(settings.db_path)
-    store.delete_upload(upload_id)  # the crash, simulated
+    store.delete_upload(LOCAL_OWNER, upload_id)  # the crash, simulated
 
     result = sweep_expired_uploads(store, settings)
     assert result["orphans"] == 1
@@ -147,7 +148,7 @@ def test_a_ttl_of_zero_disables_collection(client, settings):
     _age(store, upload_id, 10_000)
     never = dataclasses.replace(settings, upload_ttl_hours=0)
     assert sweep_expired_uploads(store, never)["removed"] == 0
-    assert store.get_upload(upload_id) is not None
+    assert store.get_upload(LOCAL_OWNER, upload_id) is not None
 
 
 def test_sweeping_an_empty_store_is_harmless(settings):
@@ -216,7 +217,10 @@ def test_uploads_are_immutable(client, settings):
     second = _upload(client, body=b"# Two\n\nsecond.\n")
     assert first != second
     store = Store(settings.db_path)
-    assert store.get_upload(first)["sha256"] != store.get_upload(second)["sha256"]
+    assert (
+        store.get_upload(LOCAL_OWNER, first)["sha256"]
+        != store.get_upload(LOCAL_OWNER, second)["sha256"]
+    )
 
 
 def test_no_api_response_leaks_a_filesystem_path(client, settings):

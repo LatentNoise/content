@@ -55,7 +55,13 @@ class _RunState:
     protection is exactly what is here: the shared counters and flags.
     """
 
-    def __init__(self, plan: ExecutionPlan, request: GenerationRequest):
+    def __init__(self, plan: ExecutionPlan, request: GenerationRequest, owner_id: str):
+        # The owner of the job being run. It belongs here rather than on the
+        # executor: one JobExecutor serves every concurrent worker, so an
+        # owner stored on `self` would be a race between two jobs. The run
+        # state is per-job by construction, which makes this the only place
+        # it can live safely.
+        self.owner_id = owner_id
         self._lock = threading.Lock()
         self._step_status = {step.id: "pending" for step in plan.steps}
         self._produced_count = {output.id: 0 for output in request.outputs}
@@ -196,7 +202,9 @@ class JobExecutor:
 
     def _execute(self, job_id: str, job_row: dict) -> None:
         request = GenerationRequest.model_validate(job_row["request"])
-        storage = JobStorage(self._settings.data_dir, job_id).ensure()
+        storage = JobStorage(
+            self._settings.data_dir, job_row["owner_id"], job_id
+        ).ensure()
         plan = ExecutionPlan.model_validate(
             json.loads((storage.snapshots / "plan.json").read_text())
         )
@@ -206,7 +214,7 @@ class JobExecutor:
         max_runtime = request.constraints.resources.max_runtime_seconds
         deadline = time.monotonic() + max_runtime if max_runtime else None
         outputs_by_id = {output.id: output for output in request.outputs}
-        state = _RunState(plan, request)
+        state = _RunState(plan, request, job_row["owner_id"])
 
         # Inter-job reuse is a cache feature: inert unless the cache is enabled
         # (ADR 0009). reuse_existing=true is accepted but has no effect in V1.
@@ -338,7 +346,7 @@ class JobExecutor:
         # Reuse is checked before the dependency gate: cached work stands
         # on its own (the signature covers the whole upstream chain).
         reused = (
-            self._find_reusable(job_id, step)
+            self._find_reusable(state.owner_id, job_id, step)
             if reuse_enabled and plan.bindings_for_step(step.id)
             else None
         )
@@ -471,6 +479,7 @@ class JobExecutor:
                 stdout_log=storage.step_log_path(step.id, "stdout"),
                 stderr_log=storage.step_log_path(step.id, "stderr"),
                 timeout_seconds=timeout,
+                owner_id=state.owner_id,
                 input_materials=inputs,
                 cancel_check=lambda: self._store.is_cancel_requested(job_id),
                 on_progress=on_progress,
@@ -479,17 +488,21 @@ class JobExecutor:
         )
 
     def _find_reusable(
-        self, job_id: str, step: PlanStep
+        self, owner_id: str, job_id: str, step: PlanStep
     ) -> tuple[list[ProducedFile], str, dict] | None:
         """Products of the most recent identical step from another job
         (matched by content-addressed signature), checksum-verified on disk.
         Returns (produced, source_job_id, original_producer) or None — any
         missing/corrupt file falls back to a normal run."""
-        group = self._store.find_reusable_artifact_group(step.signature, job_id)
+        group = self._store.find_reusable_artifact_group(
+            owner_id, step.signature, job_id
+        )
         if not group:
             return None
         source_job_id = group[0]["job_id"]
-        source_storage = JobStorage(self._settings.data_dir, source_job_id)
+        # Same owner by construction: the reuse query above never returns
+        # another owner's artifacts.
+        source_storage = JobStorage(self._settings.data_dir, owner_id, source_job_id)
         produced: list[ProducedFile] = []
         seen_checksums: set[str] = set()
         for row in group:
@@ -587,6 +600,7 @@ class JobExecutor:
                 else:
                     target = storage.promote_artifact_copy(first_target, filename)
                 artifact_id = self._register_artifact(
+                    state.owner_id,
                     job_id,
                     step,
                     output,
@@ -604,7 +618,9 @@ class JobExecutor:
                     plan, output, target, display_filename
                 )
                 if delivered:
-                    self._store.set_artifact_delivered(artifact_id, delivered)
+                    self._store.set_artifact_delivered(
+                        state.owner_id, artifact_id, delivered
+                    )
                     # Delivery used to be invisible in the event stream: the
                     # library gained a file and the only trace was a
                     # `delivered_path` column nothing surfaced. It matters most
@@ -670,6 +686,7 @@ class JobExecutor:
 
     def _register_artifact(
         self,
+        owner_id: str,
         job_id: str,
         step: PlanStep,
         output,
@@ -689,6 +706,7 @@ class JobExecutor:
         }
         artifact_id = new_id("art")
         self._store.register_artifact(
+            owner_id,
             {
                 "id": artifact_id,
                 "job_id": job_id,
@@ -712,7 +730,7 @@ class JobExecutor:
                     "warnings": warnings or [],
                     "attributes": item.attributes,
                 },
-            }
+            },
         )
         self._events.publish(
             job_id,

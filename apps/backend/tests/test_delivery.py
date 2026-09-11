@@ -12,6 +12,7 @@ from pydantic import ValidationError
 from content.analysis.service import AnalysisService
 from content.domain.request import Delivery
 from content.execution.executor import JobExecutor
+from content.identity import LOCAL_OWNER
 from content.storage.layout import DeliveryStore, safe_relative_folder
 from tests.conftest import make_request, minimal_payload
 
@@ -107,6 +108,7 @@ def pipeline(store, providers, settings):
     def submit_and_run(payload: dict) -> str:
         request = make_request(payload)
         result = submit_generation(
+            LOCAL_OWNER,
             payload,
             request,
             store=store,
@@ -136,19 +138,19 @@ def test_output_with_delivery_is_copied_into_the_library(pipeline, store, settin
         ]
     )
     job_id = pipeline(payload)
-    assert store.get_job(job_id)["status"] == "succeeded"
+    assert store.get_job(LOCAL_OWNER, job_id)["status"] == "succeeded"
 
     delivered = _delivery_root(settings) / "podcasts" / "episode-1.m4a"
     assert delivered.is_file() and delivered.read_bytes() == b"fake-audio-bytes"
 
     # the job artifact store remains the source of truth
-    artifacts = store.list_artifacts(job_id)
+    artifacts = store.list_artifacts(LOCAL_OWNER, job_id)
     assert len(artifacts) == 1
 
 
 def test_no_delivery_block_leaves_library_untouched(pipeline, store, settings):
     job_id = pipeline(minimal_payload())
-    assert store.get_job(job_id)["status"] == "succeeded"
+    assert store.get_job(LOCAL_OWNER, job_id)["status"] == "succeeded"
     assert not _delivery_root(settings).exists()
 
 
@@ -164,7 +166,7 @@ def test_subtitle_delivery_names_include_language(pipeline, store, settings):
         ]
     )
     job_id = pipeline(payload)
-    assert store.get_job(job_id)["status"] == "succeeded"
+    assert store.get_job(LOCAL_OWNER, job_id)["status"] == "succeeded"
 
     root = _delivery_root(settings) / "subs"
     names = sorted(p.name for p in root.iterdir())
@@ -182,9 +184,9 @@ def test_delivery_without_filename_uses_the_display_name(pipeline, store, settin
         outputs=[{"id": "audio_main", "type": "audio", "delivery": {"folder": "loose"}}]
     )
     job_id = pipeline(payload)
-    assert store.get_job(job_id)["status"] == "succeeded"
+    assert store.get_job(LOCAL_OWNER, job_id)["status"] == "succeeded"
     assert (_delivery_root(settings) / "loose" / "Fake conference.m4a").is_file()
-    artifact = store.list_artifacts(job_id)[0]
+    artifact = store.list_artifacts(LOCAL_OWNER, job_id)[0]
     assert artifact["delivered_path"] == "loose/Fake conference.m4a"
 
 
@@ -200,6 +202,7 @@ def _pipeline_with(store, providers, settings):
     def submit_and_run(payload: dict) -> str:
         request = make_request(payload)
         result = submit_generation(
+            LOCAL_OWNER,
             payload,
             request,
             store=store,
@@ -223,10 +226,10 @@ def policy_on(store, providers, settings):
 def test_policy_on_delivers_bare_requests_into_the_library_root(policy_on, store):
     pipeline, settings = policy_on
     job_id = pipeline(minimal_payload())  # no delivery block at all
-    assert store.get_job(job_id)["status"] == "succeeded"
+    assert store.get_job(LOCAL_OWNER, job_id)["status"] == "succeeded"
     delivered = _delivery_root(settings) / "Fake conference.m4a"
     assert delivered.is_file() and delivered.read_bytes() == b"fake-audio-bytes"
-    artifact = store.list_artifacts(job_id)[0]
+    artifact = store.list_artifacts(LOCAL_OWNER, job_id)[0]
     assert artifact["delivered_path"] == "Fake conference.m4a"
 
 
@@ -239,9 +242,9 @@ def test_policy_on_mode_none_keeps_the_library_untouched(policy_on, store):
             ]
         )
     )
-    assert store.get_job(job_id)["status"] == "succeeded"
+    assert store.get_job(LOCAL_OWNER, job_id)["status"] == "succeeded"
     assert not _delivery_root(settings).exists()
-    assert store.list_artifacts(job_id)[0]["delivered_path"] == ""
+    assert store.list_artifacts(LOCAL_OWNER, job_id)[0]["delivered_path"] == ""
 
 
 def test_policy_off_mode_deliver_forces_the_copy(pipeline, store, settings):
@@ -252,7 +255,7 @@ def test_policy_off_mode_deliver_forces_the_copy(pipeline, store, settings):
             ]
         )
     )
-    assert store.get_job(job_id)["status"] == "succeeded"
+    assert store.get_job(LOCAL_OWNER, job_id)["status"] == "succeeded"
     assert (_delivery_root(settings) / "Fake conference.m4a").is_file()
 
 
@@ -274,15 +277,25 @@ def test_running_the_same_job_twice_delivers_one_file(policy_on, store):
     pipeline, settings = policy_on
     first = pipeline(minimal_payload())
     second = pipeline(minimal_payload())
-    assert store.list_artifacts(first)[0]["delivered_path"] == "Fake conference.m4a"
-    assert store.list_artifacts(second)[0]["delivered_path"] == "Fake conference.m4a"
+    assert (
+        store.list_artifacts(LOCAL_OWNER, first)[0]["delivered_path"]
+        == "Fake conference.m4a"
+    )
+    assert (
+        store.list_artifacts(LOCAL_OWNER, second)[0]["delivered_path"]
+        == "Fake conference.m4a"
+    )
     root = _delivery_root(settings)
     assert (root / "Fake conference.m4a").is_file()
     assert not (root / "Fake conference-1.m4a").exists()
 
 
 def _delivery_events(store, job_id) -> list[dict]:
-    return [e for e in store.list_events(job_id) if e["type"] == "artifact.delivered"]
+    return [
+        e
+        for e in store.list_events(LOCAL_OWNER, job_id)
+        if e["type"] == "artifact.delivered"
+    ]
 
 
 def test_delivery_is_recorded_in_the_event_stream(policy_on, store):
@@ -313,7 +326,10 @@ def test_a_delivery_collision_is_announced_rather_than_silent(
     event = _delivery_events(store, job_id)[0]
     assert event["data"]["path"] == "Fake conference-1.m4a"
     assert event["data"]["renamed_from"] == "Fake conference.m4a"
-    assert store.list_artifacts(job_id)[0]["delivered_path"] == "Fake conference-1.m4a"
+    assert (
+        store.list_artifacts(LOCAL_OWNER, job_id)[0]["delivered_path"]
+        == "Fake conference-1.m4a"
+    )
 
 
 def test_sanitizing_a_name_is_not_reported_as_a_collision(policy_on, store):
@@ -345,7 +361,12 @@ def test_resolved_delivery_is_visible_in_the_plan_snapshot(policy_on, store):
     job_id = pipeline(minimal_payload())
     snapshot = _json.loads(
         (
-            _Path(settings.data_dir) / "jobs" / job_id / "snapshots" / "plan.json"
+            _Path(settings.data_dir)
+            / "jobs"
+            / LOCAL_OWNER
+            / job_id
+            / "snapshots"
+            / "plan.json"
         ).read_text()
     )
     assert snapshot["delivery"] == [
@@ -371,12 +392,17 @@ def test_the_three_paths_are_distinct_concepts(policy_on, store, settings):
             ]
         )
     )
-    artifact = store.list_artifacts(job_id)[0]
+    artifact = store.list_artifacts(LOCAL_OWNER, job_id)[0]
 
     # Internal storage path: technical, id-based, physically present.
     assert artifact["filename"].startswith("audio_main")
     internal = (
-        run_settings.data_dir / "jobs" / job_id / "artifacts" / artifact["filename"]
+        run_settings.data_dir
+        / "jobs"
+        / LOCAL_OWNER
+        / job_id
+        / "artifacts"
+        / artifact["filename"]
     )
     assert internal.is_file()
 

@@ -16,6 +16,7 @@ from content.config import ContentSettings
 from content.documents.markdown import parse_markdown
 from content.domain.plan import PlanStep
 from content.domain.request import EXECUTABLE_OUTPUT_TYPES, RESERVED_OUTPUT_TYPES
+from content.identity import LOCAL_OWNER
 from content.planning import transformations as T
 from content.processors.pdf import ReportLabPdfProcessor
 from content.processors.pdf.reportlab_backend import document_to_flowables
@@ -104,7 +105,7 @@ def _build_plan(settings, providers, body):
     request = GenerationRequest.model_validate(body)
     store = Store(settings.db_path)
     analysis = AnalysisService(store, providers, settings).analyze_sources(
-        request.sources
+        LOCAL_OWNER, request.sources
     )
     return build_plan(request, analysis, providers, settings)
 

@@ -16,6 +16,7 @@ from pydantic import ValidationError
 from content.analysis.service import AnalysisService
 from content.domain.languages import ORIGINAL, expand_original
 from content.domain.request import GenerationRequest
+from content.identity import LOCAL_OWNER
 from content.planning.planner import build_plan
 from tests.conftest import make_request, minimal_payload
 
@@ -27,7 +28,10 @@ def plan(store, providers, settings):
     def _plan(payload):
         request = make_request(payload)
         return build_plan(
-            request, service.analyze_sources(list(request.sources)), providers, settings
+            request,
+            service.analyze_sources(LOCAL_OWNER, list(request.sources)),
+            providers,
+            settings,
         )
 
     return _plan
@@ -166,7 +170,7 @@ def test_each_member_resolves_the_token_against_its_own_analysis(
         assert derived.outputs[0].options.selection.audio_languages == [ORIGINAL]
         member_plan = build_plan(
             derived,
-            service.analyze_sources(list(derived.sources)),
+            service.analyze_sources(LOCAL_OWNER, list(derived.sources)),
             providers,
             settings,
         )
@@ -185,7 +189,10 @@ def test_a_member_and_the_same_video_alone_resolve_identically(
     member = [s for s in result.steps if s.operation == "collection.member"][1]
     derived = GenerationRequest.model_validate(member.params["member_request"])
     member_plan = build_plan(
-        derived, service.analyze_sources(list(derived.sources)), providers, settings
+        derived,
+        service.analyze_sources(LOCAL_OWNER, list(derived.sources)),
+        providers,
+        settings,
     )
 
     alone = plan(video_payload([ORIGINAL, "en"], uri=member.params["member_uri"]))

@@ -10,6 +10,7 @@ from pydantic import ValidationError
 
 from content.analysis.service import AnalysisService
 from content.domain.request import UrlSource
+from content.identity import LOCAL_OWNER
 from content.planning.planner import build_plan
 from content.providers.ytdlp import extra_args
 from tests.conftest import make_request, minimal_payload
@@ -128,7 +129,10 @@ def test_provider_args_threaded_into_acquisition_params(store, providers, settin
     )
     request = make_request(payload)
     plan = build_plan(
-        request, service.analyze_sources(list(request.sources)), providers, settings
+        request,
+        service.analyze_sources(LOCAL_OWNER, list(request.sources)),
+        providers,
+        settings,
     )
     assert plan.steps[0].params["provider_args"] == ["--limit-rate", "2M"]
 

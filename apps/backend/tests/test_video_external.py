@@ -13,6 +13,7 @@ from content.analysis.service import AnalysisService
 from content.application.submit import submit_generation
 from content.config import ContentSettings
 from content.execution.executor import JobExecutor
+from content.identity import LOCAL_OWNER
 from content.persistence.store import Store
 from content.providers.base import ProviderRegistry
 from content.providers.ffmpeg import FfmpegProvider
@@ -68,6 +69,7 @@ def pipeline(tmp_path):
         def run(payload: dict) -> tuple[Store, str]:
             request = make_request(payload)
             result = submit_generation(
+                LOCAL_OWNER,
                 payload,
                 request,
                 store=store,
@@ -103,11 +105,19 @@ def test_ffmpeg_remux_mp4_to_mkv(tmp_path, pipeline):
             ],
         }
     )
-    assert store.get_job(job_id)["status"] == "succeeded"
-    artifact = store.list_artifacts(job_id)[0]
+    assert store.get_job(LOCAL_OWNER, job_id)["status"] == "succeeded"
+    artifact = store.list_artifacts(LOCAL_OWNER, job_id)[0]
     assert artifact["filename"] == "video_mkv.mkv"
     assert artifact["media_type"] == "video/x-matroska"
-    produced = tmp_path / "data" / "jobs" / job_id / "artifacts" / artifact["filename"]
+    produced = (
+        tmp_path
+        / "data"
+        / "jobs"
+        / LOCAL_OWNER
+        / job_id
+        / "artifacts"
+        / artifact["filename"]
+    )
     probe = subprocess.run(
         [
             "ffprobe",
@@ -162,8 +172,8 @@ def test_ytdlp_video_from_local_http(tmp_path, pipeline):
             httpd.shutdown()
             thread.join(timeout=5)
 
-    assert store.get_job(job_id)["status"] == "succeeded"
-    artifact = store.list_artifacts(job_id)[0]
+    assert store.get_job(LOCAL_OWNER, job_id)["status"] == "succeeded"
+    artifact = store.list_artifacts(LOCAL_OWNER, job_id)[0]
     assert artifact["type"] == "video"
     assert artifact["size_bytes"] > 0
     assert artifact["provenance"]["producer"]["operation"] == "media.acquire_video"

@@ -7,6 +7,7 @@ from content.analysis.service import AnalysisService
 from content.application.submit import submit_generation
 from content.execution.executor import JobExecutor
 from content.execution.process import run_process
+from content.identity import LOCAL_OWNER
 from content.planning.planner import build_plan
 from tests.conftest import make_request, minimal_payload
 
@@ -18,6 +19,7 @@ def submit(store, providers, settings):
     def _submit(payload: dict) -> str:
         request = make_request(payload)
         return submit_generation(
+            LOCAL_OWNER,
             payload,
             request,
             store=store,
@@ -44,29 +46,33 @@ def test_cancel_between_steps_cancels_job_and_remaining_steps(
 
     # Simulate a cancel request arriving while the job is running: the flag is
     # already set when the executor starts its loop.
-    store.request_cancel(job_id)
-    assert store.get_job(job_id)["status"] == "running"  # not queued anymore
+    store.request_cancel(LOCAL_OWNER, job_id)
+    assert (
+        store.get_job(LOCAL_OWNER, job_id)["status"] == "running"
+    )  # not queued anymore
 
     JobExecutor(store, settings, providers).execute(claimed)
 
-    job = store.get_job(job_id)
+    job = store.get_job(LOCAL_OWNER, job_id)
     assert job["status"] == "cancelled"
-    statuses = {s["step_id"]: s["status"] for s in store.list_steps(job_id)}
+    statuses = {
+        s["step_id"]: s["status"] for s in store.list_steps(LOCAL_OWNER, job_id)
+    }
     assert set(statuses.values()) == {"cancelled"}
-    events = [e["type"] for e in store.list_events(job_id)]
+    events = [e["type"] for e in store.list_events(LOCAL_OWNER, job_id)]
     assert events[-1] == "job.cancelled"
-    assert store.list_artifacts(job_id) == []
+    assert store.list_artifacts(LOCAL_OWNER, job_id) == []
 
 
 def test_orphaned_running_jobs_are_requeued_on_startup(submit, store):
     job_id = submit(minimal_payload())
     claimed = store.claim_next_queued()
     assert claimed["id"] == job_id
-    assert store.get_job(job_id)["status"] == "running"
+    assert store.get_job(LOCAL_OWNER, job_id)["status"] == "running"
 
     # Simulate a crash: the worker never finished. Startup recovery requeues.
     assert store.requeue_running() == 1
-    job = store.get_job(job_id)
+    job = store.get_job(LOCAL_OWNER, job_id)
     assert job["status"] == "queued"
     assert job["started_at"] is None
 
@@ -95,7 +101,7 @@ def test_local_only_constraints_are_satisfiable_in_v1(store, providers, settings
     )
     request = make_request(payload)
     analysis = AnalysisService(store, providers, settings).analyze_sources(
-        list(request.sources)
+        LOCAL_OWNER, list(request.sources)
     )
     plan = build_plan(request, analysis, providers, settings)
     assert [s.provider for s in plan.steps] == ["ytdlp"]  # local provider only
@@ -111,7 +117,7 @@ def test_plan_steps_come_out_in_topological_order(store, providers, settings):
     )
     request = make_request(payload)
     analysis = AnalysisService(store, providers, settings).analyze_sources(
-        list(request.sources)
+        LOCAL_OWNER, list(request.sources)
     )
     plan = build_plan(request, analysis, providers, settings)
     ordered = plan.ordered_steps()

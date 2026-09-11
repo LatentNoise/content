@@ -52,20 +52,41 @@ class JobStorage:
     job; ``artifacts`` holds persistent results; ``tmp`` holds disposable
     scratch (its own root, cleaned independently — INV-STORAGE-001/004)."""
 
-    def __init__(self, data_dir: Path, job_id: str, tmp_root: Path | None = None):
+    def __init__(
+        self,
+        data_dir: Path,
+        owner_id: str,
+        job_id: str,
+        tmp_root: Path | None = None,
+    ):
+        """Paths for one job, under one owner.
+
+        ``owner_id`` is required rather than defaulted (ADR 0030): a default
+        would let a caller who has an owner forget to pass it, and land one
+        user's bytes in another user's tree. It is a *filing* decision and
+        never an authorization one — permission is decided in the database,
+        against ``owner_id`` columns, before any path is built here. A path
+        that happens to be reachable proves nothing.
+
+        What the extra level buys, concretely: deleting an account is
+        deleting a directory, a quota is one ``du``, and one user's data can
+        be backed up or moved without touching anybody else's.
+        """
+        safe_segment(owner_id, "owner_id")
         safe_segment(job_id, "job_id")
+        self.owner_id = owner_id
         self.job_id = job_id
-        self.root = Path(data_dir) / "jobs" / job_id
+        self.root = Path(data_dir) / "jobs" / owner_id / job_id
         self.sources = self.root / "sources"
         self.work = self.root / "work"
         self.artifacts = self.root / "artifacts"
         self.logs = self.root / "logs"
         self.snapshots = self.root / "snapshots"
-        self.tmp = Path(tmp_root or Path(data_dir) / "tmp") / job_id
+        self.tmp = Path(tmp_root or Path(data_dir) / "tmp") / owner_id / job_id
 
     @classmethod
-    def from_settings(cls, settings, job_id: str) -> "JobStorage":
-        return cls(settings.data_dir, job_id, tmp_root=settings.tmp_dir)
+    def from_settings(cls, settings, owner_id: str, job_id: str) -> "JobStorage":
+        return cls(settings.data_dir, owner_id, job_id, tmp_root=settings.tmp_dir)
 
     def ensure(self) -> "JobStorage":
         for directory in (

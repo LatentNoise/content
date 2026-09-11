@@ -40,6 +40,7 @@ class SubmissionResult:
 
 
 def submit_generation(
+    owner_id: str,
     raw_request: dict,
     request: GenerationRequest,
     *,
@@ -58,7 +59,7 @@ def submit_generation(
     key = request.execution.idempotency_key
 
     def replay_or_conflict() -> SubmissionResult:
-        existing = store.find_job_by_idempotency_key(key)
+        existing = store.find_job_by_idempotency_key(owner_id, key)
         if existing is not None and existing["request"] == canonical:
             return SubmissionResult(
                 job_id=existing["id"],
@@ -83,14 +84,14 @@ def submit_generation(
             )
         )
 
-    if key and store.find_job_by_idempotency_key(key) is not None:
+    if key and store.find_job_by_idempotency_key(owner_id, key) is not None:
         return replay_or_conflict()
 
     # An `upload` source becomes the `file` it stands for before anything
     # dispatches on source type, so analysis and planning both see one
     # concrete file and neither learns that uploads exist (ADR 0020).
-    request = resolve_request_uploads(request, store, settings)
-    analysis = analysis_service.analyze_sources(list(request.sources))
+    request = resolve_request_uploads(owner_id, request, store, settings)
+    analysis = analysis_service.analyze_sources(owner_id, list(request.sources))
     plan: ExecutionPlan = build_plan(request, analysis, providers, settings)
 
     # reuse_existing is accepted but inert while the cache is disabled (ADR
@@ -114,7 +115,11 @@ def submit_generation(
 
     try:
         job_id = store.create_job(
-            canonical, request.execution.failure_policy, key, retry_of=retry_of
+            owner_id,
+            canonical,
+            request.execution.failure_policy,
+            key,
+            retry_of=retry_of,
         )
     except IdempotencyKeyActive:
         # Lost a concurrent-submission race (T3): the winner holds the key.
@@ -122,7 +127,7 @@ def submit_generation(
     events = EventPublisher(store)
     events.publish(job_id, "job.created", {"retry_of": retry_of} if retry_of else {})
 
-    storage = JobStorage(settings.data_dir, job_id).ensure()
+    storage = JobStorage(settings.data_dir, owner_id, job_id).ensure()
     storage.write_snapshot("request", raw_request)
     storage.write_snapshot("request_normalized", canonical)
     storage.write_snapshot("analysis", json.loads(analysis.model_dump_json()))

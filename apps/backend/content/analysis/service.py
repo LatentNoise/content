@@ -77,7 +77,9 @@ class AnalysisService:
             else None
         )
 
-    def analyze_sources(self, sources: list[SourceDescriptor]) -> ResourceAnalysis:
+    def analyze_sources(
+        self, owner_id: str, sources: list[SourceDescriptor]
+    ) -> ResourceAnalysis:
         """Analyze every source, reusing fresh cached results per resource.
 
         Raises RequestRejected (feasibility phase) when a source cannot be
@@ -89,7 +91,7 @@ class AnalysisService:
         # (ADR 0020). Unresolvable uploads are refused here, with their own
         # codes rather than a generic "unsupported type".
         sources, upload_issues = resolve_upload_sources(
-            list(sources), self._store, self._settings
+            owner_id, list(sources), self._store, self._settings
         )
         if upload_issues:
             raise RequestRejected(
@@ -156,6 +158,7 @@ class AnalysisService:
         # Persist the addressable record: it *references* the resource_key facts
         # cache (resource_keys), it does not copy the heavy facts (ADR 0014).
         self._store.save_analysis_record(
+            owner_id,
             analysis_id,
             [source.model_dump(mode="json") for source in sources],
             [entry.resource_key for entry in results],
@@ -174,29 +177,31 @@ class AnalysisService:
         ttl = self._settings.analysis_ttl_hours
         return (datetime.fromisoformat(created_at) + timedelta(hours=ttl)).isoformat()
 
-    def _require_fresh_record(self, analysis_id: str) -> dict:
+    def _require_fresh_record(self, owner_id: str, analysis_id: str) -> dict:
         """Deterministic gate shared by every analysis_id consumer: absent →
         AnalysisNotFound, present-but-past-expiry → AnalysisExpired. Never
         re-analyzes."""
-        record = self._store.load_analysis_record(analysis_id)
+        record = self._store.load_analysis_record(owner_id, analysis_id)
         if record is None:
             raise AnalysisNotFound(analysis_id)
         if datetime.fromisoformat(record["expires_at"]) < datetime.now(timezone.utc):
             raise AnalysisExpired(analysis_id)
         return record
 
-    def sources_for_analysis(self, analysis_id: str) -> list[SourceDescriptor]:
+    def sources_for_analysis(
+        self, owner_id: str, analysis_id: str
+    ) -> list[SourceDescriptor]:
         """Stored sources for an addressable analysis — feeds the normal
         pipeline in analysis_id mode on /capabilities and /jobs (which then
         re-derive facts as usual). 404/410 via the shared gate."""
-        record = self._require_fresh_record(analysis_id)
+        record = self._require_fresh_record(owner_id, analysis_id)
         return _SOURCES_ADAPTER.validate_python(record["sources"])
 
-    def get_analysis(self, analysis_id: str) -> ResourceAnalysis:
+    def get_analysis(self, owner_id: str, analysis_id: str) -> ResourceAnalysis:
         """Reconstruct the full analysis for GET /analyses/{id}: join the facts
         from the resource_key cache. A safe read — it NEVER re-runs analysis.
         Missing/stale referenced facts are reported as expiry, not re-derived."""
-        record = self._require_fresh_record(analysis_id)
+        record = self._require_fresh_record(owner_id, analysis_id)
         results: list[SourceAnalysis] = []
         for source, key in zip(record["sources"], record["resource_keys"]):
             cached = self._store.load_fresh_analysis(

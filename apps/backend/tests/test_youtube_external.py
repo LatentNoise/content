@@ -19,6 +19,7 @@ from content.analysis.service import AnalysisService
 from content.application.submit import submit_generation
 from content.config import ContentSettings
 from content.execution.executor import JobExecutor
+from content.identity import LOCAL_OWNER
 from content.persistence.store import Store
 from content.providers.base import ProviderRegistry
 from content.providers.ytdlp import YtDlpProvider
@@ -70,10 +71,11 @@ def test_authenticated_youtube_download(tmp_path):
     }
     request = make_request(payload)
 
-    analysis = service.analyze_sources(list(request.sources))
+    analysis = service.analyze_sources(LOCAL_OWNER, list(request.sources))
     assert analysis.sources[0].resource.resource_type == "video"
 
     result = submit_generation(
+        LOCAL_OWNER,
         payload,
         request,
         store=store,
@@ -84,10 +86,11 @@ def test_authenticated_youtube_download(tmp_path):
     claimed = store.claim_next_queued()
     JobExecutor(store, settings, providers).execute(claimed)
 
-    job = store.get_job(result.job_id)
+    job = store.get_job(LOCAL_OWNER, result.job_id)
     assert job["status"] == "succeeded", job["error"]
     artifacts = {
-        a["artifact_request_id"]: a for a in store.list_artifacts(result.job_id)
+        a["artifact_request_id"]: a
+        for a in store.list_artifacts(LOCAL_OWNER, result.job_id)
     }
     assert "video_main" in artifacts
     video = artifacts["video_main"]

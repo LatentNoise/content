@@ -10,6 +10,7 @@ from content.analysis.service import AnalysisService
 from content.application.submit import submit_generation
 from content.domain.errors import RequestRejected
 from content.execution.executor import JobExecutor
+from content.identity import LOCAL_OWNER
 from content.planning.planner import build_plan
 from content.processors.subtitle_parsing import parse_subtitles, segments_to_text
 from tests.conftest import make_request, minimal_payload
@@ -69,7 +70,7 @@ def plan(store, providers, settings):
 
     def _plan(payload):
         request = make_request(payload)
-        analysis = service.analyze_sources(list(request.sources))
+        analysis = service.analyze_sources(LOCAL_OWNER, list(request.sources))
         return build_plan(request, analysis, providers, settings)
 
     return _plan
@@ -197,6 +198,7 @@ def run_job(store, providers, settings):
     def _run(payload: dict) -> str:
         request = make_request(payload)
         result = submit_generation(
+            LOCAL_OWNER,
             payload,
             request,
             store=store,
@@ -213,9 +215,9 @@ def run_job(store, providers, settings):
 
 def test_transcript_job_end_to_end(run_job, store, settings):
     job_id = run_job(transcript_payload())
-    assert store.get_job(job_id)["status"] == "succeeded"
+    assert store.get_job(LOCAL_OWNER, job_id)["status"] == "succeeded"
 
-    artifacts = store.list_artifacts(job_id)
+    artifacts = store.list_artifacts(LOCAL_OWNER, job_id)
     assert len(artifacts) == 1  # the internal acquisition produced no artifact
     artifact = artifacts[0]
     assert artifact["type"] == "transcript"
@@ -223,13 +225,20 @@ def test_transcript_job_end_to_end(run_job, store, settings):
     assert artifact["provenance"]["producer"]["provider"] == "content.transcript"
     assert artifact["provenance"]["attributes"]["derived_from"] == "subtitles"
 
-    path = settings.data_dir / "jobs" / job_id / "artifacts" / artifact["filename"]
+    path = (
+        settings.data_dir
+        / "jobs"
+        / LOCAL_OWNER
+        / job_id
+        / "artifacts"
+        / artifact["filename"]
+    )
     transcript = json.loads(path.read_text())
     assert transcript["language"] == "en"
     assert transcript["segments"][0]["text"] == "hello"
 
     # the internal material was purged with work/
-    work = settings.data_dir / "jobs" / job_id / "work"
+    work = settings.data_dir / "jobs" / LOCAL_OWNER / job_id / "work"
     assert not any(work.iterdir())
 
 
@@ -241,8 +250,10 @@ def test_transcript_from_bound_subtitles_has_parent_artifact(run_job, store):
         ]
     )
     job_id = run_job(payload)
-    assert store.get_job(job_id)["status"] == "succeeded"
-    artifacts = {a["artifact_request_id"]: a for a in store.list_artifacts(job_id)}
+    assert store.get_job(LOCAL_OWNER, job_id)["status"] == "succeeded"
+    artifacts = {
+        a["artifact_request_id"]: a for a in store.list_artifacts(LOCAL_OWNER, job_id)
+    }
     assert set(artifacts) == {"subs", "transcript"}
     assert artifacts["transcript"]["provenance"]["parent_artifact_ids"] == [
         artifacts["subs"]["id"]
@@ -263,7 +274,7 @@ def test_failed_dependency_skips_transcript(run_job, store):
         ],
     )
     job_id = run_job(payload)
-    job = store.get_job(job_id)
+    job = store.get_job(LOCAL_OWNER, job_id)
     assert job["status"] == "failed"  # required transcript not produced
-    steps = {s["step_id"]: s["status"] for s in store.list_steps(job_id)}
+    steps = {s["step_id"]: s["status"] for s in store.list_steps(LOCAL_OWNER, job_id)}
     assert "failed" in steps.values() or "skipped" in steps.values()

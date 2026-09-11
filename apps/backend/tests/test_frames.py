@@ -22,6 +22,7 @@ from content.domain.request import (
     KeyframesOptions,
     ThumbnailOptions,
 )
+from content.identity import LOCAL_OWNER
 from content.persistence.store import Store
 from content.planning import transformations as T
 from content.planning.planner import build_plan
@@ -56,7 +57,7 @@ def planning(tmp_path):
                 "outputs": outputs,
             }
         )
-        analysis = service.analyze_sources(list(request.sources))
+        analysis = service.analyze_sources(LOCAL_OWNER, list(request.sources))
         return build_plan(request, analysis, providers, settings)
 
     return _plan

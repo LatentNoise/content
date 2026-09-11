@@ -19,6 +19,7 @@ from content.domain.job import ensure_job_transition
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS jobs (
     id                TEXT PRIMARY KEY,
+    owner_id          TEXT NOT NULL DEFAULT 'local',
     status            TEXT NOT NULL,
     request           TEXT NOT NULL,          -- normalized GenerationRequest (JSON)
     plan_id           TEXT NOT NULL DEFAULT '',
@@ -32,6 +33,7 @@ CREATE TABLE IF NOT EXISTS jobs (
     finished_at       TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status, created_at);
+CREATE INDEX IF NOT EXISTS idx_jobs_owner ON jobs(owner_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_jobs_idempotency ON jobs(idempotency_key);
 -- One *active* job per idempotency key (T3): terminally failed/cancelled jobs
 -- release the key (contract D6), so the uniqueness is partial.
@@ -62,6 +64,7 @@ CREATE TABLE IF NOT EXISTS job_events (
 
 CREATE TABLE IF NOT EXISTS artifacts (
     id                   TEXT PRIMARY KEY,
+    owner_id             TEXT NOT NULL DEFAULT 'local',
     job_id               TEXT NOT NULL,
     artifact_request_id  TEXT NOT NULL,
     type                 TEXT NOT NULL,
@@ -77,11 +80,13 @@ CREATE TABLE IF NOT EXISTS artifacts (
     created_at           TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_artifacts_job ON artifacts(job_id);
+CREATE INDEX IF NOT EXISTS idx_artifacts_owner ON artifacts(owner_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_artifacts_signature
     ON artifacts(step_signature, created_at);
 
 CREATE TABLE IF NOT EXISTS uploads (
     id                  TEXT PRIMARY KEY,
+    owner_id            TEXT NOT NULL DEFAULT 'local',
     filename            TEXT NOT NULL,
     media_type          TEXT NOT NULL DEFAULT '',
     size_bytes          INTEGER NOT NULL DEFAULT 0,
@@ -93,6 +98,7 @@ CREATE TABLE IF NOT EXISTS uploads (
     last_referenced_at  TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_uploads_referenced ON uploads(last_referenced_at);
+CREATE INDEX IF NOT EXISTS idx_uploads_owner ON uploads(owner_id, created_at);
 
 CREATE TABLE IF NOT EXISTS analyses (
     id            TEXT PRIMARY KEY,
@@ -108,6 +114,7 @@ CREATE INDEX IF NOT EXISTS idx_analyses_key ON analyses(resource_key, created_at
 -- resource_keys + lifecycle so any client can resume a workflow from an id.
 CREATE TABLE IF NOT EXISTS analysis_records (
     analysis_id       TEXT PRIMARY KEY,
+    owner_id          TEXT NOT NULL DEFAULT 'local',
     sources           TEXT NOT NULL,   -- normalized SourceDescriptor[] (JSON)
     resource_keys     TEXT NOT NULL,   -- resource_key per source, ordered (JSON)
     analyzer_version  TEXT NOT NULL,
@@ -180,6 +187,29 @@ _MIGRATIONS: list[list[str]] = [
         "CREATE INDEX IF NOT EXISTS idx_uploads_referenced "
         "ON uploads(last_referenced_at)",
     ],
+    # 6: ownership (ADR 0030). Every user-facing row gains an owner.
+    #
+    # The default is 'local' on purpose and it is the whole migration story:
+    # an existing self-hosted database already holds exactly one user's data,
+    # so backfilling it to the single implicit user is correct, instantaneous
+    # and needs no data pass. Nothing to rewrite, nothing to guess.
+    #
+    # `analyses` is deliberately NOT owned: it caches facts about a public
+    # resource (a URL's title, duration, formats), keyed by resource_key. It
+    # holds nothing of the requester and sharing it across users is a real
+    # saving. `analysis_records` IS owned — it holds the caller's own
+    # normalized sources (ADR 0014).
+    [
+        "ALTER TABLE jobs ADD COLUMN owner_id TEXT NOT NULL DEFAULT 'local'",
+        "ALTER TABLE artifacts ADD COLUMN owner_id TEXT NOT NULL DEFAULT 'local'",
+        "ALTER TABLE uploads ADD COLUMN owner_id TEXT NOT NULL DEFAULT 'local'",
+        "ALTER TABLE analysis_records "
+        "ADD COLUMN owner_id TEXT NOT NULL DEFAULT 'local'",
+        "CREATE INDEX IF NOT EXISTS idx_jobs_owner ON jobs(owner_id, created_at)",
+        "CREATE INDEX IF NOT EXISTS idx_artifacts_owner "
+        "ON artifacts(owner_id, created_at)",
+        "CREATE INDEX IF NOT EXISTS idx_uploads_owner ON uploads(owner_id, created_at)",
+    ],
 ]
 
 
@@ -234,6 +264,7 @@ class Store:
 
     def create_job(
         self,
+        owner_id: str,
         request: dict,
         failure_policy: str,
         idempotency_key: str | None,
@@ -243,11 +274,12 @@ class Store:
         try:
             with self._conn() as conn:
                 conn.execute(
-                    "INSERT INTO jobs (id, status, request, failure_policy, "
-                    "idempotency_key, retry_of, created_at) "
-                    "VALUES (?, 'created', ?, ?, ?, ?, ?)",
+                    "INSERT INTO jobs (id, owner_id, status, request, "
+                    "failure_policy, idempotency_key, retry_of, created_at) "
+                    "VALUES (?, ?, 'created', ?, ?, ?, ?, ?)",
                     (
                         job_id,
+                        owner_id,
                         json.dumps(request),
                         failure_policy,
                         idempotency_key,
@@ -259,30 +291,35 @@ class Store:
             raise IdempotencyKeyActive(str(idempotency_key)) from exc
         return job_id
 
-    def get_job(self, job_id: str) -> dict | None:
+    def get_job(self, owner_id: str, job_id: str) -> dict | None:
         with self._conn() as conn:
-            row = conn.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
+            row = conn.execute(
+                "SELECT * FROM jobs WHERE id = ? AND owner_id = ?",
+                (job_id, owner_id),
+            ).fetchone()
             return self._job_row(row) if row else None
 
-    def list_jobs(self, status: str | None = None, limit: int = 200) -> list[dict]:
-        query, params = "SELECT * FROM jobs", []
+    def list_jobs(
+        self, owner_id: str, status: str | None = None, limit: int = 200
+    ) -> list[dict]:
+        query, params = "SELECT * FROM jobs WHERE owner_id = ?", [owner_id]
         if status:
-            query += " WHERE status = ?"
+            query += " AND status = ?"
             params.append(status)
         query += " ORDER BY created_at DESC LIMIT ?"
         params.append(limit)
         with self._conn() as conn:
             return [self._job_row(r) for r in conn.execute(query, params).fetchall()]
 
-    def find_job_by_idempotency_key(self, key: str) -> dict | None:
+    def find_job_by_idempotency_key(self, owner_id: str, key: str) -> dict | None:
         """Latest job holding *key* that is not terminally failed/cancelled
         (those release the key — docs/contract.md D6)."""
         with self._conn() as conn:
             row = conn.execute(
-                "SELECT * FROM jobs WHERE idempotency_key = ? "
+                "SELECT * FROM jobs WHERE idempotency_key = ? AND owner_id = ? "
                 "AND status NOT IN ('failed', 'cancelled') "
                 "ORDER BY created_at DESC LIMIT 1",
-                (key,),
+                (key, owner_id),
             ).fetchone()
             return self._job_row(row) if row else None
 
@@ -340,19 +377,20 @@ class Store:
             )
             return cur.rowcount
 
-    def request_cancel(self, job_id: str) -> bool:
+    def request_cancel(self, owner_id: str, job_id: str) -> bool:
         with self._conn() as conn:
             cur = conn.execute(
-                "UPDATE jobs SET cancel_requested = 1 WHERE id = ? AND status IN "
+                "UPDATE jobs SET cancel_requested = 1 "
+                "WHERE id = ? AND owner_id = ? AND status IN "
                 "('created', 'validating', 'planning', 'queued', 'running')",
-                (job_id,),
+                (job_id, owner_id),
             )
             # Not-yet-running jobs cancel immediately.
             conn.execute(
                 "UPDATE jobs SET status = 'cancelled', finished_at = ? "
-                "WHERE id = ? AND status IN "
+                "WHERE id = ? AND owner_id = ? AND status IN "
                 "('created', 'validating', 'planning', 'queued')",
-                (utcnow(), job_id),
+                (utcnow(), job_id, owner_id),
             )
             return cur.rowcount > 0
 
@@ -393,10 +431,19 @@ class Store:
                 values,
             )
 
-    def list_steps(self, job_id: str) -> list[dict]:
+    def list_steps(self, owner_id: str, job_id: str) -> list[dict]:
+        """Steps of a job the caller owns.
+
+        `job_steps` carries no owner column on purpose: a step has no identity
+        of its own, it belongs to a job. The isolation is therefore a join on
+        `jobs`, which keeps a single source of truth for ownership — one row to
+        change if a job ever moves hands.
+        """
         with self._conn() as conn:
             rows = conn.execute(
-                "SELECT * FROM job_steps WHERE job_id = ? ORDER BY rowid", (job_id,)
+                "SELECT s.* FROM job_steps s JOIN jobs j ON j.id = s.job_id "
+                "WHERE s.job_id = ? AND j.owner_id = ? ORDER BY s.rowid",
+                (job_id, owner_id),
             ).fetchall()
             return [dict(r) for r in rows]
 
@@ -421,27 +468,32 @@ class Store:
             return sequence
 
     def list_events(
-        self, job_id: str, after_sequence: int = 0, limit: int = 1000
+        self, owner_id: str, job_id: str, after_sequence: int = 0, limit: int = 1000
     ) -> list[dict]:
+        """Events of a job the caller owns — same join rationale as
+        :meth:`list_steps`."""
         with self._conn() as conn:
             rows = conn.execute(
-                "SELECT * FROM job_events WHERE job_id = ? AND sequence > ? "
-                "ORDER BY sequence LIMIT ?",
-                (job_id, after_sequence, limit),
+                "SELECT e.* FROM job_events e JOIN jobs j ON j.id = e.job_id "
+                "WHERE e.job_id = ? AND j.owner_id = ? AND e.sequence > ? "
+                "ORDER BY e.sequence LIMIT ?",
+                (job_id, owner_id, after_sequence, limit),
             ).fetchall()
             return [{**dict(r), "data": json.loads(r["data"])} for r in rows]
 
     # --- artifacts -------------------------------------------------------------
 
-    def register_artifact(self, artifact: dict) -> None:
+    def register_artifact(self, owner_id: str, artifact: dict) -> None:
         with self._conn() as conn:
             conn.execute(
-                "INSERT INTO artifacts (id, job_id, artifact_request_id, type, "
+                "INSERT INTO artifacts (id, owner_id, job_id, "
+                "artifact_request_id, type, "
                 "filename, display_filename, media_type, size_bytes, checksum, "
                 "resource_key, step_signature, provenance, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     artifact["id"],
+                    owner_id,
                     artifact["job_id"],
                     artifact["artifact_request_id"],
                     artifact["type"],
@@ -457,18 +509,20 @@ class Store:
                 ),
             )
 
-    def set_artifact_delivered(self, artifact_id: str, delivered_path: str) -> None:
+    def set_artifact_delivered(
+        self, owner_id: str, artifact_id: str, delivered_path: str
+    ) -> None:
         """Record where a delivered copy landed, relative to the delivery
         root. Written after the copy succeeded — the row exists either way,
         the path only when the file really is there."""
         with self._conn() as conn:
             conn.execute(
-                "UPDATE artifacts SET delivered_path = ? WHERE id = ?",
-                (delivered_path, artifact_id),
+                "UPDATE artifacts SET delivered_path = ? WHERE id = ? AND owner_id = ?",
+                (delivered_path, artifact_id, owner_id),
             )
 
     def find_reusable_artifact_group(
-        self, step_signature: str, exclude_job_id: str
+        self, owner_id: str, step_signature: str, exclude_job_id: str
     ) -> list[dict]:
         """The complete product set of the most recent other job whose step had
         this signature (artifacts only exist for succeeded steps)."""
@@ -476,24 +530,27 @@ class Store:
             return []
         with self._conn() as conn:
             rows = conn.execute(
+                # Reuse never crosses an owner: someone else's rendered file
+                # is someone else's file, however identical the recipe.
                 "SELECT * FROM artifacts WHERE step_signature = ? AND job_id != ? "
-                "ORDER BY created_at DESC",
-                (step_signature, exclude_job_id),
+                "AND owner_id = ? ORDER BY created_at DESC",
+                (step_signature, exclude_job_id, owner_id),
             ).fetchall()
         if not rows:
             return []
         newest_job = rows[0]["job_id"]
         return [self._artifact_row(r) for r in rows if r["job_id"] == newest_job]
 
-    def list_artifacts(self, job_id: str) -> list[dict]:
+    def list_artifacts(self, owner_id: str, job_id: str) -> list[dict]:
         with self._conn() as conn:
             rows = conn.execute(
-                "SELECT * FROM artifacts WHERE job_id = ? ORDER BY created_at",
-                (job_id,),
+                "SELECT * FROM artifacts WHERE job_id = ? AND owner_id = ? "
+                "ORDER BY created_at",
+                (job_id, owner_id),
             ).fetchall()
             return [self._artifact_row(r) for r in rows]
 
-    def artifact_labels(self, job_ids: list[str]) -> dict[str, dict]:
+    def artifact_labels(self, owner_id: str, job_ids: list[str]) -> dict[str, dict]:
         """First artifact name + artifact count per job, in one query.
 
         Feeds the jobs list so a client can label rows with a human name
@@ -508,8 +565,8 @@ class Store:
             rows = conn.execute(
                 "SELECT job_id, COALESCE(NULLIF(display_filename, ''), filename) "
                 f"AS name FROM artifacts WHERE job_id IN ({marks}) "
-                "ORDER BY created_at, rowid",
-                list(job_ids),
+                "AND owner_id = ? ORDER BY created_at, rowid",
+                [*job_ids, owner_id],
             ).fetchall()
         labels: dict[str, dict] = {}
         for row in rows:
@@ -519,10 +576,11 @@ class Store:
             entry["artifact_count"] += 1
         return labels
 
-    def get_artifact(self, artifact_id: str) -> dict | None:
+    def get_artifact(self, owner_id: str, artifact_id: str) -> dict | None:
         with self._conn() as conn:
             row = conn.execute(
-                "SELECT * FROM artifacts WHERE id = ?", (artifact_id,)
+                "SELECT * FROM artifacts WHERE id = ? AND owner_id = ?",
+                (artifact_id, owner_id),
             ).fetchone()
             return self._artifact_row(row) if row else None
 
@@ -592,6 +650,7 @@ class Store:
 
     def save_analysis_record(
         self,
+        owner_id: str,
         analysis_id: str,
         sources: list[dict],
         resource_keys: list[str],
@@ -602,10 +661,12 @@ class Store:
         with self._conn() as conn:
             conn.execute(
                 "INSERT OR REPLACE INTO analysis_records "
-                "(analysis_id, sources, resource_keys, analyzer_version, "
-                "created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?)",
+                "(analysis_id, owner_id, sources, resource_keys, "
+                "analyzer_version, created_at, expires_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
                 (
                     analysis_id,
+                    owner_id,
                     json.dumps(sources),
                     json.dumps(resource_keys),
                     analyzer_version,
@@ -614,13 +675,13 @@ class Store:
                 ),
             )
 
-    def load_analysis_record(self, analysis_id: str) -> dict | None:
+    def load_analysis_record(self, owner_id: str, analysis_id: str) -> dict | None:
         """The addressable record, or None if there is no such id. Facts are not
         joined here — that is the service's job (it references the facts cache)."""
         with self._conn() as conn:
             row = conn.execute(
-                "SELECT * FROM analysis_records WHERE analysis_id = ?",
-                (analysis_id,),
+                "SELECT * FROM analysis_records WHERE analysis_id = ? AND owner_id = ?",
+                (analysis_id, owner_id),
             ).fetchone()
         if row is None:
             return None
@@ -635,16 +696,17 @@ class Store:
 
     # --- uploads (ADR 0020) -----------------------------------------------------
 
-    def register_upload(self, row: dict) -> None:
+    def register_upload(self, owner_id: str, row: dict) -> None:
         """Record an upload that is fully written and addressable."""
         now = utcnow()
         with self._conn() as conn:
             conn.execute(
-                "INSERT INTO uploads (id, filename, media_type, size_bytes, "
-                "sha256, path, created_at, last_referenced_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO uploads (id, owner_id, filename, media_type, "
+                "size_bytes, sha256, path, created_at, last_referenced_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     row["id"],
+                    owner_id,
                     row["filename"],
                     row.get("media_type", ""),
                     row.get("size_bytes", 0),
@@ -655,19 +717,21 @@ class Store:
                 ),
             )
 
-    def get_upload(self, upload_id: str) -> dict | None:
+    def get_upload(self, owner_id: str, upload_id: str) -> dict | None:
         with self._conn() as conn:
             row = conn.execute(
-                "SELECT * FROM uploads WHERE id = ?", (upload_id,)
+                "SELECT * FROM uploads WHERE id = ? AND owner_id = ?",
+                (upload_id, owner_id),
             ).fetchone()
         return dict(row) if row else None
 
-    def touch_upload(self, upload_id: str) -> None:
+    def touch_upload(self, owner_id: str, upload_id: str) -> None:
         """Restart the expiry clock: this upload was just referenced by a job."""
         with self._conn() as conn:
             conn.execute(
-                "UPDATE uploads SET last_referenced_at = ? WHERE id = ?",
-                (utcnow(), upload_id),
+                "UPDATE uploads SET last_referenced_at = ? "
+                "WHERE id = ? AND owner_id = ?",
+                (utcnow(), upload_id, owner_id),
             )
 
     def expired_uploads(self, before: str) -> list[dict]:
@@ -677,6 +741,34 @@ class Store:
             ).fetchall()
         return [dict(r) for r in rows]
 
-    def delete_upload(self, upload_id: str) -> None:
+    def delete_upload(self, owner_id: str, upload_id: str) -> None:
+        with self._conn() as conn:
+            conn.execute(
+                "DELETE FROM uploads WHERE id = ? AND owner_id = ?",
+                (upload_id, owner_id),
+            )
+
+    def upload_exists_any_owner(self, upload_id: str) -> bool:
+        """Does this id exist at all, whoever owns it? Housekeeping only.
+
+        The TTL sweeper walks directories on disk and must tell an orphan
+        directory from one a row still points at. Asking "does anyone own
+        this?" is not a read of anybody's data — it returns a boolean and
+        never a row — and it is named so that its two callers are greppable.
+        """
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT 1 FROM uploads WHERE id = ?", (upload_id,)
+            ).fetchone()
+        return row is not None
+
+    def delete_upload_any_owner(self, upload_id: str) -> None:
+        """Housekeeping deletion, used by the TTL sweeper only.
+
+        The sweeper is infrastructure: it acts on nobody's behalf and must be
+        able to reclaim an expired upload whoever owns it. It is named
+        explicitly so that an owner-less delete can never be reached by
+        accident from a request path — grep finds exactly one caller.
+        """
         with self._conn() as conn:
             conn.execute("DELETE FROM uploads WHERE id = ?", (upload_id,))

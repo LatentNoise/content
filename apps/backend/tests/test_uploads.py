@@ -21,6 +21,7 @@ from fastapi.testclient import TestClient
 
 from content.api.app import create_app
 from content.config import ContentSettings
+from content.identity import LOCAL_OWNER
 from content.processors.transcript import TranscriptProcessor
 from content.providers.base import ProviderRegistry
 from content.providers.documents import DocumentProvider
@@ -154,9 +155,9 @@ def test_an_uploaded_file_runs_to_a_finished_artifact(client, settings):
     )
     executor.execute(store.claim_next_queued())
 
-    job = store.get_job(job_id)
+    job = store.get_job(LOCAL_OWNER, job_id)
     assert job["status"] == "succeeded", job.get("error")
-    artifacts = store.list_artifacts(job_id)
+    artifacts = store.list_artifacts(LOCAL_OWNER, job_id)
     assert artifacts, "the upload produced no artifact"
 
 
@@ -225,7 +226,10 @@ def test_an_expired_upload_says_so_rather_than_vanishing(client, tmp_path):
         data_dir=tmp_path / "data", db_path=tmp_path / "db.sqlite", upload_ttl_hours=1.0
     )
     _, issues = resolve_upload_sources(
-        [UploadSource(id="s", type="upload", upload_id=upload_id)], store, expiring
+        LOCAL_OWNER,
+        [UploadSource(id="s", type="upload", upload_id=upload_id)],
+        store,
+        expiring,
     )
     assert [i.code for i in issues] == ["upload_expired"]
 
@@ -237,7 +241,7 @@ def test_referencing_an_upload_restarts_its_clock(client, tmp_path):
 
     upload_id = _upload(client)
     store = Store(tmp_path / "db.sqlite")
-    before = store.get_upload(upload_id)["last_referenced_at"]
+    before = store.get_upload(LOCAL_OWNER, upload_id)["last_referenced_at"]
     with store._conn() as conn:  # noqa: SLF001
         conn.execute(
             "UPDATE uploads SET last_referenced_at = ? WHERE id = ?",
@@ -247,6 +251,6 @@ def test_referencing_an_upload_restarts_its_clock(client, tmp_path):
         "/api/v1/analyses",
         json={"sources": [{"id": "s", "type": "upload", "upload_id": upload_id}]},
     )
-    after = store.get_upload(upload_id)["last_referenced_at"]
+    after = store.get_upload(LOCAL_OWNER, upload_id)["last_referenced_at"]
     assert after > "2001-01-01", "referencing an upload must refresh its clock"
     assert before is not None

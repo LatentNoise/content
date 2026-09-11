@@ -4,6 +4,7 @@ import pytest
 from pydantic import ValidationError
 
 from content.analysis.service import AnalysisService
+from content.identity import LOCAL_OWNER
 from content.planning.planner import build_plan
 from content.providers.ytdlp import sponsorblock_args
 from tests.conftest import make_request, minimal_payload
@@ -121,7 +122,7 @@ def plan(store, providers, settings):
 
     def _plan(payload):
         request = make_request(payload)
-        analysis = service.analyze_sources(list(request.sources))
+        analysis = service.analyze_sources(LOCAL_OWNER, list(request.sources))
         return build_plan(request, analysis, providers, settings)
 
     return _plan

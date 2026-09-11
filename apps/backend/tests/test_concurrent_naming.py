@@ -16,6 +16,7 @@ import threading
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+from content.identity import LOCAL_OWNER
 from content.storage.layout import DeliveryStore, JobStorage
 from content.storage.paths import claim_path, claim_with, stage_beside
 
@@ -114,7 +115,7 @@ def test_claim_falls_back_when_the_filesystem_has_no_hard_links(tmp_path, monkey
 
 
 def test_concurrent_promotion_gives_every_writer_its_own_file(tmp_path):
-    storage = JobStorage(tmp_path / "data", "job_race").ensure()
+    storage = JobStorage(tmp_path / "data", LOCAL_OWNER, "job_race").ensure()
     sources = _payloads(tmp_path, "promote")
 
     targets = _race(lambda i: storage.promote_artifact(sources[i], "Same Title.mkv"))
@@ -127,7 +128,7 @@ def test_concurrent_promotion_gives_every_writer_its_own_file(tmp_path):
 
 def test_concurrent_copies_of_one_artifact_do_not_collide(tmp_path):
     """The mutualized-step path: one produced file promoted under N names."""
-    storage = JobStorage(tmp_path / "data", "job_copies").ensure()
+    storage = JobStorage(tmp_path / "data", LOCAL_OWNER, "job_copies").ensure()
     origin = tmp_path / "origin.mkv"
     origin.write_bytes(b"one source of truth")
 
@@ -141,7 +142,7 @@ def test_promotion_failure_does_not_reserve_the_name(tmp_path):
     """A claim is an empty file. If the write that was going to fill it fails,
     the name must be free again — otherwise a transient error permanently
     renames every later artifact to ``…-1``."""
-    storage = JobStorage(tmp_path / "data", "job_fail").ensure()
+    storage = JobStorage(tmp_path / "data", LOCAL_OWNER, "job_fail").ensure()
     missing = tmp_path / "not-there.mkv"
 
     try:

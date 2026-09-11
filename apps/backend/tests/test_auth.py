@@ -13,6 +13,7 @@ from fastapi.testclient import TestClient
 from content.analysis.service import AnalysisService
 from content.api.app import create_app
 from content.domain.errors import RequestRejected
+from content.identity import LOCAL_OWNER
 from content.planning.auth import resolve_source_credential
 from content.planning.planner import build_plan
 from content.processors.transcript import TranscriptProcessor
@@ -134,7 +135,7 @@ def plan(store, providers, settings):
         s = with_credentials(settings, **(creds or {}))
         service = AnalysisService(store, providers, s)
         request = make_request(payload)
-        analysis = service.analyze_sources(list(request.sources))
+        analysis = service.analyze_sources(LOCAL_OWNER, list(request.sources))
         return build_plan(request, analysis, providers, s)
 
     return _plan
@@ -177,7 +178,7 @@ def test_analysis_rejects_unknown_credential(store, providers, settings):
         minimal_payload(sources=[url_source({"credential_id": "nope"})])
     )
     with pytest.raises(RequestRejected) as excinfo:
-        service.analyze_sources(list(request.sources))
+        service.analyze_sources(LOCAL_OWNER, list(request.sources))
     assert excinfo.value.result.errors[0].code == "credential_not_available"
 
 
@@ -185,7 +186,7 @@ def test_analysis_rejects_session_id(store, providers, settings):
     service = AnalysisService(store, providers, settings)
     request = make_request(minimal_payload(sources=[url_source({"session_id": "s"})]))
     with pytest.raises(RequestRejected) as excinfo:
-        service.analyze_sources(list(request.sources))
+        service.analyze_sources(LOCAL_OWNER, list(request.sources))
     assert excinfo.value.result.errors[0].code == "auth_method_not_supported"
 
 

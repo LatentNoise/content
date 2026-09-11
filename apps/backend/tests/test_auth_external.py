@@ -14,6 +14,7 @@ from content.analysis.service import AnalysisService
 from content.application.submit import submit_generation
 from content.config import ContentSettings
 from content.execution.executor import JobExecutor
+from content.identity import LOCAL_OWNER
 from content.persistence.store import Store
 from content.providers.base import ProviderRegistry
 from content.providers.ytdlp import YtDlpProvider
@@ -89,6 +90,7 @@ def test_credential_cookies_reach_ytdlp(tmp_path):
             }
             request = make_request(payload)
             result = submit_generation(
+                LOCAL_OWNER,
                 payload,
                 request,
                 store=store,
@@ -102,8 +104,8 @@ def test_credential_cookies_reach_ytdlp(tmp_path):
             httpd.shutdown()
             thread.join(timeout=5)
 
-    assert store.get_job(result.job_id)["status"] == "succeeded"
-    artifacts = store.list_artifacts(result.job_id)
+    assert store.get_job(LOCAL_OWNER, result.job_id)["status"] == "succeeded"
+    artifacts = store.list_artifacts(LOCAL_OWNER, result.job_id)
     assert len(artifacts) == 1 and artifacts[0]["size_bytes"] > 0
-    steps = store.list_steps(result.job_id)
+    steps = store.list_steps(LOCAL_OWNER, result.job_id)
     assert any(s["operation"] == "media.acquire_video" for s in steps)

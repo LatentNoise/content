@@ -22,6 +22,7 @@ from content.analysis.service import AnalysisService
 from content.application.submit import submit_generation
 from content.domain.analysis import CollectionEntry
 from content.execution.executor import JobExecutor
+from content.identity import LOCAL_OWNER
 from content.providers.base import StepExecutionError
 from tests.conftest import FakeProvider, make_request, minimal_payload
 
@@ -46,6 +47,7 @@ def _pipeline(store, providers, settings):
     def run(payload: dict) -> str:
         request = make_request(payload)
         result = submit_generation(
+            LOCAL_OWNER,
             payload,
             request,
             store=store,
@@ -78,8 +80,8 @@ def test_two_members_really_run_at_the_same_time(
 
     job_id = _pipeline(store, providers, settings)(_each_item_video_payload())
 
-    assert store.get_job(job_id)["status"] == "succeeded"
-    assert len(store.list_artifacts(job_id)) == 2
+    assert store.get_job(LOCAL_OWNER, job_id)["status"] == "succeeded"
+    assert len(store.list_artifacts(LOCAL_OWNER, job_id)) == 2
     assert len(set(workdirs.values())) == 2, "concurrent members shared a workdir"
 
 
@@ -103,7 +105,7 @@ def test_a_limit_of_one_keeps_members_strictly_sequential(
 
     job_id = _pipeline(store, providers, sequential)(_each_item_video_payload())
 
-    assert store.get_job(job_id)["status"] == "succeeded"
+    assert store.get_job(LOCAL_OWNER, job_id)["status"] == "succeeded"
     assert len(intervals) == 2
     first, second = sorted(intervals)
     assert first[1] <= second[0], "members overlapped despite a limit of 1"
@@ -132,7 +134,7 @@ def test_progress_stays_attributable_with_members_in_flight(
 
     progress = [
         event["data"]
-        for event in store.list_events(job_id)
+        for event in store.list_events(LOCAL_OWNER, job_id)
         if event["type"] == "step.progress"
     ]
     by_step: dict[str, set[str]] = {}
@@ -157,7 +159,7 @@ def test_cancellation_reaches_members_in_flight(
         barrier.wait(timeout=_BARRIER_TIMEOUT)  # both members are in flight
         # Both members flip the flag (idempotent), exactly as an API cancel
         # arriving mid-download would look to each of them.
-        store.request_cancel(job_ref["id"])
+        store.request_cancel(LOCAL_OWNER, job_ref["id"])
         deadline = time.monotonic() + _BARRIER_TIMEOUT
         while not ctx.cancel_check():
             assert time.monotonic() < deadline, "cancel never reached the member"
@@ -172,6 +174,7 @@ def test_cancellation_reaches_members_in_flight(
     executor = JobExecutor(store, settings, providers)
     payload = _each_item_video_payload()
     result = submit_generation(
+        LOCAL_OWNER,
         payload,
         make_request(payload),
         store=store,
@@ -182,9 +185,9 @@ def test_cancellation_reaches_members_in_flight(
     job_ref["id"] = result.job_id
     executor.execute(store.claim_next_queued())
 
-    assert store.get_job(result.job_id)["status"] == "cancelled"
-    assert store.list_artifacts(result.job_id) == []
-    statuses = {step["status"] for step in store.list_steps(result.job_id)}
+    assert store.get_job(LOCAL_OWNER, result.job_id)["status"] == "cancelled"
+    assert store.list_artifacts(LOCAL_OWNER, result.job_id) == []
+    statuses = {step["status"] for step in store.list_steps(LOCAL_OWNER, result.job_id)}
     assert statuses == {"cancelled"}, statuses
 
 
@@ -225,11 +228,11 @@ def test_fail_fast_lets_running_members_finish_and_starts_no_new_ones(
         _each_item_video_payload(execution={"failure_policy": "fail_fast"})
     )
 
-    artifacts = store.list_artifacts(job_id)
+    artifacts = store.list_artifacts(LOCAL_OWNER, job_id)
     assert len(artifacts) == 1, "the member already in flight keeps its artifact"
     assert artifacts[0]["provenance"]["attributes"]["member_index"] == 2
 
-    events = store.list_events(job_id)
+    events = store.list_events(LOCAL_OWNER, job_id)
     failed = [e["data"] for e in events if e["type"] == "step.failed"]
     skipped = [e["data"] for e in events if e["type"] == "step.skipped"]
     assert len(failed) == 1
@@ -258,7 +261,7 @@ def test_each_member_writes_its_own_step_log(store, providers, settings, monkeyp
 
     job_id = _pipeline(store, providers, settings)(_each_item_video_payload())
 
-    assert store.get_job(job_id)["status"] == "succeeded"
+    assert store.get_job(LOCAL_OWNER, job_id)["status"] == "succeeded"
     assert len(set(logs.values())) == 2, "two members shared a step log"
     for uri, path in logs.items():
         content = path.read_text(encoding="utf-8")
@@ -291,7 +294,7 @@ def test_plain_jobs_and_lone_members_never_touch_the_pool(
     run = _pipeline(store, providers, settings)
     plain = run(minimal_payload())  # a plain single-source audio job
     lone = run(_each_item_video_payload())  # a collection of exactly one
-    assert store.get_job(plain)["status"] == "succeeded"
-    assert store.get_job(lone)["status"] == "succeeded"
+    assert store.get_job(LOCAL_OWNER, plain)["status"] == "succeeded"
+    assert store.get_job(LOCAL_OWNER, lone)["status"] == "succeeded"
     assert thread_names, "nothing executed?"
     assert all("member" not in name for name in thread_names), thread_names

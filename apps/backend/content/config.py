@@ -64,6 +64,12 @@ class ContentSettings:
     max_upload_bytes: int = 2 * 1024 * 1024 * 1024  # 2 GiB
     uploads_total_bytes: int = 20 * 1024 * 1024 * 1024  # quota, 0 = unlimited
     upload_ttl_hours: float = 24.0  # counted from LAST reference, not creation
+    # Authentication (ADR 0030). `none` keeps the historical self-hosted
+    # behaviour exactly: no credential asked, every request owned by the single
+    # implicit user. `token` is the hosted contract: no valid credential, no
+    # request. The rest of the codebase never branches on this — it always
+    # receives an owner id.
+    auth_mode: str = "none"
     allow_private_networks: bool = False
     allowed_input_roots: tuple[Path, ...] = field(default_factory=tuple)
     ollama_url: str = "http://localhost:11434"
@@ -282,6 +288,14 @@ def describe_environment(
         ),
         # Security
         (
+            "CONTENT_AUTH_MODE",
+            "security",
+            False,
+            settings.auth_mode,
+            "Identity mode: 'none' (self-hosted, single implicit user) "
+            "or 'token' (hosted, credential required).",
+        ),
+        (
             "CONTENT_ALLOW_PRIVATE_NETWORKS",
             "security",
             False,
@@ -498,6 +512,11 @@ def settings_from_env() -> ContentSettings:
     cache_dir = Path(cache_raw).resolve() if cache_raw else data_dir / "cache"
     uploads_raw = os.getenv("CONTENT_UPLOADS_ROOT")
     uploads_dir = Path(uploads_raw).resolve() if uploads_raw else data_dir / "uploads"
+    auth_mode_raw = (os.getenv("CONTENT_AUTH_MODE") or "none").strip().lower()
+    if auth_mode_raw not in {"none", "token"}:
+        raise ValueError(
+            f"CONTENT_AUTH_MODE must be 'none' or 'token', got {auth_mode_raw!r}"
+        )
     roots = tuple(
         Path(p).resolve()
         for p in os.getenv("CONTENT_ALLOWED_INPUT_ROOTS", "").split(":")
@@ -531,6 +550,7 @@ def settings_from_env() -> ContentSettings:
             os.getenv("CONTENT_UPLOADS_TOTAL_BYTES"), 20 * 1024 * 1024 * 1024
         ),
         upload_ttl_hours=_to_float(os.getenv("CONTENT_UPLOAD_TTL_HOURS"), 24.0),
+        auth_mode=auth_mode_raw,
         allow_private_networks=_to_bool(
             os.getenv("CONTENT_ALLOW_PRIVATE_NETWORKS"), False
         ),

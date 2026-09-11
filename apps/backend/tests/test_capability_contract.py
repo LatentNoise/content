@@ -16,6 +16,7 @@ from content.capabilities.catalog import all_capabilities
 from content.capabilities.facts import SourceFacts
 from content.capabilities.policy import EffectivePolicy
 from content.capabilities.resolver import CapabilityResolver
+from content.identity import LOCAL_OWNER
 from content.planning.transformations import build_registry
 from content.processors.transcript import TranscriptProcessor
 from content.providers.base import ProviderRegistry
@@ -167,6 +168,7 @@ def test_capability_unknown_is_traceable_on_the_job(store, settings):
     )
     payload = minimal_payload()  # a single audio output
     result = submit_generation(
+        LOCAL_OWNER,
         payload,
         make_request(payload),
         store=store,
@@ -176,7 +178,9 @@ def test_capability_unknown_is_traceable_on_the_job(store, settings):
     )
     assert "capability_unknown" in [w.code for w in result.warnings]
     planned = next(
-        e for e in store.list_events(result.job_id) if e["type"] == "job.planned"
+        e
+        for e in store.list_events(LOCAL_OWNER, result.job_id)
+        if e["type"] == "job.planned"
     )
     warning_codes = [w["code"] for w in planned["data"].get("warnings", [])]
     assert "capability_unknown" in warning_codes

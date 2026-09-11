@@ -13,6 +13,7 @@ from content.analysis.service import AnalysisService
 from content.application.submit import submit_generation
 from content.config import ContentSettings
 from content.execution.executor import JobExecutor
+from content.identity import LOCAL_OWNER
 from content.persistence.store import Store
 from content.processors.transcript import TranscriptProcessor
 from content.providers.base import ProviderRegistry
@@ -76,13 +77,14 @@ def test_summary_from_local_file_via_ollama(tmp_path, clip_with_subs):  # noqa: 
     }
     request = make_request(payload)
 
-    analysis = service.analyze_sources(list(request.sources))
+    analysis = service.analyze_sources(LOCAL_OWNER, list(request.sources))
     summary = resolved_capabilities(analysis.sources[0], providers)["summary.generate"]
     assert summary.status == "derivable"
     # R3: the resolver names the variant the planner will actually build.
     assert summary.selected_variant == "summary.from_subtitles"
 
     result = submit_generation(
+        LOCAL_OWNER,
         payload,
         request,
         store=store,
@@ -93,12 +95,17 @@ def test_summary_from_local_file_via_ollama(tmp_path, clip_with_subs):  # noqa: 
     claimed = store.claim_next_queued()
     JobExecutor(store, settings, providers).execute(claimed)
 
-    assert store.get_job(result.job_id)["status"] == "succeeded"
-    artifact = store.list_artifacts(result.job_id)[0]
+    assert store.get_job(LOCAL_OWNER, result.job_id)["status"] == "succeeded"
+    artifact = store.list_artifacts(LOCAL_OWNER, result.job_id)[0]
     assert artifact["type"] == "summary"
     assert artifact["provenance"]["attributes"]["model"] == MODEL
     path = (
-        settings.data_dir / "jobs" / result.job_id / "artifacts" / artifact["filename"]
+        settings.data_dir
+        / "jobs"
+        / LOCAL_OWNER
+        / result.job_id
+        / "artifacts"
+        / artifact["filename"]
     )
     body = path.read_text().strip()
     assert len(body) > 10
