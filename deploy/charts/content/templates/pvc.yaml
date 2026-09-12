@@ -5,7 +5,7 @@ metadata:
   name: {{ include "content.fullname" . }}-data
   labels: {{- include "content.labels" . | nindent 4 }}
   annotations:
-    # On garde le volume si la release est désinstallée : il porte la base.
+    # Keep the volume if the release is uninstalled: it holds the database.
     helm.sh/resource-policy: keep
 spec:
   accessModes: [{{ .Values.persistence.data.accessMode | quote }}]

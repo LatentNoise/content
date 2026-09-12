@@ -104,7 +104,7 @@ happened once; do the steps in order and none of them can happen again.
    ```bash
    ssh proxmox-nuc 'pct exec 130 -- sh -lc "cd /mnt/data/docker/content \
      && docker compose pull && docker compose up -d"'
-   make verify-deployment ENGINE=http://192.168.21.30:8010 VERSION=<x.y.z>
+   make verify-deployment ENGINE=http://192.0.2.10:8010 VERSION=<x.y.z>
    ```
 
    `verify-deployment` talks HTTP and nothing else, so it works against any

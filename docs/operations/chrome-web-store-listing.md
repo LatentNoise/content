@@ -89,7 +89,7 @@ will stop on, so it is answered at length.*
 
 > Content is self-hosted software: the server belongs to the user, and its
 > address is one they choose. It is commonly a machine on their home network
-> (`http://192.168.1.20:8010`), a hostname on a private network, or a domain of
+> (`http://192.0.2.10:8010`), a hostname on a private network, or a domain of
 > their own behind a reverse proxy. There is no way to enumerate those addresses
 > in advance, so no fixed host permission can express "the server this user
 > runs".

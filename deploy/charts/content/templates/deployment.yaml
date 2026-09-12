@@ -13,7 +13,7 @@ spec:
     metadata:
       labels: {{- include "content.selectorLabels" . | nindent 8 }}
       annotations:
-        # Redémarre le pod quand la configuration change.
+        # Roll the pod when the configuration changes.
         checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
     spec:
       {{- with .Values.podSecurityContext }}

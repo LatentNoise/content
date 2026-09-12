@@ -31,7 +31,7 @@ service:
 ingress:
   enabled: false
   className: traefik
-  host: mail.latentnoise.dev
+  host: mail.example.com
   annotations: {}
   tls:
     enabled: false
@@ -58,7 +58,8 @@ existingSecret: mailer-credentials
 config:
   smtpSecurity: ssl
   smtpPort: "465"
-  defaultFrom: "Content <content@latentnoise.dev>"
+  # The From address of every message this instance sends.
+  defaultFrom: "Content <content@example.com>"
   maxAttempts: "5"
   retryBaseSeconds: "30"
   # Set to "true" on a staging instance so it can never mail a real person.

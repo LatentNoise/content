@@ -11,7 +11,7 @@ So this talks to a running engine over HTTP and nothing else. No repository, no
 imports, no assumptions about where it runs: give it a URL and it tells you
 whether that engine is one you would hand to somebody.
 
-    make verify-deployment ENGINE=http://192.168.21.30:8010
+    make verify-deployment ENGINE=http://192.0.2.10:8010
     python3 scripts/verify_deployment.py --engine http://... --expect-version 0.6.8
 
 Standard library only, so it runs from a laptop, a runner, or the box itself.

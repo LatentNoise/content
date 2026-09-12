@@ -45,7 +45,7 @@ along — and CI attaches it to every version tag automatically, beside a
 
 ### Pointing it at another engine
 
-The popup's footer always names the engine it talks to (`192.168.21.30:8010`,
+The popup's footer always names the engine it talks to (`192.0.2.10:8010`,
 say) — the answer to "where is this sending my video?" is on screen, and
 clicking it opens the settings. For an engine somewhere else (a NAS, another
 port), change the address there. Chrome will ask for permission for that host:

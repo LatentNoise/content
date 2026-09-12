@@ -266,7 +266,7 @@ wheels:  ## Build the SDK + CLI + MCP wheels for a release (dist/)
 # default worth guessing, and pointing this at the wrong box proves nothing.
 verify-deployment:  ## End-to-end checks against a RUNNING engine (ENGINE=http://host:8010)
 	@test -n "$(ENGINE)" || { \
-	  echo "ENGINE is required, e.g. make verify-deployment ENGINE=http://192.168.21.30:8010"; \
+	  echo "ENGINE is required, e.g. make verify-deployment ENGINE=http://192.0.2.10:8010"; \
 	  exit 1; }
 	@python3 scripts/verify_deployment.py --engine "$(ENGINE)" \
 	  $(if $(VERSION),--expect-version "$(VERSION)",)

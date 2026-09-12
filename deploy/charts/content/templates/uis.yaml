@@ -1,8 +1,8 @@
 {{- /*
-Les trois UI (studio, console, hometube) sont identiques du point de vue du
-déploiement : même base Streamlit, port 8501, healthcheck /_stcore/health.
-Un seul template les couvre toutes — ajouter une surface = une entrée dans
-`uis`, rien d'autre.
+The three UIs (studio, console, hometube) are identical as far as deployment
+is concerned: the same Streamlit base, port 8501, /_stcore/health probe. One
+template covers them all — adding a surface is one entry in `uis` and nothing
+else.
 */ -}}
 {{- range $key, $ui := .Values.uis }}
 {{- if $ui.enabled }}
@@ -42,9 +42,9 @@ spec:
             # L'API vue par le NAVIGATEUR de l'utilisateur.
             - name: CONTENT_PUBLIC_API_URL
               value: {{ $.Values.publicApiUrl | quote }}
-            {{- /* Les surfaces sœurs, déclarées par le déploiement et non
-                   codées en dur : chaque UI reçoit l'URL publique des autres
-                   surfaces effectivement déployées. Voir le brief navigation. */}}
+            {{- /* The sister surfaces, declared by the deployment rather
+                   than hard-coded: each UI is given the public URL of the
+                   other surfaces that are actually deployed. */}}
             {{- range $sib, $sibUi := $.Values.uis }}
             {{- if and $sibUi.enabled $sibUi.ingress.enabled (ne $sib $key) }}
             - name: CONTENT_{{ $sib | upper }}_URL

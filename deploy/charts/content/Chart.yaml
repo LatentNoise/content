@@ -1,9 +1,9 @@
 apiVersion: v2
 name: content
-description: Content — le moteur qui transforme des sources en artefacts (vidéo, audio, sous-titres, transcript, résumé, Markdown, PDF)
+description: Content — the engine that turns sources into artifacts (video, audio, subtitles, transcript, summary, Markdown, PDF)
 type: application
-# version  : la version DU CHART (change quand les templates changent)
-# appVersion : la version de Content déployée par défaut (le tag de l'image)
+# version    : the version OF THE CHART (bump when the templates change)
+# appVersion : the default version of Content deployed (the image tag)
 version: 0.1.0
 appVersion: "0.7.1"
 home: https://github.com/LatentNoise/content

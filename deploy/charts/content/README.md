@@ -1,67 +1,118 @@
-# Chart Helm — Content
+# Helm chart — Content
 
-Déploie le moteur Content (et, en option, l'UI Studio) sur un cluster Kubernetes.
+Deploys the Content engine and its three UIs on a Kubernetes cluster.
 
-## Déployer
+## Deploying
 
 ```bash
 helm upgrade --install content ./deploy/charts/content \
   -n content --create-namespace \
-  -f deploy/charts/content/values-home.yaml
+  -f my-values.yaml
 ```
 
-Vérifier : `kubectl -n content get pods,svc,ingress,pvc` · `kubectl -n content logs deploy/content -f`
+The chart ships `example.com` hostnames on purpose. **A deployment brings its
+own values file**, which belongs to its operator's infrastructure repository
+and not to this public chart.
 
-Changer de version : `helm upgrade content ./deploy/charts/content -n content --reuse-values --set image.tag=0.7.2`
-Revenir en arrière : `helm rollback content -n content`
+Check it: `kubectl -n content get pods,svc,ingress,pvc` ·
+`kubectl -n content logs deploy/content -f`
 
-## Ce que le chart déploie
+Change version: `helm upgrade content ./deploy/charts/content -n content --reuse-values --set image.tag=0.7.2`
+Roll back: `helm rollback content -n content`
 
-| Objet | Rôle |
+## What the chart deploys
+
+| Object | Role |
 |---|---|
-| `Deployment content` | le moteur, **1 réplica, stratégie `Recreate`** |
-| `Service content` | l'IP stable interne — c'est lui qui fait le load balancing, rien à installer |
-| `Ingress content` | l'entrée HTTP par nom d'hôte (Traefik) |
-| `PVC content-data` | `/data` : SQLite, jobs, artefacts, cache |
-| `PVC content-output` | `/output` : la bibliothèque de livraison |
-| `ConfigMap content-config` | toute la configuration non secrète |
-| `Deployment/Service/Ingress …-studio` | l'UI Streamlit, optionnelle |
-| `ServiceMonitor` | **désactivé** — Content n'expose pas de `/metrics` aujourd'hui |
+| `Deployment content` | the engine, **1 replica, `Recreate` strategy** |
+| `Deployment content-worker` | optional, runs the jobs (ADR 0032) |
+| `Service content` | the stable internal address, which does the load balancing |
+| `Ingress content` | the HTTP entry point, by hostname |
+| `PVC content-data` | `/data`: SQLite, jobs, artifacts, cache |
+| `PVC content-output` | `/output`: the delivery library |
+| `ConfigMap content-config` | all non-secret configuration |
+| `Deployment/Service/Ingress …-studio/-console/-hometube` | the three Streamlit UIs |
+| `ServiceMonitor` | **disabled** — Content exposes no `/metrics` today |
 
-## Les trois choix qui ne se discutent pas, et pourquoi
+## The three choices that are not up for debate, and why
 
-1. **`replicaCount: 1`.** SQLite est la source de vérité *et* la file de travaux (ADR 0006), avec des verrous POSIX **locaux** ; Litestream suppose un seul writer. Pour aller plus vite : monter `CONTENT_MAX_CONCURRENT_JOBS`, pas le nombre de pods — sur un seul nœud, deux pods se partagent le même CPU.
-2. **`strategy: Recreate`.** Un rolling update ferait cohabiter deux pods sur le même volume et la même base, même quelques secondes.
-3. **Un tag de version explicite, jamais `latest`.** Un tag mutable force `imagePullPolicy: Always` : un simple redémarrage devient un déploiement non décidé, et deux pods démarrés à deux moments peuvent porter deux versions.
+1. **`replicaCount: 1`.** SQLite is both the source of truth *and* the job
+   queue (ADR 0006), with **local** POSIX locks, and Litestream assumes a
+   single writer. To go faster, raise `CONTENT_MAX_CONCURRENT_JOBS` rather
+   than the pod count: on one node, two pods share the same CPU.
+2. **`strategy: Recreate`.** A rolling update would put two pods on the same
+   volume and the same database, even if only for a few seconds.
+3. **An explicit version tag, never `latest`.** A mutable tag forces
+   `imagePullPolicy: Always`: a restart becomes an undecided deployment, and
+   two pods started at two different moments can run two versions.
 
-## Quatre surfaces, quatre Services, quatre Ingress — et pourquoi ce ne sont pas des répliques
+## Four surfaces, four Services, four Ingresses — and why these are not replicas
 
-*« Je pensais qu'on aurait un seul ingress, un seul service, et juste plusieurs répliques. »* Les deux notions n'ont rien à voir.
+The two ideas have nothing to do with each other, and the distinction is worth
+stating because it is a common trap.
 
-**Une réplique, c'est le MÊME conteneur lancé plusieurs fois** — même image, même rôle, même port. On en met plusieurs pour la charge ou la tolérance de panne, et **Kubernetes les met derrière UN seul `Service`, qui répartit tout seul**. Un Deployment à 3 répliques = 1 Service, 1 Ingress.
+**A replica is the SAME container started several times** — same image, same
+role, same port. You run several for load or fault tolerance, and **Kubernetes
+puts them behind ONE `Service`, which spreads traffic on its own**. A
+Deployment with 3 replicas is still 1 Service and 1 Ingress.
 
-**Ici, ce sont quatre applications différentes**, chacune avec son image, son rôle et son public :
+**Here there are four different applications**, each with its own image, role
+and audience:
 
-| Surface | Image | Port | Pour qui |
+| Surface | Image | Port | For whom |
 |---|---|---|---|
-| **moteur** | `content` | 8000 | l'API — les clients, les SDK, les autres UI |
-| **Studio** | `content-studio` | 8501 | l'opérateur, en création |
-| **Console** | `content-console` | 8501 | l'opérateur, en exploitation |
-| **HomeTube** | `content-hometube` | 8501 | quelqu'un qui veut télécharger une vidéo |
+| **engine** | `content` | 8000 | the API: clients, SDKs, the other UIs |
+| **Studio** | `content-studio` | 8501 | the general creation UI |
+| **Console** | `content-console` | 8501 | operations: observe and steer |
+| **HomeTube** | `content-hometube` | 8501 | someone who wants to download a video |
 
-Un `Service` pointe vers un ensemble de pods **identiques** : il ne peut pas servir quatre applications. Donc **quatre Services**, nécessairement. Et comme chacune doit être atteignable directement, **quatre Ingress** — un nom de domaine par surface.
+A `Service` points at a set of **identical** pods, so it cannot serve four
+applications. Hence four Services, necessarily. And since each must be
+reachable directly, four Ingresses, one hostname per surface.
 
-**Ajouter une surface = une entrée dans `uis`**, rien d'autre : le template les traite génériquement (elles sont toutes en Streamlit sur 8501, healthcheck `/_stcore/health`).
+**Adding a surface is one entry in `uis`** and nothing else: the template
+treats them generically, since they are all Streamlit on 8501 with the
+`/_stcore/health` probe.
 
-### Les URLs des surfaces sœurs, injectées automatiquement
+### One parent domain, on purpose
 
-Chaque UI reçoit `CONTENT_<AUTRE_SURFACE>_URL` pour **les surfaces effectivement activées et exposées** — jamais un lien en dur, parce qu'un opérateur qui auto-héberge n'aura ni les mêmes surfaces ni les mêmes URLs.
+The four hostnames share a parent because a session cookie set on that parent
+is sent by the browser to all of its subdomains. That is what makes one
+sign-in work across the four surfaces without merging them or serving them
+under paths (ADR 0033).
 
-⚠️ **Ces variables ne sont pas encore lues par les applications.** Le déploiement est prêt, le code non : voir `~/Independence/Services/Content/2026-09-11 La navigation entre les surfaces…`, qui dit aussi **quels liens ne pas ouvrir** (la Console n'a pas d'authentification — ADR 0024 — et ne doit jamais être atteignable depuis une surface publique).
+### Sister-surface URLs, injected automatically
 
-## Les secrets
+Each UI receives `CONTENT_<OTHER_SURFACE>_URL` for **the surfaces that are
+actually enabled and exposed** — never a hard-coded link, because a
+self-hosting operator will have neither the same surfaces nor the same URLs.
 
-Jamais dans git. Hors bande :
+⚠️ **These variables are not read by the applications yet.** The deployment is
+ready, the code is not.
+
+## Separating the API from the worker (`worker.enabled`)
+
+Same image, same code, one environment variable (ADR 0032). With
+`worker.enabled=true`, the main deployment stops running jobs and only answers
+requests, while a second deployment does the heavy work. The API then never
+waits behind a transcode.
+
+```bash
+helm upgrade content ./deploy/charts/content -n content --reuse-values \
+  --set worker.enabled=true
+```
+
+⛔ **What this does not add: CPU.** Every pod on a node shares the same cores,
+so throughput is still set by `maxConcurrentJobs`. And **every pod must stay
+on ONE node**: the data volume is ReadWriteOnce and node-bound, and a SQLite
+file reached over a network share corrupts.
+
+⚠️ Before enabling Litestream continuous backup *at the same time* as the
+worker, check its behaviour with more than one writing process.
+
+## Secrets
+
+Never in git. Out of band:
 
 ```bash
 kubectl -n content create secret generic content-secrets \
@@ -70,29 +121,16 @@ helm upgrade content ./deploy/charts/content -n content --reuse-values \
   --set existingSecret=content-secrets
 ```
 
-## Ce qui n'est pas branché (état au 11/09/2026)
+## What is not wired up
 
-- **Ollama** — `CONTENT_OLLAMA_URL` est vide : les résumés ne fonctionneront pas. Ni `192.168.21.30:11434` ni `.85` ne répondaient depuis le cluster. À brancher quand le port sera joignable.
-- **Les cookies YouTube** (`CONTENT_CREDENTIALS`) — neutralisés : aucun fichier n'est monté. À ajouter via un Secret + un `volumeMount` si les sources authentifiées deviennent nécessaires.
-- **`/input`** — le docker-compose monte un dossier de sources locales en lecture seule ; sans équivalent ici, seules les sources par URL et les envois de fichiers fonctionnent.
-### Séparer l'API du worker (`worker.enabled`)
-
-Même image, même code, une variable d'environnement (ADR 0032). Avec
-`worker.enabled=true`, le déploiement principal ne fait plus tourner les
-travaux et se contente de répondre aux requêtes, tandis qu'un second
-déploiement fait le travail lourd. L'API n'attend plus derrière un transcodage.
-
-```bash
-helm upgrade content deploy/charts/content --reuse-values --set worker.enabled=true
-```
-
-⛔ **Ce que ça n'ajoute pas : du CPU.** Tous les pods d'un nœud se partagent les
-mêmes cœurs ; le débit reste réglé par `maxConcurrentJobs`. Et **tous les pods
-doivent rester sur UN SEUL nœud** : le volume de données est ReadWriteOnce et
-lié au nœud, et un fichier SQLite atteint par le réseau se corrompt.
-
-⚠️ Avant d'activer la sauvegarde continue Litestream *en même temps* que le
-worker, vérifier son comportement avec plus d'un processus écrivain.
-
-- **Litestream** — la sauvegarde continue vers S3 n'est pas dans ce chart (elle demande un bucket et des identifiants). Le manifest de référence est dans `~/Independence/Services/Content/k8s/02-content.yaml`.
-- **TLS** — `ingress.tls.enabled: false` : en LAN, en HTTP. Le tunnel Cloudflare terminera le TLS quand il sera en place.
+- **Ollama** — `CONTENT_OLLAMA_URL` is empty by default, so summaries do not
+  work. Point it at an Ollama reachable from inside the cluster.
+- **YouTube cookies** (`CONTENT_CREDENTIALS`) — neutralised: no file is
+  mounted. Add a Secret and a `volumeMount` if authenticated sources become
+  necessary.
+- **`/input`** — docker-compose mounts a read-only folder of local sources;
+  there is no equivalent here, so only URL sources and uploads work.
+- **Litestream** — continuous backup to object storage is not in this chart,
+  since it needs a bucket and credentials of its own.
+- **TLS** — `ingress.tls.enabled: false` by default. Terminate TLS at your
+  ingress controller or at whatever fronts the cluster.
