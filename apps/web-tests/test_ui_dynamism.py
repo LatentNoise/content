@@ -340,3 +340,21 @@ def test_hometube_sends_no_filename_when_the_proposal_is_untouched(run_app):
     assert not at.exception, at.exception
     edited = _generation_request(at)
     assert edited["outputs"][0]["delivery"]["filename"] == "My Own Name"
+
+
+def test_console_access_tab_explains_what_a_key_is(run_app):
+    """The Access tab has to say two things plainly, because both surprise
+    people: a self-hosted engine has one implicit user and no account, and a
+    key cannot be read back after it is created.
+
+    The minting itself is pinned by the engine and SDK suites; AppTest does
+    not reach widgets nested inside a tab's form, so this checks what the tab
+    tells the reader rather than re-testing the round trip through a fake.
+    """
+    at = run_app("console")
+    assert not at.exception, at.exception
+
+    text = _all_text(at)
+    assert "unreadable after creation" in text
+    assert "No keys yet." in text
+    assert "self-hosted contract, not a missing sign-in" in text

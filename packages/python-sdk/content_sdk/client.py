@@ -114,6 +114,31 @@ class ContentClient:
     def folders(self) -> list[str]:
         return self._t.get("/folders").get("folders", [])
 
+    # --- API keys (ADR 0030 decision 6, ADR 0033) --------------------------------
+
+    def create_api_key(self, name: str) -> dict[str, Any]:
+        """Mint a named key for a program.
+
+        **The secret is in the returned ``key`` field and nowhere else.** Only
+        its fingerprint is stored server-side, so nothing — not this client,
+        not the operator — can read it back afterwards. Save it now or mint
+        another.
+        """
+        return self._t.post("/auth/keys", {"name": name})
+
+    def api_keys(self) -> list[dict[str, Any]]:
+        """The keys of the current owner: name, created, last used. Never the
+        key, because the engine does not have it either."""
+        return self._t.get("/auth/keys")
+
+    def revoke_api_key(self, key_id: str) -> None:
+        self._t.request("DELETE", f"/auth/keys/{key_id}")
+
+    def whoami(self) -> dict[str, Any]:
+        """Who this client is to the engine. On a self-hosted instance that is
+        the single implicit user, with no account behind it."""
+        return self._t.get("/auth/me")
+
     # --- uploads (ADR 0020) ------------------------------------------------------
 
     def upload(self, path: Path | str, *, media_type: str = "") -> dict[str, Any]:

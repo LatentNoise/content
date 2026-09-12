@@ -96,7 +96,7 @@ class FakeContentClient:
     """Canned, contract-shaped answers keyed by the source URI."""
 
     def __init__(self, base_url=None, timeout=0, session=None):
-        pass
+        self._api_keys: list[dict] = []
 
     def upload_bytes(self, filename, data, media_type=""):
         """A file the user picked in the browser. The fake records it so a test
@@ -291,6 +291,27 @@ class FakeContentClient:
         }
 
     # --- console feeds ---------------------------------------------------------
+
+    def whoami(self):
+        # A self-hosted engine: one implicit user, no account behind it.
+        return {"owner_id": "local", "email": "", "account": False}
+
+    def api_keys(self):
+        return list(self._api_keys)
+
+    def create_api_key(self, name):
+        key = {
+            "id": f"key_{len(self._api_keys)}",
+            "name": name,
+            "created_at": "2026-09-12T00:00:00+00:00",
+            "last_used_at": "",
+            "key": "ck_live_shown_once",
+        }
+        self._api_keys.append({k: v for k, v in key.items() if k != "key"})
+        return key
+
+    def revoke_api_key(self, key_id):
+        self._api_keys = [k for k in self._api_keys if k["id"] != key_id]
 
     def system(self):
         return {

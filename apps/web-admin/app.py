@@ -360,13 +360,22 @@ def render_job_detail(job_id: str) -> None:
                 st.code(text or "—")
 
 
-tab_over, tab_caps, tab_env, tab_jobs, tab_storage, tab_contract = st.tabs(
+(
+    tab_over,
+    tab_caps,
+    tab_env,
+    tab_jobs,
+    tab_storage,
+    tab_access,
+    tab_contract,
+) = st.tabs(
     [
         "📊 Overview",
         "🧩 Capabilities",
         "⚙️ Environment",
         "📋 Jobs",
         "💾 Storage & Cache",
+        "🔑 Access",
         "📜 Contract & API",
     ]
 )
@@ -752,6 +761,88 @@ with tab_storage:
 
 
 # --- Contract & API ------------------------------------------------------------
+
+with tab_access:
+    st.subheader("Who this console is")
+    try:
+        me = client.whoami()
+    except Exception as exc:  # noqa: BLE001
+        me = {}
+        st.error(f"/auth/me failed: {exc}")
+    if me:
+        if me.get("account"):
+            st.markdown(f"Signed in as **{me['email']}** — `{me['owner_id']}`")
+        else:
+            st.markdown(f"Owner `{me['owner_id']}`")
+            st.caption(
+                "This instance asks for no credential (CONTENT_AUTH_MODE=none): "
+                "one implicit user, no account behind it. That is the "
+                "self-hosted contract, not a missing sign-in."
+            )
+
+    st.divider()
+    st.subheader("API keys")
+    st.caption(
+        "A browser holds a session cookie; a program holds one of these. "
+        "The engine stores only a fingerprint, so a key is unreadable after "
+        "creation — by anyone, this console included."
+    )
+
+    with st.form("mint-key", clear_on_submit=True):
+        new_name = st.text_input(
+            "Name",
+            placeholder="my laptop, CI, the NAS…",
+            help="Name it for the machine or the job that will carry it — "
+            "that is what makes revoking one of them meaningful later.",
+        )
+        minted = st.form_submit_button("Create key")
+    if minted:
+        if not new_name.strip():
+            st.warning("A key needs a name.")
+        else:
+            try:
+                # Kept in session state on purpose: this is the only moment
+                # the secret exists anywhere outside the caller's hands.
+                st.session_state["fresh_api_key"] = client.create_api_key(new_name)
+            except Exception as exc:  # noqa: BLE001
+                st.error(f"Could not create the key: {exc}")
+
+    fresh = st.session_state.get("fresh_api_key")
+    if fresh:
+        st.success(f"Key **{fresh['name']}** created. Copy it now.")
+        st.code(fresh["key"], language=None)
+        st.caption(
+            "⚠️ This is the only time it is shown. Nothing can retrieve it "
+            "afterwards; a lost key is replaced, not recovered."
+        )
+        if st.button("I have saved it"):
+            del st.session_state["fresh_api_key"]
+            st.rerun()
+
+    try:
+        keys = client.api_keys()
+    except Exception as exc:  # noqa: BLE001
+        keys = []
+        st.error(f"/auth/keys failed: {exc}")
+    if not keys:
+        st.caption("No keys yet.")
+    for key in keys:
+        columns = st.columns([3, 3, 3, 2])
+        columns[0].markdown(f"**{key['name']}**")
+        columns[1].caption(f"created {key['created_at'][:16].replace('T', ' ')}")
+        columns[2].caption(
+            f"last used {key['last_used_at'][:16].replace('T', ' ')}"
+            if key["last_used_at"]
+            else "never used"
+        )
+        if columns[3].button("Revoke", key=f"revoke-{key['id']}"):
+            try:
+                client.revoke_api_key(key["id"])
+            except Exception as exc:  # noqa: BLE001
+                st.error(f"Could not revoke: {exc}")
+            else:
+                st.rerun()
+
 
 with tab_contract:
     st.subheader("Public contract")
