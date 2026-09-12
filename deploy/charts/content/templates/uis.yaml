@@ -93,7 +93,8 @@ metadata:
 spec:
   ingressClassName: {{ $ui.ingress.className | default $.Values.ingress.className }}
   rules:
-    - host: {{ $ui.ingress.host | quote }}
+    {{- range prepend ($ui.ingress.extraHosts | default list) $ui.ingress.host }}
+    - host: {{ . | quote }}
       http:
         paths:
           - path: /
@@ -102,6 +103,7 @@ spec:
               service:
                 name: {{ $fullname }}
                 port: {name: http}
+    {{- end }}
 {{- end }}
 ---
 {{- end }}

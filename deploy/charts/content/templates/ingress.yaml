@@ -15,13 +15,19 @@ spec:
       secretName: {{ .Values.ingress.tls.secretName }}
   {{- end }}
   rules:
-    - host: {{ .Values.ingress.host | quote }}
+    {{- /* One surface can answer on several names at once — a LAN name and a
+           public one, or a name being migrated. Rewriting the Host in a proxy
+           instead would make the application generate links for a hostname
+           the visitor never typed. */}}
+    {{- range prepend ((.Values.ingress).extraHosts | default list) .Values.ingress.host }}
+    - host: {{ . | quote }}
       http:
         paths:
           - path: /
             pathType: Prefix
             backend:
               service:
-                name: {{ include "content.fullname" . }}
+                name: {{ include "content.fullname" $ }}
                 port: {name: http}
+    {{- end }}
 {{- end }}

@@ -55,6 +55,10 @@ ingress:
   enabled: true
   className: traefik
   host: api.content.example.com
+  # Extra names the same surface also answers on: a LAN name beside a public
+  # one, or a name being migrated. Rewriting the Host in a proxy instead would
+  # make the application generate links for a hostname nobody typed.
+  extraHosts: []
   annotations: {}
   tls:
     enabled: false
@@ -152,7 +156,7 @@ uis:
   studio:
     enabled: true
     image: {repository: ghcr.io/latentnoise/content-studio, tag: ""}
-    ingress: {enabled: true, className: "", host: studio.content.example.com}
+    ingress: {enabled: true, className: "", host: studio.content.example.com, extraHosts: []}
     resources:
       requests: {cpu: 50m, memory: 128Mi}
       limits: {cpu: 500m, memory: 512Mi}
@@ -160,7 +164,7 @@ uis:
   console:
     enabled: true
     image: {repository: ghcr.io/latentnoise/content-console, tag: ""}
-    ingress: {enabled: true, className: "", host: console.content.example.com}
+    ingress: {enabled: true, className: "", host: console.content.example.com, extraHosts: []}
     resources:
       requests: {cpu: 50m, memory: 128Mi}
       limits: {cpu: 500m, memory: 512Mi}
@@ -168,7 +172,7 @@ uis:
   hometube:
     enabled: true
     image: {repository: ghcr.io/latentnoise/content-hometube, tag: ""}
-    ingress: {enabled: true, className: "", host: hometube.content.example.com}
+    ingress: {enabled: true, className: "", host: hometube.content.example.com, extraHosts: []}
     resources:
       requests: {cpu: 50m, memory: 128Mi}
       limits: {cpu: 500m, memory: 512Mi}
