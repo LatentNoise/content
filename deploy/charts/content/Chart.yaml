@@ -5,7 +5,7 @@ type: application
 # version    : the version OF THE CHART (bump when the templates change)
 # appVersion : the default version of Content deployed (the image tag)
 version: 0.1.0
-appVersion: "0.8.0"
+appVersion: "0.8.1"
 home: https://github.com/LatentNoise/content
 sources:
   - https://github.com/LatentNoise/content
