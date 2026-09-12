@@ -272,7 +272,7 @@ def build_auth_router(settings, store, mailer) -> APIRouter:
 
     @router.get("/auth/check-your-mail", include_in_schema=False)
     async def check_your_mail(email: str = "") -> HTMLResponse:
-        where = f" to <strong>{html.escape(email)}</strong>" if email else ""
+        where = f" for <strong>{html.escape(email)}</strong>" if email else ""
         return _page(
             "Check your mail",
             f"<h1>Check your mail</h1><p>If an account exists{where}, a sign-in "
