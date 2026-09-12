@@ -91,13 +91,12 @@ class ContentSettings:
     worker_enabled: bool = True
     # --- signing in (ADR 0030 decision 4; ADR 0033) -------------------------
     # Where the sign-in link points, and where the cookie is valid. These are
-    # deployment facts, not code: the same binary serves a LAN under
-    # `content.k3s.lab` and production under `latentnoise.dev`.
-    public_base_url: str = ""  # e.g. https://api.latentnoise.dev
+    # deployment facts, not code: the same binary serves a LAN under one parent
+    # domain and a hosted instance under another.
+    public_base_url: str = ""  # e.g. https://api.example.com
     # The cookie's Domain. Empty = host-only, which is correct for a single
-    # host. Set it to the PARENT (".latentnoise.dev") so one session is
-    # recognised by all four surfaces — that is the whole reason they share a
-    # parent.
+    # host. Set it to the PARENT (".example.com") so one session is recognised
+    # by all four surfaces — that is the whole reason they share a parent.
     session_cookie_domain: str = ""
     session_cookie_name: str = "content_session"
     # Secure is on by default and turning it off is a local-development
