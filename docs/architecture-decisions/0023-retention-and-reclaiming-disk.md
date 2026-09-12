@@ -1,6 +1,6 @@
 # ADR 0023 — Retention: reclaiming disk without losing what matters
 
-Status: proposed (2026-08-15) · Reconciles the `retention` block reserved in
+Status: accepted (2026-08-15) · **Implemented 2026-09-13 — see the closing section** · Reconciles the `retention` block reserved in
 `docs/contract.md` §9 · Extends the upload sweep of ADR 0020 to every family
 
 ## Context
@@ -123,3 +123,40 @@ touches the delivery library. A total-size cap that evicts the oldest
 automatically, which sounds tidy and means a user's disk pressure silently
 destroys their oldest downloads. And a global "purge everything" button without
 `dry_run`, which is an incident waiting for a tired operator.
+
+
+## What shipped, 2026-09-13
+
+Retention stayed proposed for a month because nothing forced it. Quotas did: a
+ceiling with no way to free space is a dead end, and whoever reaches it can
+never do anything again.
+
+Two mechanisms, and the difference between them is the decision.
+
+**Deleting is deliberate.** `DELETE /api/v1/jobs/{id}` removes one job's files
+and rows, scoped to its owner — someone else's id is *not found*, never
+forbidden. A running job is refused with 409 rather than deleted from under
+itself: cancel is a different verb with a different meaning.
+
+**Sweeping is unattended**, off by default (`CONTENT_RETENTION_DAYS=0`), and
+runs on the existing housekeeping tick rather than a timer of its own. Nothing
+an operator did not ask for starts deleting their data on upgrade.
+
+### The library is never swept
+
+This is the rule the tests guard hardest. `/output` is a library a human
+organises: files there have been renamed, filed into folders, added to
+playlists, and a media server indexes them. An unattended job that removes a
+film from someone's collection is not a feature, whatever the retention window
+says.
+
+Deleting a job deliberately *may* remove its delivered copies, with
+`?delivered=true`, and that is off by default for the same reason. A delivered
+file that has since been moved or renamed is not an error either — losing track
+of it is what a library is for.
+
+### Files first, rows last
+
+A crash between the two leaves an orphan directory, which housekeeping can find
+and a human can understand. The reverse leaves a row pointing at bytes that no
+longer exist, which the API would serve as a 500 forever.

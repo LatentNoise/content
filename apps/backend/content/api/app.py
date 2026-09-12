@@ -41,7 +41,7 @@ from content.analysis.service import (
 )
 from content.api.auth import Identity, Operator
 from content.api.auth_routes import build_auth_router, build_session_router
-from content.application import quotas
+from content.application import quotas, retention
 from content.application.collections import attach_collection_runner
 from content.application.submit import submit_generation
 from content.application.uploads import sweep_expired_uploads
@@ -354,13 +354,27 @@ def create_app(
     attach_collection_runner(providers, analysis_service, settings)
     capability_resolver = CapabilityResolver(build_registry(providers), providers)
     executor = JobExecutor(store, settings, providers)
+
+    def _housekeeping() -> dict:
+        """One chore per sweep tick: expired uploads, then old jobs.
+
+        Retention runs here rather than on its own timer because it is the same
+        kind of work — unattended, failure-tolerant, and irrelevant to latency.
+        A second loop would be a second thing to reason about for no gain.
+        """
+        swept = sweep_expired_uploads(store, settings)
+        reclaimed = retention.sweep_all(store=store, settings=settings)
+        if reclaimed.get("jobs"):
+            swept = {**swept, "retention": reclaimed}
+        return swept
+
     # Housekeeping runs beside the queue: uploads nobody referenced within
     # their TTL are collected, which ADR 0020 promised and 0.5.0 did not do.
     queue = JobQueue(
         store,
         executor.execute,
         settings.max_concurrent_jobs,
-        sweeper=lambda: sweep_expired_uploads(store, settings),
+        sweeper=lambda: _housekeeping(),
     )
 
     @asynccontextmanager
@@ -528,6 +542,42 @@ def create_app(
         never where the machine keeps it.
         """
         return owner_storage_report(settings, owner_id)
+
+    @app.delete("/api/v1/jobs/{job_id}", tags=["jobs"], status_code=204)
+    def delete_job(
+        job_id: str, delivered: bool = False, owner_id: str = owner
+    ) -> Response:
+        """Delete one of your jobs and free what it holds.
+
+        Without this, a storage quota is a dead end: someone who reaches the
+        ceiling can never do anything again. Deleting is the other half of
+        limiting.
+
+        `delivered=true` also removes the copies this job put in the library.
+        It is **off by default**, because `/output` is a library a human
+        organises — files there have been renamed, filed into folders, added to
+        playlists — and a delete request about a job should not quietly take a
+        film out of somebody's collection.
+
+        A running job is refused rather than deleted from under itself: cancel
+        it first, which is a different verb with a different meaning.
+        """
+        job = store.get_job(owner_id, job_id)
+        if job is None:
+            raise HTTPException(status_code=404, detail="job not found")
+        if job["status"] not in JOB_TERMINAL:
+            raise HTTPException(
+                status_code=409,
+                detail=(f"job is {job['status']}; cancel it first, then delete it."),
+            )
+        retention.delete_job(
+            owner_id,
+            job_id,
+            store=store,
+            settings=settings,
+            include_delivered=delivered,
+        )
+        return Response(status_code=204)
 
     @app.get("/api/v1/usage", tags=["system"])
     def usage(owner_id: str = owner) -> dict:

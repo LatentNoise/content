@@ -132,6 +132,18 @@ class ContentSettings:
     # someone for bytes that no longer exist.
     quota_storage_bytes: int = 0
     quota_concurrent_jobs: int = 0
+    # --- retention (ADR 0023, finally implemented) ---------------------------
+    # How many days a terminal job's files are kept before an unattended sweep
+    # removes them. 0 = never, which is the historical behaviour and stays the
+    # default: nothing an operator did not ask for should start deleting their
+    # data on upgrade.
+    #
+    # The sweep NEVER touches the delivery library. /output is a library a
+    # human organises and a media server reads; unattended deletion of someone's
+    # collection is not a feature. Deleting a job deliberately may remove its
+    # delivered copies, if asked.
+    retention_days: float = 0.0
+    retention_sweep_hours: float = 6.0
     magic_link_ttl_minutes: float = 15.0
     magic_link_max_per_hour: int = 5
     # Where a sign-in may send the browser afterwards. An open redirect on a
@@ -416,6 +428,14 @@ def describe_environment(
             False,
             f"{settings.session_ttl_hours:g}",
             "How long a session lives, slid forward while it is used.",
+        ),
+        (
+            "CONTENT_RETENTION_DAYS",
+            "storage",
+            False,
+            f"{settings.retention_days:g}",
+            "Days a finished job's files are kept before an unattended sweep "
+            "removes them. 0 = never. The delivery library is never swept.",
         ),
         (
             "CONTENT_QUOTA_MEDIA_MINUTES_PER_MONTH",
@@ -771,6 +791,10 @@ def settings_from_env() -> ContentSettings:
             os.getenv("CONTENT_SESSION_COOKIE_SECURE"), True
         ),
         session_ttl_hours=_to_float(os.getenv("CONTENT_SESSION_TTL_HOURS"), 720.0),
+        retention_days=max(0.0, _to_float(os.getenv("CONTENT_RETENTION_DAYS"), 0.0)),
+        retention_sweep_hours=max(
+            0.5, _to_float(os.getenv("CONTENT_RETENTION_SWEEP_HOURS"), 6.0)
+        ),
         quota_media_minutes_per_month=max(
             0.0, _to_float(os.getenv("CONTENT_QUOTA_MEDIA_MINUTES_PER_MONTH"), 0.0)
         ),

@@ -960,6 +960,64 @@ class Store:
                 (utcnow(), owner_id),
             )
 
+    def delete_job(self, owner_id: str, job_id: str) -> bool:
+        """Forget a job and everything the database holds about it.
+
+        Scoped to its owner, so an id from someone else's list is simply not
+        found. The files are removed by the caller — the row goes last, so a
+        crash between the two leaves an orphan directory that housekeeping can
+        find, rather than a row pointing at bytes that are gone.
+        """
+        with self._conn() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                owned = conn.execute(
+                    "SELECT 1 FROM jobs WHERE id = ? AND owner_id = ?",
+                    (job_id, owner_id),
+                ).fetchone()
+                if owned is None:
+                    conn.execute("COMMIT")
+                    return False
+                # Children first: job_steps and job_events carry no owner of
+                # their own (ADR 0030) and are reached through this join.
+                conn.execute("DELETE FROM job_events WHERE job_id = ?", (job_id,))
+                conn.execute("DELETE FROM job_steps WHERE job_id = ?", (job_id,))
+                conn.execute(
+                    "DELETE FROM artifacts WHERE job_id = ? AND owner_id = ?",
+                    (job_id, owner_id),
+                )
+                conn.execute(
+                    "DELETE FROM jobs WHERE id = ? AND owner_id = ?",
+                    (job_id, owner_id),
+                )
+                conn.execute("COMMIT")
+            except Exception:
+                conn.execute("ROLLBACK")
+                raise
+        return True
+
+    def jobs_finished_before(self, owner_id: str, cutoff: str) -> list[dict]:
+        """Terminal jobs of this owner that ended before `cutoff`.
+
+        Only terminal ones: a job still running has no business being swept out
+        from under itself, whatever its age.
+        """
+        with self._conn() as conn:
+            rows = conn.execute(
+                "SELECT id, status, finished_at FROM jobs "
+                "WHERE owner_id = ? AND finished_at IS NOT NULL AND finished_at < ? "
+                "AND status IN ('succeeded', 'failed', 'cancelled') "
+                "ORDER BY finished_at",
+                (owner_id, cutoff),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def owners_with_jobs(self) -> list[str]:
+        """Every owner that has at least one job — what a sweep iterates."""
+        with self._conn() as conn:
+            rows = conn.execute("SELECT DISTINCT owner_id FROM jobs").fetchall()
+        return [row["owner_id"] for row in rows]
+
     # --- usage, for quotas (ADR 0036) -----------------------------------------
 
     def record_media_seconds(self, owner_id: str, job_id: str, seconds: float) -> None:
