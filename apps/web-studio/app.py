@@ -126,6 +126,38 @@ st.markdown(
 )
 
 
+APP_TITLE = "Content Studio"
+
+
+def _ask_to_sign_in() -> None:
+    """Replace the page with a way in, and stop.
+
+    A block rather than a redirect, on purpose. Streamlit renders inside an
+    isolated frame where an automatic redirect is unreliable, and one that
+    fires on a refusal it misread traps the visitor in a loop they cannot
+    leave. A page that says what happened and offers one button cannot loop.
+
+    The door itself lives in the engine (ADR 0033): this only points at it, and
+    carries the current address so the visitor comes back where they were.
+    """
+    st.markdown(f"## Sign in to {APP_TITLE}")
+    st.write(
+        "This instance asks who you are before it does anything. "
+        "Enter your email on the next page and we will send you a link — "
+        "no password, and it works once."
+    )
+    st.link_button(
+        "Sign in",
+        sign_in_url(PUBLIC_API_URL or API_URL, _current_url()),
+        type="primary",
+    )
+    st.caption(
+        "Already signed in on another surface? Reload this page — "
+        "one session covers all of them."
+    )
+    st.stop()
+
+
 def _current_url() -> str:
     """Where to send the visitor back after signing in.
 
@@ -171,17 +203,7 @@ try:
     credentials = client.config().get("credentials", [])
 except Exception as exc:  # noqa: BLE001
     if is_unauthenticated(exc):
-        # The engine runs in hosted mode and this visitor has no session. Send
-        # them to the door rather than showing an error they cannot act on —
-        # the door lives in the engine, which is the only place allowed to turn
-        # a request into an identity (ADR 0033).
-        st.warning("Sign in to use this surface.")
-        st.link_button(
-            "Sign in",
-            sign_in_url(PUBLIC_API_URL or API_URL, _current_url()),
-            type="primary",
-        )
-        st.stop()
+        _ask_to_sign_in()
     st.error(f"⚠️ Back-end unreachable at {API_URL} — {exc}")
 
 with st.sidebar:

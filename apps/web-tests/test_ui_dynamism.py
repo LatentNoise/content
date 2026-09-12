@@ -376,3 +376,30 @@ def test_every_surface_resolves_its_visitor_per_request(run_app):
         assert not at.exception, (surface, at.exception)
         clients = [c for c in FakeContentClient.instances if c.headers_provider]
         assert clients, f"{surface} builds its client without a headers provider"
+
+
+def test_a_refused_visitor_gets_a_way_in_and_nothing_else(run_app, monkeypatch):
+    """A surface the engine refuses must stop and offer the door.
+
+    Not a redirect: Streamlit renders inside an isolated frame where one is
+    unreliable, and a redirect that fires on a misread refusal traps the
+    visitor in a loop. A page that explains and offers one button cannot loop —
+    but it must also not keep rendering the surface behind it.
+    """
+    from conftest import FakeContentClient
+    from content_sdk.errors import APIError
+
+    def refuse(self):
+        raise APIError(401, {"detail": "Authentication required."})
+
+    monkeypatch.setattr(FakeContentClient, "health", refuse, raising=False)
+    monkeypatch.setattr(FakeContentClient, "system", refuse, raising=False)
+
+    at = run_app("studio")
+    assert not at.exception, at.exception
+
+    text = _all_text(at)
+    assert "Sign in to Content Studio" in text
+    assert "we will send you a link" in text
+    # The surface itself must not have rendered: st.stop() ran.
+    assert "Add a source" not in text
