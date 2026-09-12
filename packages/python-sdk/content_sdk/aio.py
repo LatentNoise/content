@@ -118,6 +118,7 @@ class AsyncContentClient:
         retry: RetryConfig | None = None,
         http_client=None,
         api_key: str | None = None,
+        headers_provider=None,
     ):
         self._t = AsyncTransport(
             resolve_base_url(base_url),
@@ -125,6 +126,8 @@ class AsyncContentClient:
             retry or RetryConfig(),
             client=http_client,
             api_key=resolve_api_key(api_key),
+            # Resolved per request, never stored: see AsyncTransport.
+            headers_provider=headers_provider,
         )
 
     @property

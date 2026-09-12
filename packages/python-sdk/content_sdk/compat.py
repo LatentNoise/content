@@ -11,12 +11,79 @@ a risky rewrite during consolidation.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
+from urllib.parse import quote
 
-from ._transport import DEFAULT_TIMEOUT, RetryConfig, SyncTransport, resolve_base_url
+from ._transport import (
+    DEFAULT_TIMEOUT,
+    RetryConfig,
+    SyncTransport,
+    resolve_base_url,
+    session_cookie_header,
+)
 from .errors import APIError as ApiError
 
-__all__ = ["ApiError", "ContentClient"]
+__all__ = [
+    "ApiError",
+    "ContentClient",
+    "is_unauthenticated",
+    "sign_in_url",
+    "streamlit_visitor_headers",
+]
+
+SESSION_COOKIE = "content_session"
+
+
+def sign_in_url(api_base_url: str, come_back_to: str = "") -> str:
+    """Where to send a visitor the engine refused.
+
+    The sign-in door lives in the engine (ADR 0033), not in the surface: it is
+    the one place allowed to turn a request into an identity. `come_back_to` is
+    checked by the engine against its own allowlist, so a tampered value is
+    refused there rather than trusted here.
+    """
+    base = (api_base_url or "").rstrip("/")
+    target = f"{base}/auth/sign-in"
+    if come_back_to:
+        return f"{target}?next={quote(come_back_to, safe='')}"
+    return target
+
+
+def is_unauthenticated(error: Exception) -> bool:
+    """Did the engine refuse for want of an identity, rather than fail?
+
+    401 means "sign in"; 403 would mean "signed in, not allowed", which is a
+    different message and must not send someone back to a form they already
+    filled.
+    """
+    return (
+        getattr(error, "status_code", None) == 401
+        or getattr(error, "status", None) == 401
+    )
+
+
+def streamlit_visitor_headers(context: Any) -> dict[str, str]:
+    """The identity of the visitor a Streamlit script is currently serving.
+
+    Pass `st.context`. The browser sends its session cookie to the UI, never to
+    the engine — the UI runs on a server and calls the engine from its own
+    process. Forwarding that cookie is what makes one sign-in work through a
+    server-rendered surface.
+
+    🔴 **Call this per request, never once into a cached client.** The three UIs
+    cache a single client per process (`@st.cache_resource`), and a credential
+    stored on that shared object would be inherited by the next visitor — one
+    person's session silently becoming everybody's.
+
+    An absent or unreadable context yields no headers, which is the right answer
+    for a self-hosted instance: it asks for no credential at all.
+    """
+    try:
+        secret = (context.cookies or {}).get(SESSION_COOKIE, "")
+    except Exception:  # noqa: BLE001 — no context is not an error here
+        return {}
+    return session_cookie_header(secret, SESSION_COOKIE)
 
 
 class ContentClient:
@@ -28,10 +95,22 @@ class ContentClient:
         base_url: str | None = None,
         timeout: float = DEFAULT_TIMEOUT,
         session: Any = None,
+        headers_provider: Callable[[], dict[str, str]] | None = None,
     ):
         # `session` is accepted for signature compatibility (the old client took a
         # requests.Session); the SDK transport manages its own httpx client.
-        self._t = SyncTransport(resolve_base_url(base_url), timeout, RetryConfig())
+        #
+        # `headers_provider` is what makes a server-side UI usable by more than
+        # one person. It is called on every request, so the identity belongs to
+        # the request rather than to this object — which matters because the
+        # Streamlit UIs cache one client per process and share it across every
+        # visitor. See `streamlit_visitor_headers`.
+        self._t = SyncTransport(
+            resolve_base_url(base_url),
+            timeout,
+            RetryConfig(),
+            headers_provider=headers_provider,
+        )
 
     @property
     def base_url(self) -> str:

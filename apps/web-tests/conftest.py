@@ -12,6 +12,7 @@ a collection, otherwise a video. The shapes mirror the real /analyses and
 
 import sys
 from pathlib import Path
+from typing import ClassVar
 
 import pytest
 
@@ -95,8 +96,17 @@ UPLOADED: list[dict] = []
 class FakeContentClient:
     """Canned, contract-shaped answers keyed by the source URI."""
 
-    def __init__(self, base_url=None, timeout=0, session=None):
+    # Every instance a surface builds, so a test can assert HOW it was built
+    # and not only what it answered.
+    instances: ClassVar[list["FakeContentClient"]] = []
+
+    def __init__(self, base_url=None, timeout=0, session=None, headers_provider=None):
         self._api_keys: list[dict] = []
+        # Accepted and kept, not ignored: the UIs pass it so that a visitor's
+        # identity is resolved per request rather than parked on the shared
+        # client. A test can call it to assert what the surface would send.
+        self.headers_provider = headers_provider
+        FakeContentClient.instances.append(self)
 
     def upload_bytes(self, filename, data, media_type=""):
         """A file the user picked in the browser. The fake records it so a test

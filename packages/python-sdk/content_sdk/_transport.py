@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import os
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -55,6 +56,27 @@ def auth_headers(api_key: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {api_key}"} if api_key else {}
 
 
+def session_cookie_header(secret: str, name: str = "content_session") -> dict[str, str]:
+    """The header a server-side UI uses to act as the visitor in front of it.
+
+    A browser sends its session cookie to the *UI*, which then calls the engine
+    from its own process — a second hop the cookie never reaches on its own.
+    Replaying it here is what lets one sign-in work through a server-rendered
+    surface, without the UI ever declaring who the visitor is: it forwards a
+    secret it was given and the engine derives the identity, exactly as ADR 0030
+    requires.
+    """
+    return {"Cookie": f"{name}={secret}"} if secret else {}
+
+
+def _merge(*sources: dict[str, str] | None) -> dict[str, str]:
+    merged: dict[str, str] = {}
+    for source in sources:
+        if source:
+            merged.update(source)
+    return merged
+
+
 def _api_url(base_url: str, path: str) -> str:
     return f"{base_url}/api/v1{path}"
 
@@ -95,7 +117,13 @@ class SyncTransport:
         retry: RetryConfig,
         client: httpx.Client | None = None,
         api_key: str = "",
+        headers_provider: Callable[[], dict[str, str]] | None = None,
     ):
+        # Called on EVERY request rather than stored on the client. That is the
+        # whole point: a server-side UI serves many visitors from one process,
+        # and a credential parked on a shared client object would be inherited
+        # by whoever comes next.
+        self._headers_provider = headers_provider
         self.base_url = base_url
         self._retry = retry
         self._client = client or httpx.Client(
@@ -105,7 +133,18 @@ class SyncTransport:
         # A caller-supplied client keeps its own headers, so the credential is
         # applied per request instead of being forced onto someone else's
         # client object.
-        self._headers = auth_headers(api_key) if client is not None else {}
+        self._static_headers = auth_headers(api_key) if client is not None else {}
+
+    def _request_headers(self) -> dict[str, str]:
+        """Headers for one request: the client's own, plus whatever the caller
+        resolves right now. A provider that raises is treated as "no identity"
+        rather than breaking the call, because it usually means the request is
+        running outside the context it reads from."""
+        try:
+            dynamic = self._headers_provider() if self._headers_provider else None
+        except Exception:  # noqa: BLE001 — an absent context is not an error
+            dynamic = None
+        return _merge(self._static_headers, dynamic)
 
     def close(self) -> None:
         if self._owns_client:
@@ -131,7 +170,7 @@ class SyncTransport:
                     json=json,
                     params=params,
                     files=files,
-                    headers=self._headers,
+                    headers=self._request_headers(),
                 )
             except httpx.TransportError as exc:
                 if attempt < attempts:
@@ -187,7 +226,7 @@ class SyncTransport:
         url = _api_url(self.base_url, path)
         timeout = httpx.Timeout(connect=10.0, read=None, write=10.0, pool=10.0)
         with self._client.stream(
-            "GET", url, params=params, timeout=timeout, headers=self._headers
+            "GET", url, params=params, timeout=timeout, headers=self._request_headers()
         ) as resp:
             _raise_for_stream(resp)
             event_type, data_lines, event_id = "message", [], None
@@ -232,7 +271,9 @@ class SyncTransport:
         destination.parent.mkdir(parents=True, exist_ok=True)
         written = 0
         try:
-            with self._client.stream("GET", url, headers=self._headers) as response:
+            with self._client.stream(
+                "GET", url, headers=self._request_headers()
+            ) as response:
                 _raise_for_stream(response)
                 with partial.open("wb") as handle:
                     for chunk in response.iter_bytes(chunk_size=1024 * 256):
@@ -256,14 +297,31 @@ class AsyncTransport:
         retry: RetryConfig,
         client: httpx.AsyncClient | None = None,
         api_key: str = "",
+        headers_provider: Callable[[], dict[str, str]] | None = None,
     ):
+        # Called on EVERY request rather than stored on the client. That is the
+        # whole point: a server-side UI serves many visitors from one process,
+        # and a credential parked on a shared client object would be inherited
+        # by whoever comes next.
+        self._headers_provider = headers_provider
         self.base_url = base_url
         self._retry = retry
         self._client = client or httpx.AsyncClient(
             timeout=timeout, headers=auth_headers(api_key)
         )
         self._owns_client = client is None
-        self._headers = auth_headers(api_key) if client is not None else {}
+        self._static_headers = auth_headers(api_key) if client is not None else {}
+
+    def _request_headers(self) -> dict[str, str]:
+        """Headers for one request: the client's own, plus whatever the caller
+        resolves right now. A provider that raises is treated as "no identity"
+        rather than breaking the call, because it usually means the request is
+        running outside the context it reads from."""
+        try:
+            dynamic = self._headers_provider() if self._headers_provider else None
+        except Exception:  # noqa: BLE001 — an absent context is not an error
+            dynamic = None
+        return _merge(self._static_headers, dynamic)
 
     async def aclose(self) -> None:
         if self._owns_client:
@@ -289,7 +347,7 @@ class AsyncTransport:
                     json=json,
                     params=params,
                     files=files,
-                    headers=self._headers,
+                    headers=self._request_headers(),
                 )
             except httpx.TransportError as exc:
                 if attempt < attempts:

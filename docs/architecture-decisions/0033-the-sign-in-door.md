@@ -1,7 +1,8 @@
 # ADR 0033 — The sign-in door
 
 Status: accepted (2026-09-12) · Implements decision 4 of ADR 0030 · Related:
-0024 (no authentication), 0031 (one door for outbound email)
+0024 (no authentication), 0031 (one door for outbound email), **0034 (how a
+server-side surface carries a visitor's identity)**
 
 ## Context
 

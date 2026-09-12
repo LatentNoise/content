@@ -56,6 +56,7 @@ class ContentClient:
         retry: RetryConfig | None = None,
         http_client=None,
         api_key: str | None = None,
+        headers_provider=None,
     ):
         # No key is the correct state against a self-hosted engine, which asks
         # for none. The same code reaches a hosted one by finding a key in
@@ -67,6 +68,8 @@ class ContentClient:
             retry or RetryConfig(),
             client=http_client,
             api_key=resolve_api_key(api_key),
+            # Resolved per request, never stored: see SyncTransport.
+            headers_provider=headers_provider,
         )
 
     @property

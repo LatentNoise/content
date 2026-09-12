@@ -17,7 +17,13 @@ import shlex
 
 import streamlit as st
 from content_sdk import ORIGINAL, legal, notifications
-from content_sdk.compat import ApiError, ContentClient
+from content_sdk.compat import (
+    ApiError,
+    ContentClient,
+    is_unauthenticated,
+    sign_in_url,
+    streamlit_visitor_headers,
+)
 from content_sdk.status import ago, better_status, display, is_producible
 
 API_URL = os.getenv("CONTENT_API_URL", "http://localhost:8000")
@@ -178,9 +184,32 @@ st.markdown(
 )
 
 
+def _current_url() -> str:
+    """Where to send the visitor back after signing in.
+
+    Read from the browser's own address rather than built from configuration,
+    so a surface reached under any of its names returns to that same name. The
+    engine checks it against its allowlist anyway, so a value that cannot be
+    read is simply omitted.
+    """
+    try:
+        return str(st.context.url or "")
+    except Exception:  # noqa: BLE001 — older Streamlit, or no context
+        return ""
+
+
 @st.cache_resource
 def get_client(base_url: str) -> ContentClient:
-    return ContentClient(base_url)
+    """One client for the whole process, and an identity per request.
+
+    🔴 `@st.cache_resource` is shared by every visitor of this process. The
+    credential therefore must NOT live on this object: it is resolved on each
+    call, from the cookie the browser sent to *this* run of the script. Storing
+    it here would make one person's session everybody's.
+    """
+    return ContentClient(
+        base_url, headers_provider=lambda: streamlit_visitor_headers(st.context)
+    )
 
 
 client = get_client(API_URL)
@@ -208,6 +237,18 @@ try:
     }
     lang_prefs = config.get("language", {}) or {}
 except Exception as exc:  # noqa: BLE001
+    if is_unauthenticated(exc):
+        # The engine runs in hosted mode and this visitor has no session. Send
+        # them to the door rather than showing an error they cannot act on —
+        # the door lives in the engine, which is the only place allowed to turn
+        # a request into an identity (ADR 0033).
+        st.warning("Sign in to use this surface.")
+        st.link_button(
+            "Sign in",
+            sign_in_url(PUBLIC_API_URL or API_URL, _current_url()),
+            type="primary",
+        )
+        st.stop()
     st.error(f"⚠️ Back-end unreachable at {API_URL} — {exc}")
 
 

@@ -358,3 +358,21 @@ def test_console_access_tab_explains_what_a_key_is(run_app):
     assert "unreadable after creation" in text
     assert "No keys yet." in text
     assert "self-hosted contract, not a missing sign-in" in text
+
+
+def test_every_surface_resolves_its_visitor_per_request(run_app):
+    """The dangerous line, guarded in all three UIs at once.
+
+    `@st.cache_resource` gives one client to the whole process, shared by every
+    visitor. The credential must therefore be resolved on each request rather
+    than stored on that object — otherwise one person's session becomes the
+    next visitor's. This checks the surface actually passes a provider, on all
+    three, so adding a fourth cannot quietly skip it.
+    """
+    from conftest import FakeContentClient
+
+    for surface in ("studio", "console", "hometube"):
+        at = run_app(surface)
+        assert not at.exception, (surface, at.exception)
+        clients = [c for c in FakeContentClient.instances if c.headers_provider]
+        assert clients, f"{surface} builds its client without a headers provider"

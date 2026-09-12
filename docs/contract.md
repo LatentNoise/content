@@ -333,6 +333,12 @@ request never carries a `user_id` in a body, a query string or a custom header.
 Outside `/api/v1`, the engine also serves `/auth/sign-in` and
 `/auth/check-your-mail` — two HTML *protocol* pages, not a product UI.
 
+A **server-side** client, such as the Streamlit UIs, receives the visitor's
+cookie itself and replays it on each request (`Cookie: content_session=…`). It
+forwards a secret it was given; it never names a user (ADR 0034). The SDK's
+`headers_provider` exists for exactly this, and is called per request so that
+one shared client can serve many visitors without ever holding an identity.
+
 Reserved (declared, not implemented): `POST /plans` (a planning dry-run), `GET /plans/{id}`. A simple client posts a `GenerationRequest` directly; an advanced client analyzes then submits (`analysis_id`) — both converge on the same internal pipeline. The backend has no UI of its own (`/` redirects to `/docs`); the official UIs are separate applications (HomeTube, Studio, Console).
 
 ## 9. What "stable" means for v1
