@@ -20,6 +20,9 @@ VERSION_PYPROJECTS := apps/backend/pyproject.toml apps/cli/pyproject.toml \
 # the pin exists to prevent.
 SDK_PIN_MANIFESTS  := apps/cli/pyproject.toml apps/mcp/pyproject.toml
 EXT_DIR            := apps/browser-extension-chromium
+# The chart's appVersion is the image tag a `helm install` picks by default,
+# so a stale one silently deploys the previous release.
+CHART_DIR          := deploy/charts/content
 VERSION_MODULES    := apps/backend/content/__init__.py \
                       packages/python-sdk/content_sdk/__init__.py \
                       apps/web-hometube/app.py apps/web-studio/app.py \
@@ -130,7 +133,8 @@ version:  ## Show every version declaration and fail if they disagree
 	  grep -o 'org.opencontainers.image.version="[^"]*"' apps/backend/Dockerfile | sed 's/.*"\(.*\)"/\1/'; \
 	  grep -m1 '"version"' $(EXT_DIR)/manifest.json | sed 's/.*"\([0-9][^"]*\)".*/\1/'; \
 	  grep -ho 'content-sdk==[0-9][0-9.]*' $(SDK_PIN_MANIFESTS) | sed 's/.*==//'; \
-	  grep -o '"version": "[0-9][^"]*"' server.json | sed 's/.*: "\(.*\)"/\1/' \
+	  grep -o '"version": "[0-9][^"]*"' server.json | sed 's/.*: "\(.*\)"/\1/'; \
+	  grep -m1 '^appVersion: ' $(CHART_DIR)/Chart.yaml | sed 's/.*"\(.*\)"/\1/' \
 	); \
 	distinct=$$(echo "$$versions" | sort -u); \
 	count=$$(echo "$$distinct" | wc -l | tr -d ' '); \
@@ -185,6 +189,8 @@ version-update:  ## Set the version everywhere (asks when VERSION= is omitted)
 	done; \
 	sed -i.bak "s/\"version\": \"[0-9][^\"]*\"/\"version\": \"$$v\"/g" \
 	  server.json && rm server.json.bak; \
+	sed -i.bak "s/^appVersion: \".*\"/appVersion: \"$$v\"/" \
+	  $(CHART_DIR)/Chart.yaml && rm $(CHART_DIR)/Chart.yaml.bak; \
 	$(MAKE) --no-print-directory version; \
 	echo "next: review with 'git diff', commit, then 'make version-tag'"
 
