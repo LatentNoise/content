@@ -129,3 +129,38 @@ class Identity:
 def owner_dependency(identity: Identity):
     """FastAPI dependency yielding the owner id of the current request."""
     return Depends(identity)
+
+
+class Operator:
+    """Resolves the owner, then refuses anyone who may not operate the machine.
+
+    Operating is a **privilege, not a bigger share of the data**. The routes it
+    guards return facts about the *installation* — disk paths, occupancy, the
+    shared cache — which belong to nobody, so filtering them by owner is
+    meaningless. The question is not "whose is this" but "who may know".
+
+    403 and not 404: the caller is authenticated and the route plainly exists,
+    so pretending otherwise would only make a real operator think the engine is
+    broken. 404 is the right answer for a *resource* that may not be theirs,
+    which is a different question.
+    """
+
+    def __init__(self, identity: Identity, store):
+        self._identity = identity
+        self._store = store
+
+    async def __call__(self, request: Request) -> str:
+        owner = await self._identity(request)
+        if not self._store.is_operator(owner):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=(
+                    "This endpoint is reserved to the operator of this installation."
+                ),
+            )
+        return owner
+
+
+def operator_dependency(operator: Operator):
+    """FastAPI dependency yielding the owner id, once proven an operator."""
+    return Depends(operator)

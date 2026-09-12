@@ -15,6 +15,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from content.domain.job import ensure_job_transition
+from content.identity import LOCAL_OWNER
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS jobs (
@@ -132,7 +133,12 @@ CREATE TABLE IF NOT EXISTS users (
     owner_id      TEXT PRIMARY KEY,
     email         TEXT NOT NULL UNIQUE,   -- normalized: trimmed, lower-cased
     created_at    TEXT NOT NULL,
-    last_seen_at  TEXT NOT NULL DEFAULT ''
+    last_seen_at  TEXT NOT NULL DEFAULT '',
+    -- Operating the installation is a PRIVILEGE, not a bigger share of the
+    -- data: an operator owns their own rows like anyone else and additionally
+    -- may read facts about the machine. Hence a flag on the account rather
+    -- than a second kind of credential — one sign-in, two capabilities.
+    is_operator   INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS auth_tokens (
     token_hash  TEXT PRIMARY KEY,         -- sha256 of the token, never the token
@@ -309,6 +315,10 @@ _MIGRATIONS: list[list[str]] = [
         "  revoked_at TEXT NOT NULL DEFAULT '')",
         "CREATE INDEX IF NOT EXISTS idx_api_keys_owner "
         "ON api_keys(owner_id, created_at)",
+    ],
+    # 9: who may operate the installation.
+    [
+        "ALTER TABLE users ADD COLUMN is_operator INTEGER NOT NULL DEFAULT 0",
     ],
 ]
 
@@ -887,7 +897,7 @@ class Store:
     def account_for_email(self, email: str) -> dict | None:
         with self._conn() as conn:
             row = conn.execute(
-                "SELECT owner_id, email, created_at, last_seen_at "
+                "SELECT owner_id, email, created_at, last_seen_at, is_operator "
                 "FROM users WHERE email = ?",
                 (email,),
             ).fetchone()
@@ -896,7 +906,7 @@ class Store:
     def account_for_owner(self, owner_id: str) -> dict | None:
         with self._conn() as conn:
             row = conn.execute(
-                "SELECT owner_id, email, created_at, last_seen_at "
+                "SELECT owner_id, email, created_at, last_seen_at, is_operator "
                 "FROM users WHERE owner_id = ?",
                 (owner_id,),
             ).fetchone()
@@ -932,6 +942,29 @@ class Store:
                 "UPDATE users SET last_seen_at = ? WHERE owner_id = ?",
                 (utcnow(), owner_id),
             )
+
+    def set_operator(self, owner_id: str, is_operator: bool) -> None:
+        """Grant or withdraw the privilege of operating this installation."""
+        with self._conn() as conn:
+            conn.execute(
+                "UPDATE users SET is_operator = ? WHERE owner_id = ?",
+                (1 if is_operator else 0, owner_id),
+            )
+
+    def is_operator(self, owner_id: str) -> bool:
+        """May this owner see facts about the machine?
+
+        `local` always may, and that is not a branch on the deployment mode: a
+        self-hosted instance has exactly one user, who is by definition the
+        person running it. Nothing here asks "am I hosted".
+        """
+        if owner_id == LOCAL_OWNER:
+            return True
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT is_operator FROM users WHERE owner_id = ?", (owner_id,)
+            ).fetchone()
+        return bool(row and row["is_operator"])
 
     def create_auth_token(self, token_hash: str, email: str, expires_at: str) -> None:
         with self._conn() as conn:

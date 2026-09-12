@@ -39,7 +39,7 @@ from content.analysis.service import (
     AnalysisNotFound,
     AnalysisService,
 )
-from content.api.auth import Identity
+from content.api.auth import Identity, Operator
 from content.api.auth_routes import build_auth_router, build_session_router
 from content.application.collections import attach_collection_runner
 from content.application.submit import submit_generation
@@ -90,7 +90,7 @@ from content.storage.layout import (
     delivery_root_for,
 )
 from content.storage.migrate_owner import migrate_jobs_to_owner
-from content.storage.paths import storage_report
+from content.storage.paths import owner_storage_report, storage_report
 
 
 class AnalysisRequest(BaseModel):
@@ -343,6 +343,9 @@ def create_app(
     # without it is what tests/test_route_ownership.py refuses to let happen.
     identity = Identity(settings.auth_mode, store=store, settings=settings)
     owner = Depends(identity)
+    # Operating the machine is a privilege on top of being a user, not a
+    # separate credential: same sign-in, one extra capability.
+    operator = Depends(Operator(identity, store))
     analysis_service = AnalysisService(store, providers, settings)
     # A collection orchestrates the canonical pipeline for its members
     # (ADR 0019), so its runner needs the analysis service and the very
@@ -512,24 +515,48 @@ def create_app(
         return describe_architecture(providers)
 
     @app.get("/api/v1/storage", tags=["system"])
-    def storage() -> dict:
-        """Disk usage per storage family (jobs / delivery / tmp / cache) for the
-        admin console — bytes, file counts, and a few useful sub-counts."""
+    def storage(owner_id: str = owner) -> dict:
+        """What **you** occupy: your jobs, your uploads, your delivered files.
+
+        It used to report the whole installation, which was the right answer
+        when an instance had one user and the wrong one the moment it had two —
+        it published the server's own paths to anybody who asked. The
+        installation-wide view moved to `/api/v1/operator/storage`.
+
+        Paths are absent on purpose: an owner needs to know how much they hold,
+        never where the machine keeps it.
+        """
+        return owner_storage_report(settings, owner_id)
+
+    @app.get("/api/v1/operator/storage", tags=["operator"])
+    def operator_storage(owner_id: str = operator) -> dict:
+        """Disk usage per storage family across the whole installation."""
         return storage_report(settings)
 
-    @app.get("/api/v1/cache", tags=["system"])
-    def cache_list() -> dict:
-        """Cached analyses (newest first) + status — for the console cache view."""
+    @app.get("/api/v1/cache", tags=["operator"])
+    def cache_list(owner_id: str = operator) -> dict:
+        """Cached analyses (newest first) + status.
+
+        Operator-only, and not owner-filtered, because the cache belongs to
+        nobody: it holds facts about public resources (a page's title, a
+        video's duration), deliberately shared so two people analysing the same
+        URL pay for it once (ADR 0030). Sharing it is the point; showing its
+        contents to everyone is not.
+        """
         return {
             "enabled": settings.cache_enabled,
             "ttl_hours": settings.analysis_ttl_hours,
             "analyses": store.list_analyses(limit=100),
         }
 
-    @app.post("/api/v1/cache/purge", tags=["system"])
-    def cache_purge() -> dict:
+    @app.post("/api/v1/cache/purge", tags=["operator"])
+    def cache_purge(owner_id: str = operator) -> dict:
         """Drop all cached analyses (DB rows + durable JSON files). Delivered
-        artifacts are never touched."""
+        artifacts are never touched.
+
+        Operator-only for a blunter reason than reading it: this takes a
+        decision on behalf of every user of the installation.
+        """
         purged_rows = store.purge_analyses()
         cache_root = settings.cache_dir or (settings.data_dir / "cache")
         purged_files = AnalysisJsonCache(

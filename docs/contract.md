@@ -314,9 +314,19 @@ them, because every request already belongs to the single implicit user.
 | `GET` | `/auth/callback` | Follow the link: the token is burnt, a session cookie is set, the browser is redirected to a `next` that must be on the allowlist |
 | `GET` | `/auth/me` | The current owner, and the address behind it when there is an account |
 | `POST` | `/auth/logout` | Revoke this session (204) |
+| `GET` | `/storage` | **What you hold**: your jobs, uploads and delivered files, plus a total. No paths |
+| `GET` | `/operator/storage` | Disk usage across the installation, paths included. **Operator only** (403 otherwise) |
+| `GET` | `/cache` · `POST` `/cache/purge` | The shared resource-fact cache. **Operator only** — it belongs to nobody, and purging decides for everyone |
 | `POST` | `/auth/keys` | Mint a named API key. **The secret is in this response and nowhere else** — only its fingerprint is stored |
 | `GET` | `/auth/keys` | This owner's keys: name, created, last used. Never the key |
 | `DELETE` | `/auth/keys/{id}` | Revoke one key (204); an id that is not yours answers 404, not 403 |
+
+**Operating the installation is a privilege, not a bigger share of the data**
+(ADR 0035). An operator owns their rows like anyone else and may additionally
+read facts about the machine. `GET /auth/me` reports `is_operator`, so a client
+can show or hide those views without probing a route to see whether it gets a
+403. On a self-hosted instance the single implicit user is always the operator,
+which is a fact about that owner and not a branch on the deployment mode.
 
 A program cannot hold a cookie, so it holds a key instead: `Authorization:
 Bearer ck_live_…`. Two carriers, one outcome — the API key of a program and the

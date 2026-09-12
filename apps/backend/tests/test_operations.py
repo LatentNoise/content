@@ -374,13 +374,24 @@ def test_system_endpoint_reports_inventory(client):
     assert "ytdlp" in names  # the fake provider registers under this name
 
 
-def test_storage_endpoint_reports_families(client):
-    body = client.get("/api/v1/storage").json()
+def test_the_operator_storage_endpoint_reports_families(client):
+    """The installation-wide view, which moved under /operator when the
+    owner-scoped one took the plain name: it prints the server's own paths,
+    and that is the operator's business alone."""
+    body = client.get("/api/v1/operator/storage").json()
     # Five since ADR 0020: uploads are their own lifecycle, and an operator
     # asking "what is using my disk" must be able to see them.
     assert set(body) == {"jobs", "delivery", "tmp", "uploads", "cache"}
     assert "bytes" in body["jobs"] and "count" in body["jobs"]
     assert {"bytes", "count", "ttl_hours"} <= set(body["uploads"])
+
+
+def test_the_plain_storage_endpoint_reports_the_caller(client):
+    body = client.get("/api/v1/storage").json()
+    assert body["owner_id"] == "local"
+    assert {"jobs", "delivery", "uploads", "total_bytes"} <= set(body)
+    # Never the machine's layout: how much you hold, not where it is kept.
+    assert "path" not in str(body)
 
 
 def test_identical_playlist_reuses_every_entry(pipeline):

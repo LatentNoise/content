@@ -178,6 +178,57 @@ def _dir_stats(path: Path) -> dict:
     return {"bytes": total, "files": count}
 
 
+def owner_storage_report(settings, owner_id: str) -> dict:
+    """What one owner occupies, and where.
+
+    The same shape as `storage_report` minus the families that belong to the
+    installation rather than to anyone: the shared fact cache is not theirs,
+    and the server's own paths are not their business. What is theirs is what
+    ownership already separated on disk — their jobs, their uploads, their
+    delivered files when the library is per-owner.
+
+    Paths are deliberately absent. An owner needs to know how much they hold,
+    never where the machine keeps it.
+    """
+    safe_segment(owner_id, "owner_id")
+    paths = StoragePaths.from_settings(settings)
+    jobs_root = paths.jobs_root / owner_id
+    tmp_root = Path(settings.tmp_dir or Path(settings.data_dir) / "tmp") / owner_id
+    uploads_root = (
+        Path(
+            getattr(settings, "uploads_dir", None)
+            or Path(settings.data_dir) / "uploads"
+        )
+        / owner_id
+    )
+    # Imported here rather than at module scope: `layout` imports this module,
+    # so a top-level import would be a cycle.
+    from content.storage.layout import delivery_root_for
+
+    root = delivery_root_for(settings, owner_id)
+    scope = getattr(settings, "delivery_scope", "shared")
+    # Under `shared` the library belongs to everyone, so none of it is this
+    # owner's to report — counting it would bill them for other people's files.
+    delivery_root = root if (root and scope == "per_owner") else None
+
+    jobs = _dir_stats(jobs_root)
+    job_count = (
+        sum(1 for p in jobs_root.iterdir() if p.is_dir()) if jobs_root.exists() else 0
+    )
+    delivery = _dir_stats(delivery_root) if delivery_root else {"bytes": 0, "files": 0}
+    uploads = _dir_stats(uploads_root)
+    tmp = _dir_stats(tmp_root)
+    return {
+        "owner_id": owner_id,
+        "jobs": {**jobs, "count": job_count},
+        "delivery": delivery,
+        "uploads": uploads,
+        "tmp": tmp,
+        # The one number a quota is read against, and the one a person asks for.
+        "total_bytes": jobs["bytes"] + delivery["bytes"] + uploads["bytes"],
+    }
+
+
 def storage_report(settings) -> dict:
     """Disk usage per storage family for observability (admin console).
 

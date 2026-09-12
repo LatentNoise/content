@@ -16,30 +16,33 @@ import pytest
 from fastapi.routing import APIRoute
 
 from content.api.app import create_app
-from content.api.auth import Identity
+from content.api.auth import Identity, Operator
 from content.identity import LOCAL_OWNER
 
 # Routes that legitimately carry no owner, each with the reason it is safe.
 #
 # The rule for this list: a route belongs here only if it returns facts about
-# the *installation* — never a byte that a caller stored. When the hosted
-# offering ships, the ones marked OPERATOR stop being public and become
-# operator-only; they are not owner-filtered because they have no owner, not
-# because they are harmless.
+# the *installation* — never a byte that a caller stored, and nothing an
+# operator would mind a stranger reading.
 #
-# `/api/v1/folders` used to be here. It left the list when the delivery library
-# gained a per-owner policy: under `per_owner` it lists the caller's own
-# subtree, so it has an owner and is filtered like any other data route.
+# Two routes left this list rather than staying in it with a promise:
+#
+# - `/api/v1/folders` gained an owner when the delivery library became
+#   per-owner: it lists the caller's own subtree.
+# - `/api/v1/storage` was split. The owner-scoped half kept the name and
+#   reports what *you* hold; the installation-wide half moved to
+#   `/api/v1/operator/storage`. It used to publish the server's disk paths to
+#   anyone who asked, which went unnoticed while a password sat in front of it.
+#
+# `/api/v1/cache` and `/cache/purge` are operator-only for the same reason, and
+# `is_operator` guards them — they have no owner, they have a privilege.
 OWNERLESS = {
     ("GET", "/"): "service banner",
     ("GET", "/api/v1/health"): "liveness for the container healthcheck",
     ("GET", "/api/v1/system"): "engine version and capabilities",
     ("GET", "/api/v1/notifications"): "installation-level notices",
     ("GET", "/api/v1/catalog"): "what the engine can do — static",
-    ("GET", "/api/v1/config"): "OPERATOR: effective configuration",
-    ("GET", "/api/v1/storage"): "OPERATOR: disk occupancy of the instance",
-    ("GET", "/api/v1/cache"): "OPERATOR: shared resource-fact cache",
-    ("POST", "/api/v1/cache/purge"): "OPERATOR: clears the shared fact cache",
+    ("GET", "/api/v1/config"): "client-facing settings; holds nobody's data",
     ("POST", "/api/v1/capabilities"): "resolves against the installation",
     # The sign-in door (ADR 0033). These four run *before* anyone is known —
     # they are what establishes an identity, so requiring one would be
@@ -89,8 +92,11 @@ def test_every_data_route_resolves_an_owner():
     for method, path, route in _routes(app):
         if (method, path) in OWNERLESS:
             continue
+        # Either door counts: a plain identity, or an identity plus the
+        # privilege of operating the machine. Both end at an owner id, which is
+        # what this guard is about.
         resolves_owner = any(
-            isinstance(dependency.call, Identity)
+            isinstance(dependency.call, (Identity, Operator))
             for dependency in route.dependant.dependencies
         )
         if not resolves_owner:

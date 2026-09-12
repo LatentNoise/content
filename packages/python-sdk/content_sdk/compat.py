@@ -128,7 +128,13 @@ class ContentClient:
         return self._t.get("/system")
 
     def storage(self) -> dict:
+        """What the CURRENT owner occupies. Bytes, not paths."""
         return self._t.get("/storage")
+
+    def operator_storage(self) -> dict:
+        """Disk usage across the whole installation. Operator-only, and it
+        reports the server's own paths — which is why it is."""
+        return self._t.get("/operator/storage")
 
     def catalog(self) -> dict:
         return self._t.get("/catalog")

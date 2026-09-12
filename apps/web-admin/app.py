@@ -742,11 +742,23 @@ with tab_jobs:
 # --- Storage & Cache -----------------------------------------------------------
 
 with tab_storage:
+    # The installation-wide view, which is operator-only: it prints the
+    # server's own paths. A console opened by someone who is not the operator
+    # is told so plainly rather than shown a raw 403.
     try:
-        report = client.storage()
+        report = client.operator_storage()
+    except ApiError as exc:
+        report = {}
+        if getattr(exc, "status", None) == 403:
+            st.info(
+                "Disk usage across the installation is reserved to its "
+                "operator. Your own usage is on the Access tab."
+            )
+        else:
+            st.error(f"/operator/storage failed: {exc}")
     except Exception as exc:  # noqa: BLE001
         report = {}
-        st.error(f"/storage failed: {exc}")
+        st.error(f"/operator/storage failed: {exc}")
     if report:
         c = st.columns(4)
         c[0].metric(
@@ -833,15 +845,36 @@ with tab_access:
         me = {}
         st.error(f"/auth/me failed: {exc}")
     if me:
+        badge = " · **operator**" if me.get("is_operator") else ""
         if me.get("account"):
-            st.markdown(f"Signed in as **{me['email']}** — `{me['owner_id']}`")
+            st.markdown(f"Signed in as **{me['email']}** — `{me['owner_id']}`{badge}")
         else:
-            st.markdown(f"Owner `{me['owner_id']}`")
+            st.markdown(f"Owner `{me['owner_id']}`{badge}")
+        if me.get("is_operator"):
+            st.caption(
+                "Operator: you own your rows like anyone else, and you may "
+                "additionally read facts about the machine — disk usage across "
+                "the installation, the shared analysis cache."
+            )
             st.caption(
                 "This instance asks for no credential (CONTENT_AUTH_MODE=none): "
                 "one implicit user, no account behind it. That is the "
                 "self-hosted contract, not a missing sign-in."
             )
+
+    st.divider()
+    st.subheader("Your storage")
+    try:
+        mine = client.storage()
+        columns = st.columns(4)
+        columns[0].metric("Total", _human_bytes(mine["total_bytes"]))
+        columns[1].metric(
+            "Jobs", _human_bytes(mine["jobs"]["bytes"]), f"{mine['jobs']['count']} jobs"
+        )
+        columns[2].metric("Delivered", _human_bytes(mine["delivery"]["bytes"]))
+        columns[3].metric("Uploads", _human_bytes(mine["uploads"]["bytes"]))
+    except Exception as exc:  # noqa: BLE001
+        st.error(f"/storage failed: {exc}")
 
     st.divider()
     st.subheader("API keys")

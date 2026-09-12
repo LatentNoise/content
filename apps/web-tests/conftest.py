@@ -303,8 +303,14 @@ class FakeContentClient:
     # --- console feeds ---------------------------------------------------------
 
     def whoami(self):
-        # A self-hosted engine: one implicit user, no account behind it.
-        return {"owner_id": "local", "email": "", "account": False}
+        # A self-hosted engine: one implicit user, no account behind it — who
+        # is also, by definition, the operator of the machine they run.
+        return {
+            "owner_id": "local",
+            "email": "",
+            "account": False,
+            "is_operator": True,
+        }
 
     def api_keys(self):
         return list(self._api_keys)
@@ -354,11 +360,24 @@ class FakeContentClient:
         }
 
     def storage(self):
+        """What the CURRENT owner holds: bytes, never the machine's paths."""
+        return {
+            "owner_id": "local",
+            "jobs": {"bytes": 2048, "files": 3, "count": 1},
+            "delivery": {"bytes": 1024, "files": 1},
+            "uploads": {"bytes": 0, "files": 0},
+            "tmp": {"bytes": 0, "files": 0},
+            "total_bytes": 3072,
+        }
+
+    def operator_storage(self):
+        """The installation-wide view, paths included — operator-only."""
         z = {"path": "/x", "bytes": 0, "files": 0}
         return {
             "jobs": {**z, "count": 0},
             "delivery": {**z, "folders": 0},
             "tmp": z,
+            "uploads": {**z, "count": 0, "ttl_hours": 24.0, "quota_bytes": 0},
             "cache": {**z, "enabled": True, "cached_analyses": 0},
         }
 

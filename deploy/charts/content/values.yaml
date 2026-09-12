@@ -108,6 +108,9 @@ config:
   # Where a sign-in lands when the link named no destination. Empty drops the
   # visitor on the engine, which serves API documentation.
   CONTENT_SIGN_IN_DEFAULT_TARGET: ""
+  # Who may read facts about the machine (ADR 0035). Granted at sign-in;
+  # unlisting never revokes it.
+  CONTENT_OPERATOR_EMAILS: ""
   # The outbound-email service (ADR 0031), by service name inside the cluster.
   # Empty = the sign-in link is written to the log instead of being sent.
   CONTENT_MAILER_URL: ""

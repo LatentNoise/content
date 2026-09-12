@@ -227,6 +227,15 @@ def build_auth_router(settings, store, mailer) -> APIRouter:
         account = store.account_for_email(claimed["email"]) or store.create_account(
             credentials.new_owner_id(), claimed["email"]
         )
+        # Granting the privilege at sign-in is how the FIRST operator exists:
+        # there is nobody to promote them. Listing an address grants it;
+        # unlisting does not revoke it, because withdrawing a privilege is a
+        # deliberate act on the account and not a side effect of editing a file.
+        if claimed["email"] in settings.operator_emails and not account.get(
+            "is_operator"
+        ):
+            store.set_operator(account["owner_id"], True)
+            log.info("granted the operator privilege to %s", account["owner_id"])
         secret = credentials.new_session_secret()
         store.create_session(
             credentials.fingerprint(secret),
@@ -314,6 +323,9 @@ def build_session_router(settings, store, owner_dependency) -> APIRouter:
         return {
             "owner_id": owner_id,
             "email": account["email"] if account else "",
+            # Surfaced so a UI can show or hide operator views without probing
+            # a route to see whether it gets a 403.
+            "is_operator": store.is_operator(owner_id),
             # A self-hosted instance has one implicit user and no account row.
             # Saying so plainly beats a client guessing from an empty email.
             "account": account is not None,

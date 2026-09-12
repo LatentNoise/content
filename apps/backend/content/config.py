@@ -109,6 +109,12 @@ class ContentSettings:
     # sign-in page. Empty falls back to the engine itself, which shows API
     # documentation and is nobody's idea of a welcome.
     sign_in_default_target: str = ""
+    # Who operates this installation. Addresses listed here get the operator
+    # flag the moment they sign in, which is how the first one is granted
+    # without a chicken-and-egg problem — there is no operator to promote the
+    # first operator. Removing an address does not revoke the flag: that is a
+    # deliberate act through the account, not a side effect of editing a file.
+    operator_emails: tuple[str, ...] = field(default_factory=tuple)
     magic_link_ttl_minutes: float = 15.0
     magic_link_max_per_hour: int = 5
     # Where a sign-in may send the browser afterwards. An open redirect on a
@@ -393,6 +399,15 @@ def describe_environment(
             False,
             f"{settings.session_ttl_hours:g}",
             "How long a session lives, slid forward while it is used.",
+        ),
+        (
+            "CONTENT_OPERATOR_EMAILS",
+            "security",
+            False,
+            ",".join(settings.operator_emails),
+            "Addresses granted the operator privilege on sign-in. An operator "
+            "owns their rows like anyone else and may additionally read facts "
+            "about the machine.",
         ),
         (
             "CONTENT_SIGN_IN_DEFAULT_TARGET",
@@ -716,6 +731,11 @@ def settings_from_env() -> ContentSettings:
             os.getenv("CONTENT_SESSION_COOKIE_SECURE"), True
         ),
         session_ttl_hours=_to_float(os.getenv("CONTENT_SESSION_TTL_HOURS"), 720.0),
+        operator_emails=tuple(
+            address.strip().lower()
+            for address in (os.getenv("CONTENT_OPERATOR_EMAILS") or "").split(",")
+            if address.strip()
+        ),
         sign_in_default_target=(os.getenv("CONTENT_SIGN_IN_DEFAULT_TARGET") or "")
         .strip()
         .rstrip("/"),
