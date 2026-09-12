@@ -33,6 +33,28 @@ def resolve_base_url(base_url: str | None) -> str:
     return (base_url or os.getenv("CONTENT_API_URL", DEFAULT_BASE_URL)).rstrip("/")
 
 
+def resolve_api_key(api_key: str | None) -> str:
+    """The credential this client presents, if it has one.
+
+    An empty string means "no credential", which is exactly right against a
+    self-hosted engine: `CONTENT_AUTH_MODE=none` asks for nothing and every
+    request belongs to the single implicit user. The same code reaches a
+    hosted engine by finding a key in `CONTENT_API_KEY`.
+    """
+    return (
+        api_key if api_key is not None else os.getenv("CONTENT_API_KEY", "")
+    ).strip()
+
+
+def auth_headers(api_key: str) -> dict[str, str]:
+    """The secret travels in `Authorization`, and only there.
+
+    Never in the body — it would be written to logs — and never in a query
+    string, which survives in browser history, proxy logs and `Referer`.
+    """
+    return {"Authorization": f"Bearer {api_key}"} if api_key else {}
+
+
 def _api_url(base_url: str, path: str) -> str:
     return f"{base_url}/api/v1{path}"
 
@@ -72,11 +94,18 @@ class SyncTransport:
         timeout: float,
         retry: RetryConfig,
         client: httpx.Client | None = None,
+        api_key: str = "",
     ):
         self.base_url = base_url
         self._retry = retry
-        self._client = client or httpx.Client(timeout=timeout)
+        self._client = client or httpx.Client(
+            timeout=timeout, headers=auth_headers(api_key)
+        )
         self._owns_client = client is None
+        # A caller-supplied client keeps its own headers, so the credential is
+        # applied per request instead of being forced onto someone else's
+        # client object.
+        self._headers = auth_headers(api_key) if client is not None else {}
 
     def close(self) -> None:
         if self._owns_client:
@@ -97,7 +126,12 @@ class SyncTransport:
         for attempt in range(attempts + 1):
             try:
                 resp = self._client.request(
-                    method, url, json=json, params=params, files=files
+                    method,
+                    url,
+                    json=json,
+                    params=params,
+                    files=files,
+                    headers=self._headers,
                 )
             except httpx.TransportError as exc:
                 if attempt < attempts:
@@ -152,7 +186,9 @@ class SyncTransport:
         """
         url = _api_url(self.base_url, path)
         timeout = httpx.Timeout(connect=10.0, read=None, write=10.0, pool=10.0)
-        with self._client.stream("GET", url, params=params, timeout=timeout) as resp:
+        with self._client.stream(
+            "GET", url, params=params, timeout=timeout, headers=self._headers
+        ) as resp:
             _raise_for_stream(resp)
             event_type, data_lines, event_id = "message", [], None
             for line in resp.iter_lines():
@@ -196,7 +232,7 @@ class SyncTransport:
         destination.parent.mkdir(parents=True, exist_ok=True)
         written = 0
         try:
-            with self._client.stream("GET", url) as response:
+            with self._client.stream("GET", url, headers=self._headers) as response:
                 _raise_for_stream(response)
                 with partial.open("wb") as handle:
                     for chunk in response.iter_bytes(chunk_size=1024 * 256):
@@ -219,11 +255,15 @@ class AsyncTransport:
         timeout: float,
         retry: RetryConfig,
         client: httpx.AsyncClient | None = None,
+        api_key: str = "",
     ):
         self.base_url = base_url
         self._retry = retry
-        self._client = client or httpx.AsyncClient(timeout=timeout)
+        self._client = client or httpx.AsyncClient(
+            timeout=timeout, headers=auth_headers(api_key)
+        )
         self._owns_client = client is None
+        self._headers = auth_headers(api_key) if client is not None else {}
 
     async def aclose(self) -> None:
         if self._owns_client:
@@ -244,7 +284,12 @@ class AsyncTransport:
         for attempt in range(attempts + 1):
             try:
                 resp = await self._client.request(
-                    method, url, json=json, params=params, files=files
+                    method,
+                    url,
+                    json=json,
+                    params=params,
+                    files=files,
+                    headers=self._headers,
                 )
             except httpx.TransportError as exc:
                 if attempt < attempts:

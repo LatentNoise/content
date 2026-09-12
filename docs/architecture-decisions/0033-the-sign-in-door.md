@@ -105,6 +105,27 @@ walks nested routers.
 - With no mailer configured, the link is written to the log. That is not a
   degraded mode for a self-hosted instance, and it is how an operator recovers
   when the mail service is down.
-- API keys (ADR 0030, decision 6) join at the same seam and change nothing
-  else: `_from_credential` will accept a `Bearer` key exactly as it accepts a
+- API keys (ADR 0030, decision 6) joined at the same seam the same day, and
+  changed nothing else: `_from_credential` tries a `Bearer` key first, then the
   cookie. Two carriers, one outcome.
+
+## Addendum — named API keys, same day
+
+A key is 32 random bytes behind the readable prefix `ck_live_`, which exists so
+the value is recognisable in a log and detectable by the secret scanners that
+watch public repositories. Only its fingerprint is stored, so a key is
+**unreadable after creation by anyone, the operator included**.
+
+A key is looked up *by* fingerprint rather than compared against a list, which
+is what makes a wrong key cost the same as a right one — an index lookup on a
+hash leaks nothing through timing.
+
+Keys are named and dated by whoever creates them, because the point of naming
+them is revoking one without touching the others. Revocation is scoped to the
+owner, so an id copied from someone else's list answers 404 and not 403: 403
+would confirm the id exists.
+
+`none` mode can mint keys too, and that is deliberate rather than an oversight.
+They belong to `local`, they authenticate nothing that was not already open,
+and they mean an operator can prepare keys *before* switching an instance to
+`token` instead of being locked out at the moment they flip it.

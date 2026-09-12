@@ -11,7 +11,13 @@ import json
 from pathlib import Path
 from typing import Any, Self
 
-from ._transport import DEFAULT_TIMEOUT, RetryConfig, SyncTransport, resolve_base_url
+from ._transport import (
+    DEFAULT_TIMEOUT,
+    RetryConfig,
+    SyncTransport,
+    resolve_api_key,
+    resolve_base_url,
+)
 from .models import (
     SCHEMA_VERSION,
     AnalysisData,
@@ -49,12 +55,18 @@ class ContentClient:
         timeout: float = DEFAULT_TIMEOUT,
         retry: RetryConfig | None = None,
         http_client=None,
+        api_key: str | None = None,
     ):
+        # No key is the correct state against a self-hosted engine, which asks
+        # for none. The same code reaches a hosted one by finding a key in
+        # CONTENT_API_KEY — so a script moves between the two by changing its
+        # environment, not its imports.
         self._t = SyncTransport(
             resolve_base_url(base_url),
             timeout,
             retry or RetryConfig(),
             client=http_client,
+            api_key=resolve_api_key(api_key),
         )
 
     @property

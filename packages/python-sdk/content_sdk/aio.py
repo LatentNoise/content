@@ -11,7 +11,13 @@ import asyncio
 from pathlib import Path
 from typing import Any, Self
 
-from ._transport import DEFAULT_TIMEOUT, AsyncTransport, RetryConfig, resolve_base_url
+from ._transport import (
+    DEFAULT_TIMEOUT,
+    AsyncTransport,
+    RetryConfig,
+    resolve_api_key,
+    resolve_base_url,
+)
 from .client import _source_body, _sources_list
 from .models import (
     SCHEMA_VERSION,
@@ -111,12 +117,14 @@ class AsyncContentClient:
         timeout: float = DEFAULT_TIMEOUT,
         retry: RetryConfig | None = None,
         http_client=None,
+        api_key: str | None = None,
     ):
         self._t = AsyncTransport(
             resolve_base_url(base_url),
             timeout,
             retry or RetryConfig(),
             client=http_client,
+            api_key=resolve_api_key(api_key),
         )
 
     @property

@@ -314,6 +314,18 @@ them, because every request already belongs to the single implicit user.
 | `GET` | `/auth/callback` | Follow the link: the token is burnt, a session cookie is set, the browser is redirected to a `next` that must be on the allowlist |
 | `GET` | `/auth/me` | The current owner, and the address behind it when there is an account |
 | `POST` | `/auth/logout` | Revoke this session (204) |
+| `POST` | `/auth/keys` | Mint a named API key. **The secret is in this response and nowhere else** — only its fingerprint is stored |
+| `GET` | `/auth/keys` | This owner's keys: name, created, last used. Never the key |
+| `DELETE` | `/auth/keys/{id}` | Revoke one key (204); an id that is not yours answers 404, not 403 |
+
+A program cannot hold a cookie, so it holds a key instead: `Authorization:
+Bearer ck_live_…`. Two carriers, one outcome — the API key of a program and the
+session cookie of a browser are different transports for the same question, and
+they meet at the same single place that establishes identity. The readable
+`ck_live_` prefix exists so a key is recognisable in a log and detectable by
+the secret scanners that watch public repositories. The SDK reads one from
+`CONTENT_API_KEY`, so the same script reaches a self-hosted and a hosted engine
+by changing its environment rather than its imports.
 
 The credential is a cookie the server sets, never something a client builds:
 **the client sends a secret, the server derives the identity** (ADR 0030). A

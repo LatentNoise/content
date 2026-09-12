@@ -35,6 +35,21 @@ from content.persistence.store import utcnow
 _SLIDE_AFTER_SECONDS = 3600
 
 
+def _is_recent(timestamp: str) -> bool:
+    """Was this seen inside the write-coalescing window?
+
+    An unreadable or missing timestamp counts as *not* recent, so the write
+    happens and repairs the row rather than being skipped forever.
+    """
+    if not timestamp:
+        return False
+    try:
+        seen = datetime.fromisoformat(timestamp)
+    except ValueError:
+        return False
+    return (datetime.now(timezone.utc) - seen).total_seconds() < _SLIDE_AFTER_SECONDS
+
+
 class Identity:
     """Resolves the owner of a request. One instance per application."""
 
@@ -67,7 +82,26 @@ class Identity:
             # Nothing to check against: refuse rather than let one through.
             # An unfinished check fails closed.
             return None
-        return self._from_session_cookie(request)
+        # The Bearer header first: a program states its credential explicitly,
+        # and a browser that happens to carry both should be treated as the
+        # program it is pretending to be.
+        return self._from_api_key(request) or self._from_session_cookie(request)
+
+    def _from_api_key(self, request: Request) -> str | None:
+        scheme, _, presented = request.headers.get("authorization", "").partition(" ")
+        if scheme.lower() != "bearer" or not presented.strip():
+            return None
+        key = self._store.api_key_owner(credentials.fingerprint(presented.strip()))
+        if key is None:
+            return None
+        self._maybe_touch_key(key)
+        return key["owner_id"]
+
+    def _maybe_touch_key(self, key: dict) -> None:
+        """Record use, but not on every single request."""
+        if _is_recent(key.get("last_used_at", "")):
+            return
+        self._store.touch_api_key(key["id"])
 
     def _from_session_cookie(self, request: Request) -> str | None:
         presented = request.cookies.get(self._settings.session_cookie_name, "")
@@ -83,12 +117,7 @@ class Identity:
 
     def _maybe_slide(self, session_hash: str, session: dict) -> None:
         """Keep an actively used session alive, without writing every time."""
-        try:
-            last_seen = datetime.fromisoformat(session["last_seen_at"])
-        except (ValueError, KeyError):
-            return
-        age = (datetime.now(timezone.utc) - last_seen).total_seconds()
-        if age < _SLIDE_AFTER_SECONDS:
+        if _is_recent(session.get("last_seen_at", "")):
             return
         expires_at = (
             datetime.now(timezone.utc)

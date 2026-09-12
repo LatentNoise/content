@@ -153,6 +153,25 @@ CREATE TABLE IF NOT EXISTS sessions (
 );
 CREATE INDEX IF NOT EXISTS idx_sessions_owner
     ON sessions(owner_id, created_at);
+
+-- Named API keys (ADR 0030, decision 6). A program cannot hold a session
+-- cookie, so it holds one of these instead. Same rule as everywhere else here:
+-- the fingerprint is stored, never the key.
+--
+-- `id` exists so a key can be revoked by name from a list; the hash is what a
+-- request is looked up by, and is indexed for it. Looking a key up by its
+-- fingerprint is also what makes a wrong key cost the same as a right one.
+CREATE TABLE IF NOT EXISTS api_keys (
+    id            TEXT PRIMARY KEY,
+    key_hash      TEXT NOT NULL UNIQUE,
+    owner_id      TEXT NOT NULL,
+    name          TEXT NOT NULL,
+    created_at    TEXT NOT NULL,
+    last_used_at  TEXT NOT NULL DEFAULT '',
+    revoked_at    TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_api_keys_owner
+    ON api_keys(owner_id, created_at);
 """
 
 
@@ -277,6 +296,19 @@ _MIGRATIONS: list[list[str]] = [
         "  revoked_at TEXT NOT NULL DEFAULT '')",
         "CREATE INDEX IF NOT EXISTS idx_sessions_owner "
         "ON sessions(owner_id, created_at)",
+    ],
+    # 8: named API keys (ADR 0030, decision 6).
+    [
+        "CREATE TABLE IF NOT EXISTS api_keys ("
+        "  id TEXT PRIMARY KEY,"
+        "  key_hash TEXT NOT NULL UNIQUE,"
+        "  owner_id TEXT NOT NULL,"
+        "  name TEXT NOT NULL,"
+        "  created_at TEXT NOT NULL,"
+        "  last_used_at TEXT NOT NULL DEFAULT '',"
+        "  revoked_at TEXT NOT NULL DEFAULT '')",
+        "CREATE INDEX IF NOT EXISTS idx_api_keys_owner "
+        "ON api_keys(owner_id, created_at)",
     ],
 ]
 
@@ -1010,6 +1042,66 @@ class Store:
                 (utcnow(), owner_id),
             )
         return cursor.rowcount
+
+    def create_api_key(
+        self, key_id: str, key_hash: str, owner_id: str, name: str
+    ) -> dict:
+        now = utcnow()
+        with self._conn() as conn:
+            conn.execute(
+                "INSERT INTO api_keys (id, key_hash, owner_id, name, created_at) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (key_id, key_hash, owner_id, name, now),
+            )
+        return {
+            "id": key_id,
+            "name": name,
+            "created_at": now,
+            "last_used_at": "",
+        }
+
+    def api_key_owner(self, key_hash: str) -> dict | None:
+        """The live key behind a presented secret, or None.
+
+        Looked up by fingerprint rather than compared against a list, which is
+        what makes a wrong key cost the same as a right one: an index lookup
+        on a hash reveals nothing through timing about the secret.
+        """
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT id, owner_id, last_used_at FROM api_keys "
+                "WHERE key_hash = ? AND revoked_at = ''",
+                (key_hash,),
+            ).fetchone()
+        return dict(row) if row else None
+
+    def list_api_keys(self, owner_id: str) -> list[dict]:
+        """This owner's keys. The secret is not here and cannot be."""
+        with self._conn() as conn:
+            rows = conn.execute(
+                "SELECT id, name, created_at, last_used_at FROM api_keys "
+                "WHERE owner_id = ? AND revoked_at = '' ORDER BY created_at",
+                (owner_id,),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def touch_api_key(self, key_id: str) -> None:
+        with self._conn() as conn:
+            conn.execute(
+                "UPDATE api_keys SET last_used_at = ? WHERE id = ?",
+                (utcnow(), key_id),
+            )
+
+    def revoke_api_key(self, owner_id: str, key_id: str) -> bool:
+        """Revoke one key. Scoped to its owner, so an id from someone else's
+        list is simply not found."""
+        with self._conn() as conn:
+            cursor = conn.execute(
+                "UPDATE api_keys SET revoked_at = ? WHERE id = ? AND owner_id = ? "
+                "AND revoked_at = ''",
+                (utcnow(), key_id, owner_id),
+            )
+        return cursor.rowcount > 0
 
     def delete_expired_sessions(self, now: str) -> int:
         with self._conn() as conn:

@@ -28,6 +28,21 @@ from content.persistence.store import utcnow
 log = logging.getLogger("content.auth")
 
 
+class NewKeyRequest(BaseModel):
+    """A key is named by the person creating it, so that "which key is this?"
+    has an answer a year later — and so that one can be revoked without
+    touching the others."""
+
+    name: str
+
+    @field_validator("name")
+    @classmethod
+    def _not_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("a key needs a name")
+        return value.strip()[:80]
+
+
 class LinkRequest(BaseModel):
     """What a sign-in request carries.
 
@@ -288,6 +303,45 @@ def build_session_router(settings, store, owner_dependency) -> APIRouter:
             # Saying so plainly beats a client guessing from an empty email.
             "account": account is not None,
         }
+
+    @router.post("/api/v1/auth/keys", status_code=status.HTTP_201_CREATED)
+    async def create_key(
+        payload: NewKeyRequest, owner_id: str = owner_dependency
+    ) -> dict:
+        """Mint a key for a program.
+
+        **The secret is in this response and nowhere else, ever.** Only its
+        fingerprint is stored, so a database dump is a list of useless hashes
+        rather than a keyring — and nobody, including the operator, can read
+        the key back afterwards.
+        """
+        secret = credentials.new_api_key()
+        key = store.create_api_key(
+            credentials.new_api_key_id(),
+            credentials.fingerprint(secret),
+            owner_id,
+            payload.name.strip(),
+        )
+        log.info("api key %s created for %s", key["id"], owner_id)
+        return {**key, "key": secret}
+
+    @router.get("/api/v1/auth/keys")
+    async def list_keys(owner_id: str = owner_dependency) -> list[dict]:
+        """Name, age and last use — never the key. There is nothing to show."""
+        return store.list_api_keys(owner_id)
+
+    @router.delete("/api/v1/auth/keys/{key_id}", status_code=status.HTTP_204_NO_CONTENT)
+    async def revoke_key(key_id: str, owner_id: str = owner_dependency) -> Response:
+        """Revoke one key, which is the entire reason they are named.
+
+        Scoped to its owner, so an id copied from someone else's list is not
+        found rather than forbidden — 404 would otherwise confirm it exists.
+        """
+        if not store.revoke_api_key(owner_id, key_id):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Unknown key."
+            )
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
 
     @router.post("/api/v1/auth/logout")
     async def logout(request: Request, owner_id: str = owner_dependency) -> Response:

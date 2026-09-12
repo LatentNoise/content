@@ -69,6 +69,15 @@ def new_owner_id() -> str:
     return f"usr_{secrets.token_hex(12)}"
 
 
+def new_api_key_id() -> str:
+    """The public handle of a key: what a list shows and what a revoke names.
+
+    Separate from the key itself on purpose — the secret is shown once and
+    then unknowable, so something else has to be addressable afterwards.
+    """
+    return f"key_{secrets.token_hex(8)}"
+
+
 def normalize_email(raw: str) -> str:
     """The form an address is stored and compared in.
 
