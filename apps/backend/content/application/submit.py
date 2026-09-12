@@ -12,6 +12,7 @@ import json
 from dataclasses import dataclass
 
 from content.analysis.service import AnalysisService
+from content.application import quotas
 from content.application.uploads import resolve_request_uploads
 from content.config import ContentSettings
 from content.domain import errors as codes
@@ -92,6 +93,20 @@ def submit_generation(
     # concrete file and neither learns that uploads exist (ADR 0020).
     request = resolve_request_uploads(owner_id, request, store, settings)
     analysis = analysis_service.analyze_sources(owner_id, list(request.sources))
+
+    # Quotas are checked HERE and nowhere else: after analysis, which is the
+    # first moment the media duration is known, and before the job row exists,
+    # which is the last moment nothing has been spent. Refusing later would
+    # mean charging someone for work they were never allowed to ask for.
+    media_seconds = quotas.media_seconds_of(analysis)
+    quotas.check(
+        owner_id,
+        store,
+        settings,
+        media_seconds=media_seconds,
+        is_operator=store.is_operator(owner_id),
+    )
+
     plan: ExecutionPlan = build_plan(request, analysis, providers, settings)
 
     # reuse_existing is accepted but inert while the cache is disabled (ADR
@@ -124,6 +139,9 @@ def submit_generation(
     except IdempotencyKeyActive:
         # Lost a concurrent-submission race (T3): the winner holds the key.
         return replay_or_conflict()
+    # Recorded on the job so the next check reads a fact rather than a
+    # re-analysis, and so an operator can see where a month went.
+    store.record_media_seconds(owner_id, job_id, media_seconds)
     events = EventPublisher(store)
     events.publish(job_id, "job.created", {"retry_of": retry_of} if retry_of else {})
 

@@ -45,6 +45,11 @@ CONSTRAINT_UNSATISFIABLE = "constraint_unsatisfiable"
 # (CONTENT_DELIVERY_SCOPE=off). "Valid but not offered here" — a different
 # answer from "invalid": the request is well formed and would work elsewhere.
 DELIVERY_NOT_SUPPORTED = "delivery_not_supported"
+# A limit of this installation, reached by this owner. "Valid, and not now" —
+# a third answer beside "invalid" and "not supported here". The details say
+# which limit, how much is used and how much is allowed, because a refusal a
+# person cannot act on is only half a refusal.
+QUOTA_EXCEEDED = "quota_exceeded"
 CREDENTIAL_NOT_AVAILABLE = "credential_not_available"
 AUTH_METHOD_NOT_SUPPORTED = "auth_method_not_supported"
 ANALYSIS_FAILED = "analysis_failed"

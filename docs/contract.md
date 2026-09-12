@@ -314,12 +314,24 @@ them, because every request already belongs to the single implicit user.
 | `GET` | `/auth/callback` | Follow the link: the token is burnt, a session cookie is set, the browser is redirected to a `next` that must be on the allowlist |
 | `GET` | `/auth/me` | The current owner, and the address behind it when there is an account |
 | `POST` | `/auth/logout` | Revoke this session (204) |
+| `GET` | `/usage` | Where you stand against this installation's limits. `allowed: null` = not set here |
 | `GET` | `/storage` | **What you hold**: your jobs, uploads and delivered files, plus a total. No paths |
 | `GET` | `/operator/storage` | Disk usage across the installation, paths included. **Operator only** (403 otherwise) |
 | `GET` | `/cache` · `POST` `/cache/purge` | The shared resource-fact cache. **Operator only** — it belongs to nobody, and purging decides for everyone |
 | `POST` | `/auth/keys` | Mint a named API key. **The secret is in this response and nowhere else** — only its fingerprint is stored |
 | `GET` | `/auth/keys` | This owner's keys: name, created, last used. Never the key |
 | `DELETE` | `/auth/keys/{id}` | Revoke one key (204); an id that is not yours answers 404, not 403 |
+
+**Per-owner quotas (ADR 0036).** An installation may cap minutes of source
+media per rolling 30 days, bytes held at once, and unfinished jobs. All three
+are off by default and an operator is never counted. A submission over a limit
+is refused with the stable code `quota_exceeded`, whose details name the limit,
+the usage and the allowance — and `GET /usage` reports the same numbers, so a
+limit is something a person can watch themselves approach rather than a trap.
+
+Media is counted in **seconds of source**, not processing time: a duration is
+known at analysis, before any work happens, so the refusal precedes the
+expense. A playlist counts every member; an unreadable duration counts as zero.
 
 **Operating the installation is a privilege, not a bigger share of the data**
 (ADR 0035). An operator owns their rows like anyone else and may additionally

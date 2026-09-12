@@ -115,6 +115,23 @@ class ContentSettings:
     # first operator. Removing an address does not revoke the flag: that is a
     # deliberate act through the account, not a side effect of editing a file.
     operator_emails: tuple[str, ...] = field(default_factory=tuple)
+    # --- per-owner quotas (ADR 0036) ----------------------------------------
+    # 0 means unlimited everywhere, which is what a self-hosted instance keeps:
+    # the person running it is not a customer of themselves. An operator is
+    # never counted either — the quotas protect the installation from its
+    # users, and the operator is the installation.
+    #
+    # Media is counted in MINUTES OF SOURCE, not processing time: a source's
+    # duration is known at analysis, before any work happens, so a refusal
+    # comes before the expense. Processing time is only knowable afterwards,
+    # and is twenty times higher for 4K video than for an audio clip at
+    # identical service rendered.
+    quota_media_minutes_per_month: float = 0.0
+    # A ceiling on what is held right now, not a running total: retention
+    # already expires files (ADR 0023), so a cumulative count would bill
+    # someone for bytes that no longer exist.
+    quota_storage_bytes: int = 0
+    quota_concurrent_jobs: int = 0
     magic_link_ttl_minutes: float = 15.0
     magic_link_max_per_hour: int = 5
     # Where a sign-in may send the browser afterwards. An open redirect on a
@@ -399,6 +416,29 @@ def describe_environment(
             False,
             f"{settings.session_ttl_hours:g}",
             "How long a session lives, slid forward while it is used.",
+        ),
+        (
+            "CONTENT_QUOTA_MEDIA_MINUTES_PER_MONTH",
+            "security",
+            False,
+            f"{settings.quota_media_minutes_per_month:g}",
+            "Minutes of source media one owner may submit per month. "
+            "0 = unlimited. Operators are never counted.",
+        ),
+        (
+            "CONTENT_QUOTA_STORAGE_BYTES",
+            "security",
+            False,
+            str(settings.quota_storage_bytes),
+            "Bytes one owner may hold at once (jobs + uploads + delivered). "
+            "0 = unlimited.",
+        ),
+        (
+            "CONTENT_QUOTA_CONCURRENT_JOBS",
+            "security",
+            False,
+            str(settings.quota_concurrent_jobs),
+            "Unfinished jobs one owner may have at once. 0 = unlimited.",
         ),
         (
             "CONTENT_OPERATOR_EMAILS",
@@ -731,6 +771,15 @@ def settings_from_env() -> ContentSettings:
             os.getenv("CONTENT_SESSION_COOKIE_SECURE"), True
         ),
         session_ttl_hours=_to_float(os.getenv("CONTENT_SESSION_TTL_HOURS"), 720.0),
+        quota_media_minutes_per_month=max(
+            0.0, _to_float(os.getenv("CONTENT_QUOTA_MEDIA_MINUTES_PER_MONTH"), 0.0)
+        ),
+        quota_storage_bytes=max(
+            0, _to_int(os.getenv("CONTENT_QUOTA_STORAGE_BYTES"), 0)
+        ),
+        quota_concurrent_jobs=max(
+            0, _to_int(os.getenv("CONTENT_QUOTA_CONCURRENT_JOBS"), 0)
+        ),
         operator_emails=tuple(
             address.strip().lower()
             for address in (os.getenv("CONTENT_OPERATOR_EMAILS") or "").split(",")

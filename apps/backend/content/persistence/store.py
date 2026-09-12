@@ -31,7 +31,11 @@ CREATE TABLE IF NOT EXISTS jobs (
     cancel_requested  INTEGER NOT NULL DEFAULT 0,
     created_at        TEXT NOT NULL,
     started_at        TEXT,
-    finished_at       TEXT
+    finished_at       TEXT,
+    -- Seconds of SOURCE media this job was asked to handle. Known at analysis,
+    -- before any work happens, which is what lets a quota refuse before the
+    -- expense rather than after it.
+    media_seconds     REAL NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status, created_at);
 CREATE INDEX IF NOT EXISTS idx_jobs_owner ON jobs(owner_id, created_at);
@@ -319,6 +323,19 @@ _MIGRATIONS: list[list[str]] = [
     # 9: who may operate the installation.
     [
         "ALTER TABLE users ADD COLUMN is_operator INTEGER NOT NULL DEFAULT 0",
+    ],
+    # 10: how much media a job was asked to handle, recorded on the job itself.
+    #
+    # Counted in SECONDS OF SOURCE MEDIA rather than processing time, and that
+    # choice is the whole quota design: the duration of a source is known at
+    # analysis, BEFORE any work happens, so a refusal can come before the
+    # expense instead of after it. Processing time is only knowable afterwards,
+    # and it is not fair either — the same service costs twenty times more on a
+    # 4K video than on an audio clip.
+    [
+        "ALTER TABLE jobs ADD COLUMN media_seconds REAL NOT NULL DEFAULT 0",
+        "CREATE INDEX IF NOT EXISTS idx_jobs_owner_created "
+        "ON jobs(owner_id, created_at)",
     ],
 ]
 
@@ -942,6 +959,40 @@ class Store:
                 "UPDATE users SET last_seen_at = ? WHERE owner_id = ?",
                 (utcnow(), owner_id),
             )
+
+    # --- usage, for quotas (ADR 0036) -----------------------------------------
+
+    def record_media_seconds(self, owner_id: str, job_id: str, seconds: float) -> None:
+        with self._conn() as conn:
+            conn.execute(
+                "UPDATE jobs SET media_seconds = ? WHERE id = ? AND owner_id = ?",
+                (float(seconds), job_id, owner_id),
+            )
+
+    def media_seconds_since(self, owner_id: str, since: str) -> float:
+        """Source media this owner has already asked for in the period.
+
+        Counted on jobs that were *accepted*, whatever became of them. A job
+        that failed still consumed the analysis and usually the download; not
+        counting it would make failure a way to get free capacity.
+        """
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT COALESCE(SUM(media_seconds), 0) AS total FROM jobs "
+                "WHERE owner_id = ? AND created_at >= ?",
+                (owner_id, since),
+            ).fetchone()
+        return float(row["total"] or 0)
+
+    def count_active_jobs(self, owner_id: str) -> int:
+        """Jobs of this owner that are not finished yet."""
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT COUNT(*) AS n FROM jobs WHERE owner_id = ? "
+                "AND status NOT IN ('succeeded', 'failed', 'cancelled')",
+                (owner_id,),
+            ).fetchone()
+        return int(row["n"])
 
     def set_operator(self, owner_id: str, is_operator: bool) -> None:
         """Grant or withdraw the privilege of operating this installation."""

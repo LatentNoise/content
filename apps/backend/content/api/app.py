@@ -41,6 +41,7 @@ from content.analysis.service import (
 )
 from content.api.auth import Identity, Operator
 from content.api.auth_routes import build_auth_router, build_session_router
+from content.application import quotas
 from content.application.collections import attach_collection_runner
 from content.application.submit import submit_generation
 from content.application.uploads import sweep_expired_uploads
@@ -527,6 +528,18 @@ def create_app(
         never where the machine keeps it.
         """
         return owner_storage_report(settings, owner_id)
+
+    @app.get("/api/v1/usage", tags=["system"])
+    def usage(owner_id: str = owner) -> dict:
+        """Where you stand against this installation's limits.
+
+        Every limit a person can be refused on must be one they can watch
+        themselves approach — otherwise the rule is a trap. `allowed: null`
+        means that limit is not set here.
+        """
+        return quotas.describe(
+            owner_id, store, settings, is_operator=store.is_operator(owner_id)
+        )
 
     @app.get("/api/v1/operator/storage", tags=["operator"])
     def operator_storage(owner_id: str = operator) -> dict:
