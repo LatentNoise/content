@@ -104,6 +104,11 @@ class ContentSettings:
     # readable by anything on the path.
     session_cookie_secure: bool = True
     session_ttl_hours: float = 720.0  # 30 days, slid forward on use
+    # Where a visitor lands when they followed a link that named no
+    # destination — typing the address by hand, or asking from the engine's own
+    # sign-in page. Empty falls back to the engine itself, which shows API
+    # documentation and is nobody's idea of a welcome.
+    sign_in_default_target: str = ""
     magic_link_ttl_minutes: float = 15.0
     magic_link_max_per_hour: int = 5
     # Where a sign-in may send the browser afterwards. An open redirect on a
@@ -388,6 +393,14 @@ def describe_environment(
             False,
             f"{settings.session_ttl_hours:g}",
             "How long a session lives, slid forward while it is used.",
+        ),
+        (
+            "CONTENT_SIGN_IN_DEFAULT_TARGET",
+            "security",
+            False,
+            settings.sign_in_default_target,
+            "Where a sign-in lands when the link named no destination. "
+            "Must be one of the allowed redirect origins.",
         ),
         (
             "CONTENT_MAGIC_LINK_TTL_MINUTES",
@@ -703,6 +716,9 @@ def settings_from_env() -> ContentSettings:
             os.getenv("CONTENT_SESSION_COOKIE_SECURE"), True
         ),
         session_ttl_hours=_to_float(os.getenv("CONTENT_SESSION_TTL_HOURS"), 720.0),
+        sign_in_default_target=(os.getenv("CONTENT_SIGN_IN_DEFAULT_TARGET") or "")
+        .strip()
+        .rstrip("/"),
         magic_link_ttl_minutes=_to_float(
             os.getenv("CONTENT_MAGIC_LINK_TTL_MINUTES"), 15.0
         ),

@@ -105,6 +105,9 @@ config:
   CONTENT_SESSION_COOKIE_DOMAIN: ""
   CONTENT_SESSION_COOKIE_SECURE: "true"
   CONTENT_ALLOWED_REDIRECT_ORIGINS: ""
+  # Where a sign-in lands when the link named no destination. Empty drops the
+  # visitor on the engine, which serves API documentation.
+  CONTENT_SIGN_IN_DEFAULT_TARGET: ""
   # The outbound-email service (ADR 0031), by service name inside the cluster.
   # Empty = the sign-in link is written to the log instead of being sent.
   CONTENT_MAILER_URL: ""

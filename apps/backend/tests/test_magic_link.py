@@ -314,3 +314,61 @@ def test_housekeeping_clears_spent_tokens_and_dead_sessions(client, mailer, stor
     owner = client.get("/api/v1/auth/me").json()["owner_id"]
     store.revoke_all_sessions(owner)
     assert store.delete_expired_sessions(utcnow()) == 1
+
+
+# --- where a sign-in lands --------------------------------------------------------
+
+
+def test_a_configured_landing_page_is_used_when_the_link_names_none(
+    hosted, store, providers, mailer
+):
+    """Following a link from a mail should not drop someone on API docs."""
+    landing = replace(hosted, sign_in_default_target=SURFACE)
+    app = create_app(
+        landing, store=store, providers=providers, start_worker=False, mailer=mailer
+    )
+    with TestClient(app, base_url="https://api.example.test") as client:
+        client.post("/api/v1/auth/link", json={"email": "someone@example.com"})
+        response = client.get(
+            f"/api/v1/auth/callback?token={_token_of(mailer.last_link)}",
+            follow_redirects=False,
+        )
+    assert response.headers["location"] == SURFACE
+
+
+def test_the_link_still_wins_over_the_configured_landing_page(
+    hosted, store, providers, mailer
+):
+    landing = replace(hosted, sign_in_default_target=SURFACE)
+    app = create_app(
+        landing, store=store, providers=providers, start_worker=False, mailer=mailer
+    )
+    with TestClient(app, base_url="https://api.example.test") as client:
+        client.post(
+            "/api/v1/auth/link",
+            json={"email": "someone@example.com", "next": f"{SURFACE}/jobs"},
+        )
+        response = client.get(
+            f"/api/v1/auth/callback?token={_token_of(mailer.last_link)}"
+            f"&next={SURFACE}/jobs",
+            follow_redirects=False,
+        )
+    assert response.headers["location"] == f"{SURFACE}/jobs"
+
+
+def test_a_landing_page_outside_the_allowlist_is_ignored(
+    hosted, store, providers, mailer
+):
+    """A misconfigured default must not become the one redirect nobody checks."""
+    landing = replace(hosted, sign_in_default_target="https://phishing.example")
+    app = create_app(
+        landing, store=store, providers=providers, start_worker=False, mailer=mailer
+    )
+    with TestClient(app, base_url="https://api.example.test") as client:
+        client.post("/api/v1/auth/link", json={"email": "someone@example.com"})
+        response = client.get(
+            f"/api/v1/auth/callback?token={_token_of(mailer.last_link)}",
+            follow_redirects=False,
+        )
+    assert response.headers["location"] != "https://phishing.example"
+    assert response.headers["location"] == hosted.public_base_url

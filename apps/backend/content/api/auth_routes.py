@@ -234,7 +234,22 @@ def build_auth_router(settings, store, mailer) -> APIRouter:
             _iso_in(hours=settings.session_ttl_hours),
         )
         store.touch_account(account["owner_id"])
-        target = next or settings.public_base_url or "/"
+        # Where to land. A link that named a destination wins; otherwise the
+        # operator's configured landing page; otherwise the engine itself,
+        # which serves API documentation and welcomes nobody.
+        #
+        # The configured default is checked against the same allowlist as any
+        # other destination: a misconfiguration must fail visibly here rather
+        # than quietly become the one redirect nobody validates.
+        fallback = settings.sign_in_default_target
+        if fallback and not redirect_is_allowed(
+            fallback, settings.allowed_redirect_origins
+        ):
+            log.warning(
+                "CONTENT_SIGN_IN_DEFAULT_TARGET is not an allowed origin; ignoring it"
+            )
+            fallback = ""
+        target = next or fallback or settings.public_base_url or "/"
         response = RedirectResponse(target, status_code=status.HTTP_303_SEE_OTHER)
         _set_session_cookie(response, secret)
         return response
