@@ -1,0 +1,9 @@
+# The build needs the package and its manifest, nothing else. Keeping a venv
+# or a cache out of the context is not only about size: a .venv built on macOS
+# copied into a Linux image is a subtle, hard-to-find breakage.
+.venv/
+__pycache__/
+*.egg-info/
+.ruff_cache/
+.pytest_cache/
+tests/

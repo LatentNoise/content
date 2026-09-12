@@ -36,7 +36,7 @@ spec:
             - secretRef:
                 name: {{ .Values.existingSecret }}
             {{- end }}
-          {{- if .Values.worker.enabled }}
+          {{- if (.Values.worker).enabled }}
           env:
             # A separate worker deployment exists, so this one only answers
             # requests. `env` wins over `envFrom`, so the ConfigMap stays

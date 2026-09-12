@@ -1,4 +1,4 @@
-{{- if .Values.worker.enabled }}
+{{- if (.Values.worker).enabled }}
 # The worker deployment: the same image and the same code as the API, told by
 # one environment variable to do the work instead of answering requests.
 #
@@ -26,9 +26,9 @@ metadata:
   name: {{ include "content.workerFullname" . }}
   labels: {{- include "content.workerLabels" . | nindent 4 }}
 spec:
-  replicas: {{ .Values.worker.replicaCount }}
+  replicas: {{ (.Values.worker).replicaCount | default 1 }}
   strategy:
-    type: {{ .Values.worker.strategy }}
+    type: {{ (.Values.worker).strategy | default "Recreate" }}
   selector:
     matchLabels: {{- include "content.workerSelectorLabels" . | nindent 6 }}
   template:
@@ -70,7 +70,7 @@ spec:
             periodSeconds: 30
             timeoutSeconds: 5
             failureThreshold: 5
-          resources: {{- toYaml .Values.worker.resources | nindent 12 }}
+          resources: {{- toYaml ((.Values.worker).resources | default dict) | nindent 12 }}
           volumeMounts:
             {{- if .Values.persistence.data.enabled }}
             - name: data
