@@ -507,7 +507,9 @@ class JobExecutor:
         source_job_id = group[0]["job_id"]
         # Same owner by construction: the reuse query above never returns
         # another owner's artifacts.
-        source_storage = JobStorage.from_settings(self._settings, owner_id, source_job_id)
+        source_storage = JobStorage.from_settings(
+            self._settings, owner_id, source_job_id
+        )
         produced: list[ProducedFile] = []
         seen_checksums: set[str] = set()
         for row in group:
