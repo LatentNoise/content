@@ -82,6 +82,9 @@ One engine, one official SDK, thin clients — each documents itself:
 
 ## Development — working on it
 
+- [development/seeing-it-run.md](development/seeing-it-run.md) — the two ways
+  to look at the product before anything is published: `make dev` on your own
+  machine, and a second release in the cluster.
 - [development/validation.md](development/validation.md) — the Definition of
   Done and `make validate`
 The maintainer's own working notes (`work/`) are not versioned; documentation
