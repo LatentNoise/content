@@ -21,7 +21,7 @@ from content_sdk.compat import (
     ContentClient,
     streamlit_visitor_headers,
 )
-from content_sdk.signin import require_identity
+from content_sdk.signin import render_identity
 from content_sdk.status import ago as _ago
 from content_sdk.status import capability_display, display
 
@@ -197,13 +197,14 @@ def get_client(base_url: str) -> ContentClient:
 
 client = get_client(API_URL)
 
-# The identity gate, before anything is drawn (ADR 0033/0034). It asks the
-# engine who the visitor is rather than waiting for some later call to refuse:
-# the boot calls are open by design and the owner-scoped ones sit in blocks that
-# degrade politely, so a visitor with no session used to be shown a whole
-# working product that quietly did nothing. In `none` mode this answers `local`
-# and nobody is ever asked for anything.
-identity = require_identity(
+# Who is visiting, asked before anything is drawn (ADR 0033/0034). It asks the
+# engine rather than waiting for some later call to refuse: the boot calls are
+# open by design and the owner-scoped ones sit in blocks that degrade politely,
+# so a visitor with no session was shown a whole working product that quietly
+# did nothing. The interface still renders — the banner this puts above it is
+# what says why nothing works. In `none` mode this answers `local` and nobody
+# is ever asked for anything.
+identity = render_identity(
     client, app_title=APP_TITLE, api_base_url=PUBLIC_API_URL or API_URL
 )
 
@@ -805,9 +806,14 @@ with tab_storage:
 
 with tab_access:
     st.subheader("Who this console is")
-    # The gate at the top of the script already asked, and a refusal never
-    # reaches here: it replaced the page.
+    # Asked once at the top of the script, not again here: a rerun happens on
+    # every click and the answer would be the same every time.
     me = identity
+    if not me:
+        st.info(
+            "Nobody. Sign in with the button above to see your account, your "
+            "keys and what you hold."
+        )
     if me:
         badge = " · **operator**" if me.get("is_operator") else ""
         if me.get("account"):

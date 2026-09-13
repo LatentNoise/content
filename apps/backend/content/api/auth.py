@@ -22,12 +22,15 @@ Because both modes return an owner id, no route and no service ever branches
 on the mode. A self-hosted instance is simply an instance with one user.
 """
 
+import logging
 from datetime import datetime, timedelta, timezone
 
 from fastapi import Depends, HTTPException, Request, status
 
 from content.identity import LOCAL_OWNER, AuthMode, credentials
 from content.persistence.store import utcnow
+
+log = logging.getLogger("content.auth")
 
 # How stale a session's last_seen_at must be before the expiry is slid
 # forward. Sliding on every request would make a page view a write; never
@@ -77,6 +80,16 @@ class Identity:
         cookie of a browser are different transports for the same question.
         Only the cookie is wired today; API keys join here and change nothing
         else in the codebase.
+
+        **`local` is never handed out here.** It is the implicit owner of a
+        self-hosted instance: it owns everything such an instance ever
+        produced, and `is_operator` grants it the machine unconditionally. On
+        an instance that asks people to sign in, nobody may become it — not
+        through a row someone edited, not through data carried over from
+        before sign-in was turned on, not through a bug upstream. Account ids
+        are minted with a `usr_` prefix precisely so this cannot happen; this
+        is the second lock, because the first one is a convention and this one
+        is a refusal.
         """
         if self._store is None or self._settings is None:
             # Nothing to check against: refuse rather than let one through.
@@ -85,7 +98,15 @@ class Identity:
         # The Bearer header first: a program states its credential explicitly,
         # and a browser that happens to carry both should be treated as the
         # program it is pretending to be.
-        return self._from_api_key(request) or self._from_session_cookie(request)
+        owner = self._from_api_key(request) or self._from_session_cookie(request)
+        if owner == LOCAL_OWNER:
+            log.error(
+                "a credential resolved to the reserved owner %r on a signed-in "
+                "instance; refusing it",
+                LOCAL_OWNER,
+            )
+            return None
+        return owner
 
     def _from_api_key(self, request: Request) -> str | None:
         scheme, _, presented = request.headers.get("authorization", "").partition(" ")

@@ -102,11 +102,18 @@ deployment mode. The answer is not cached: a session deleted between two clicks
 must stop working on the next one, which is precisely the case that exposed
 this.
 
-**And it is a page, not a redirect.** Streamlit components render inside an
-iframe sandboxed without `allow-top-navigation`, so a script cannot move the
-browser out of the app at all. Since the automatic redirect is not available,
-the block that replaces the page and stops the script is not a compromise but
-the whole mechanism: the same outcome, reached by a click.
+**The interface still renders.** Replacing it with a door was the first
+attempt and it was wrong: someone arriving at a public instance should see what
+the product is before being asked for anything, and a surface that blanks
+itself teaches nothing. So the page stays, with a banner above it saying
+plainly that nothing will run until you sign in, and the same button in the
+sidebar where it stays put after the banner scrolls away. Not a dismissible
+dialog: a dialog is read once and then gone, while the reason the page is not
+working lasts until it is fixed.
+
+**And it is a button, not a redirect** — not by preference. Streamlit
+components render inside an iframe sandboxed without `allow-top-navigation`, so
+a script cannot move the browser out of the app at all.
 
 One implementation, in the SDK (`content_sdk.signin`), because it is the only
 place three single-file Streamlit apps can share code from — D-21 records what

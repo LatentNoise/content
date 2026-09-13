@@ -955,7 +955,19 @@ class Store:
         Racing sign-ins for the same new address are ordinary — someone clicks
         twice, or two links arrive together — so a UNIQUE violation is a normal
         outcome here, not an error: the loser reads back the winner's row.
+
+        `local` is refused outright. Generated ids carry a `usr_` prefix so the
+        collision cannot happen by accident, but the id arrives here as an
+        argument, and "cannot happen" is a property worth holding rather than
+        a comment worth trusting. `local` owns everything a self-hosted
+        instance ever produced; an account landing on it would inherit all of
+        it.
         """
+        if owner_id == LOCAL_OWNER:
+            raise ValueError(
+                "'local' is the implicit owner of a self-hosted instance and "
+                "can never be an account"
+            )
         now = utcnow()
         try:
             with self._conn() as conn:

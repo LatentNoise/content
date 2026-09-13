@@ -22,7 +22,7 @@ from content_sdk.compat import (
     ContentClient,
     streamlit_visitor_headers,
 )
-from content_sdk.signin import require_identity
+from content_sdk.signin import render_identity
 from content_sdk.status import ago, better_status, display, is_producible
 
 API_URL = os.getenv("CONTENT_API_URL", "http://localhost:8000")
@@ -202,13 +202,14 @@ def get_client(base_url: str) -> ContentClient:
 
 client = get_client(API_URL)
 
-# The identity gate, before anything is drawn (ADR 0033/0034). It asks the
-# engine who the visitor is rather than waiting for some later call to refuse:
-# the boot calls are open by design and the owner-scoped ones sit in blocks that
-# degrade politely, so a visitor with no session used to be shown a whole
-# working product that quietly did nothing. In `none` mode this answers `local`
-# and nobody is ever asked for anything.
-require_identity(client, app_title=APP_TITLE, api_base_url=PUBLIC_API_URL or API_URL)
+# Who is visiting, asked before anything is drawn (ADR 0033/0034). It asks the
+# engine rather than waiting for some later call to refuse: the boot calls are
+# open by design and the owner-scoped ones sit in blocks that degrade politely,
+# so a visitor with no session was shown a whole working product that quietly
+# did nothing. The interface still renders — the banner this puts above it is
+# what says why nothing works. In `none` mode this answers `local` and nobody
+# is ever asked for anything.
+render_identity(client, app_title=APP_TITLE, api_base_url=PUBLIC_API_URL or API_URL)
 st.session_state.setdefault("analysis", None)
 st.session_state.setdefault("capabilities", None)
 st.session_state.setdefault("analyzed_url", None)
