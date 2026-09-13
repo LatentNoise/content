@@ -140,10 +140,19 @@ def expire_job_content(
     return Deletion(job_id=job_id, freed_bytes=freed, delivered_removed=0)
 
 
-def sweep_owner(
-    owner_id: str, *, store, settings, now: datetime | None = None
-) -> list[Deletion]:
-    """Expire the content of this owner's terminal jobs past the window.
+# At most this many jobs are expired in one pass. The sweep is housekeeping
+# beside a job queue, so it must stay a short, predictable errand: an instance
+# switching retention on for the first time has every old job past the window
+# at once, and draining that over a few ticks costs nothing while doing it in
+# one blocks the tick for as long as the disk takes.
+SWEEP_BATCH = 200
+
+
+def sweep_all(*, store, settings, now: datetime | None = None) -> dict:
+    """Expire the content of every terminal job past the window.
+
+    One indexed query finds them, across all owners, oldest first. On a normal
+    tick it returns nothing and the sweep is over.
 
     Two things it deliberately does not do. It does not delete the jobs — the
     history is cheap and someone re-reading what they asked for three months
@@ -153,27 +162,17 @@ def sweep_owner(
     """
     days = float(getattr(settings, "retention_days", 0) or 0)
     if days <= 0:
-        return []
-    cutoff = ((now or datetime.now(timezone.utc)) - timedelta(days=days)).isoformat()
-    expirations: list[Deletion] = []
-    for job in store.jobs_with_content_finished_before(owner_id, cutoff):
-        done = expire_job_content(owner_id, job["id"], store=store, settings=settings)
-        if done is not None:
-            expirations.append(done)
-    return expirations
-
-
-def sweep_all(*, store, settings, now: datetime | None = None) -> dict:
-    """Sweep every owner. Returns what it freed, for a log line worth reading."""
-    days = float(getattr(settings, "retention_days", 0) or 0)
-    if days <= 0:
         return {"enabled": False, "jobs": 0, "freed_bytes": 0}
+    cutoff = ((now or datetime.now(timezone.utc)) - timedelta(days=days)).isoformat()
     jobs = 0
     freed = 0
-    for owner_id in store.owners_with_jobs():
-        for deletion in sweep_owner(owner_id, store=store, settings=settings, now=now):
+    for job in store.jobs_with_expired_content(cutoff, SWEEP_BATCH):
+        done = expire_job_content(
+            job["owner_id"], job["id"], store=store, settings=settings
+        )
+        if done is not None:
             jobs += 1
-            freed += deletion.freed_bytes
+            freed += done.freed_bytes
     if jobs:
         log.info(
             "retention expired the content of %s job(s), freeing %s bytes", jobs, freed

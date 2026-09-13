@@ -40,6 +40,7 @@ CREATE TABLE IF NOT EXISTS jobs (
 CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status, created_at);
 CREATE INDEX IF NOT EXISTS idx_jobs_owner ON jobs(owner_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_jobs_idempotency ON jobs(idempotency_key);
+CREATE INDEX IF NOT EXISTS idx_jobs_finished ON jobs(finished_at);
 -- One *active* job per idempotency key (T3): terminally failed/cancelled jobs
 -- release the key (contract D6), so the uniqueness is partial.
 CREATE UNIQUE INDEX IF NOT EXISTS idx_jobs_idempotency_active
@@ -348,6 +349,13 @@ _MIGRATIONS: list[list[str]] = [
     # can report honestly rather than answering like a file it lost.
     [
         "ALTER TABLE artifacts ADD COLUMN content_removed_at TEXT NOT NULL DEFAULT ''",
+    ],
+    # 12: the retention sweep runs forever, every housekeeping tick, and almost
+    # always finds nothing. Without this index that "nothing" is a full scan of
+    # the jobs table; with it, a range scan that stops at the first row inside
+    # the window.
+    [
+        "CREATE INDEX IF NOT EXISTS idx_jobs_finished ON jobs(finished_at)",
     ],
 ]
 
@@ -1017,26 +1025,27 @@ class Store:
                 (utcnow(), artifact_id, owner_id),
             )
 
-    def jobs_with_content_finished_before(
-        self, owner_id: str, cutoff: str
-    ) -> list[dict]:
-        """Terminal jobs of this owner, older than `cutoff`, that still hold
-        bytes worth reclaiming.
+    def jobs_with_expired_content(self, cutoff: str, limit: int) -> list[dict]:
+        """Every owner's terminal jobs older than `cutoff` that still hold
+        bytes, oldest first — the whole sweep in one indexed query.
 
-        A job whose artifacts are all expired already is skipped: sweeping it
-        again would walk its directory every six hours for nothing, forever.
+        Two conditions carry the design. A job whose artifacts are **all
+        expired already** is excluded, or the sweep would walk the same
+        directory on every tick forever. And `limit` bounds one pass: turning
+        retention on for the first time on an instance with thousands of old
+        jobs must not become one enormous deletion inside a housekeeping tick.
+        What does not fit is taken by the next one.
         """
         with self._conn() as conn:
             rows = conn.execute(
-                "SELECT j.id, j.status, j.finished_at FROM jobs j "
-                "WHERE j.owner_id = ? AND j.finished_at IS NOT NULL "
-                "AND j.finished_at < ? "
+                "SELECT j.id, j.owner_id, j.finished_at FROM jobs j "
+                "WHERE j.finished_at IS NOT NULL AND j.finished_at < ? "
                 "AND j.status IN ('succeeded', 'partially_succeeded', 'failed', "
                 "'cancelled') "
                 "AND EXISTS (SELECT 1 FROM artifacts a WHERE a.job_id = j.id "
                 "  AND a.content_removed_at = '') "
-                "ORDER BY j.finished_at",
-                (owner_id, cutoff),
+                "ORDER BY j.finished_at LIMIT ?",
+                (cutoff, limit),
             ).fetchall()
         return [dict(row) for row in rows]
 
@@ -1070,12 +1079,6 @@ class Store:
         """Every owner that has at least one upload row — what a sweep walks."""
         with self._conn() as conn:
             rows = conn.execute("SELECT DISTINCT owner_id FROM uploads").fetchall()
-        return [row["owner_id"] for row in rows]
-
-    def owners_with_jobs(self) -> list[str]:
-        """Every owner that has at least one job — what a sweep iterates."""
-        with self._conn() as conn:
-            rows = conn.execute("SELECT DISTINCT owner_id FROM jobs").fetchall()
         return [row["owner_id"] for row in rows]
 
     # --- usage, for quotas (ADR 0036) -----------------------------------------

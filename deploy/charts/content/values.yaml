@@ -85,11 +85,13 @@ config:
   CONTENT_DB_PATH: /data/content.db
   CONTENT_DELIVERY_DIR: /output
   CONTENT_DELIVERY_DEFAULT: "true"
-  # How the library is shared: "shared" (one for everyone, the default and
-  # what self-hosting keeps), "per_owner" (a subtree per user, what a hosted
-  # instance sets), or "off" (no server-side library — delivery is refused
-  # and the user downloads instead). ADR 0018, revisited.
-  CONTENT_DELIVERY_SCOPE: "shared"
+  # How the library is shared: "shared" (one for everyone), "per_owner" (one
+  # inside each owner's own directory), or "off" (no server-side library —
+  # delivery is refused and the user downloads instead). ADR 0018, revisited.
+  # Empty = derived from CONTENT_AUTH_MODE, like the layout below: shared when
+  # nobody signs in, per_owner when people do. Set "shared" explicitly for a
+  # household that wants one library everyone reads.
+  CONTENT_DELIVERY_SCOPE: ""
   # How owners are filed on disk (ADR 0037): "flat" for one owner, "per_user"
   # for a hosted instance. Empty = derived from CONTENT_AUTH_MODE.
   CONTENT_STORAGE_LAYOUT: ""

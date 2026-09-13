@@ -217,6 +217,23 @@ def test_the_sweep_never_touches_the_library(settings, store):
     assert delivered.exists()
 
 
+def test_one_pass_is_bounded_so_a_first_run_never_blocks_the_tick(settings, store):
+    """Switching retention on has every old job past the window at once."""
+    keeping = replace(settings, retention_days=7)
+    old_date = (datetime.now(timezone.utc) - timedelta(days=10)).isoformat()
+    for _ in range(3):
+        _finished_job(store, keeping, finished_at=old_date)
+
+    original = retention.SWEEP_BATCH
+    retention.SWEEP_BATCH = 2
+    try:
+        assert retention.sweep_all(store=store, settings=keeping)["jobs"] == 2
+        assert retention.sweep_all(store=store, settings=keeping)["jobs"] == 1
+        assert retention.sweep_all(store=store, settings=keeping)["jobs"] == 0
+    finally:
+        retention.SWEEP_BATCH = original
+
+
 def test_the_sweep_covers_every_owner(settings, store):
     keeping = replace(settings, retention_days=7)
     old = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()

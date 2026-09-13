@@ -31,6 +31,27 @@ def test_shared_is_the_default_and_is_the_plain_root(settings):
     assert delivery_root_for(settings, LOCAL_OWNER) == settings.data_dir / "delivery"
 
 
+def test_the_default_scope_follows_the_mode(monkeypatch):
+    """One library for everybody is right for one person and wrong the moment
+    strangers sign in."""
+    from content.config import settings_from_env
+
+    monkeypatch.delenv("CONTENT_DELIVERY_SCOPE", raising=False)
+    monkeypatch.setenv("CONTENT_AUTH_MODE", "none")
+    assert settings_from_env().delivery_scope == "shared"
+    monkeypatch.setenv("CONTENT_AUTH_MODE", "token")
+    assert settings_from_env().delivery_scope == "per_owner"
+
+
+def test_a_household_can_still_ask_for_one_library(monkeypatch):
+    """Several accounts, one library everyone reads: an explicit value wins."""
+    from content.config import settings_from_env
+
+    monkeypatch.setenv("CONTENT_AUTH_MODE", "token")
+    monkeypatch.setenv("CONTENT_DELIVERY_SCOPE", "shared")
+    assert settings_from_env().delivery_scope == "shared"
+
+
 def test_per_owner_puts_each_owner_in_their_own_subtree(settings):
     """A private library lives with the rest of the owner's files, under the
     per-user layout: one directory holds everything of one person (ADR 0037)."""

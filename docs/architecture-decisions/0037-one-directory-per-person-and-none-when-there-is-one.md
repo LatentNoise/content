@@ -61,7 +61,12 @@ targets a path, and nothing about that path being inside another volume
 prevents it. That was the argument against this layout, and it was wrong.
 
 `delivery_scope` keeps its three answers on top: `shared` gives every account
-the one configured library (a family instance), `off` gives none. Under `flat`,
+the one configured library (a family instance), `off` gives none. **Its default
+is derived from the mode, exactly like the layout's**: one library for
+everybody is right for one person or a household that chose to share, and wrong
+the moment strangers sign in — their files would mix in the same folders, and a
+shared library is counted against nobody's quota and swept by nothing. Under
+`flat`,
 `per_owner` has nobody to separate and collapses to the plain library rather
 than inventing a `<root>/local/` level that would break every path a media
 server already reads.

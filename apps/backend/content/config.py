@@ -47,13 +47,20 @@ class ContentSettings:
     # rule as ADR 0030: nothing in the code asks "am I hosted", it asks what
     # the delivery policy is.
     #
-    #   shared     one library for everyone. The default, and what a
-    #              self-hosted instance keeps: /output is a library a human
-    #              organises and a media server reads, so inserting an owner
-    #              level would break paths that work today.
-    #   per_owner  everything under <owner_id>/. What a hosted instance sets.
+    #   shared     one library for everyone. What a self-hosted instance
+    #              keeps: /output is a library a human organises and a media
+    #              server reads, so inserting an owner level would break paths
+    #              that work today.
+    #   per_owner  a library each, inside the owner's own directory
+    #              (<data>/users/<owner>/output). What a hosted instance uses:
+    #              two people's films must not land in the same folder.
     #   off        delivery refused. A hosted instance with no server-side
     #              library at all: the user downloads instead.
+    #
+    # Like the layout below, the DEFAULT is derived from the authentication
+    # mode at the one place that reads configuration: shared when nobody signs
+    # in, per_owner when people do. An explicit value always wins, which is
+    # what a household sharing one library sets.
     delivery_scope: str = "shared"
     # How owners are filed on disk (ADR 0037). A POLICY, never a question about
     # the deployment mode — the code that builds paths reads this value and
@@ -352,7 +359,8 @@ def describe_environment(
             False,
             settings.delivery_scope,
             "How the library is shared: 'shared' (one for everyone), "
-            "'per_owner' (a subtree each) or 'off' (no delivery).",
+            "'per_owner' (one inside each owner's directory) or 'off' (no "
+            "delivery). Defaults from the auth mode.",
         ),
         (
             "CONTENT_STORAGE_LAYOUT",
@@ -768,21 +776,26 @@ def settings_from_env() -> ContentSettings:
     cache_dir = Path(cache_raw).resolve() if cache_raw else data_dir / "cache"
     uploads_raw = os.getenv("CONTENT_UPLOADS_ROOT")
     uploads_dir = Path(uploads_raw).resolve() if uploads_raw else data_dir / "uploads"
-    delivery_scope_raw = (
-        (os.getenv("CONTENT_DELIVERY_SCOPE") or "shared").strip().lower()
-    )
-    if delivery_scope_raw not in {"shared", "per_owner", "off"}:
-        raise ValueError(
-            "CONTENT_DELIVERY_SCOPE must be 'shared', 'per_owner' or 'off', "
-            f"got {delivery_scope_raw!r}"
-        )
     auth_mode_raw = (os.getenv("CONTENT_AUTH_MODE") or "none").strip().lower()
     if auth_mode_raw not in {"none", "token"}:
         raise ValueError(
             f"CONTENT_AUTH_MODE must be 'none' or 'token', got {auth_mode_raw!r}"
         )
-    # The only line in the codebase where the layout meets the mode, and it
-    # only picks a default. Everything below reads `storage_layout`.
+    # The only two lines in the codebase where storage policy meets the mode,
+    # and both only pick a default. Everything below reads the values.
+    #
+    # One library for everybody is right for exactly one situation: one person,
+    # or a household that chose to share. As soon as strangers sign in, a
+    # shared library mixes their files in the same folders and puts them beyond
+    # both the quota and the sweep. So signing in defaults to a library each.
+    delivery_scope_raw = (os.getenv("CONTENT_DELIVERY_SCOPE") or "").strip().lower()
+    if not delivery_scope_raw:
+        delivery_scope_raw = "per_owner" if auth_mode_raw == "token" else "shared"
+    if delivery_scope_raw not in {"shared", "per_owner", "off"}:
+        raise ValueError(
+            "CONTENT_DELIVERY_SCOPE must be 'shared', 'per_owner' or 'off', "
+            f"got {delivery_scope_raw!r}"
+        )
     layout_raw = (os.getenv("CONTENT_STORAGE_LAYOUT") or "").strip().lower()
     if not layout_raw:
         layout_raw = "per_user" if auth_mode_raw == "token" else "flat"
