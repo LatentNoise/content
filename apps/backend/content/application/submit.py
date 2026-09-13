@@ -145,7 +145,7 @@ def submit_generation(
     events = EventPublisher(store)
     events.publish(job_id, "job.created", {"retry_of": retry_of} if retry_of else {})
 
-    storage = JobStorage(settings.data_dir, owner_id, job_id).ensure()
+    storage = JobStorage.from_settings(settings, owner_id, job_id).ensure()
     storage.write_snapshot("request", raw_request)
     storage.write_snapshot("request_normalized", canonical)
     storage.write_snapshot("analysis", json.loads(analysis.model_dump_json()))

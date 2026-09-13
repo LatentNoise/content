@@ -1012,6 +1012,22 @@ class Store:
             ).fetchall()
         return [dict(row) for row in rows]
 
+    def upload_owner_any(self, upload_id: str) -> str | None:
+        """Whose upload is this, whoever it is. Housekeeping and migration only:
+        the layout migration must file a directory under its owner and has no
+        request, and therefore no identity, to ask on behalf of."""
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT owner_id FROM uploads WHERE id = ?", (upload_id,)
+            ).fetchone()
+        return row["owner_id"] if row else None
+
+    def owners_with_uploads(self) -> list[str]:
+        """Every owner that has at least one upload row — what a sweep walks."""
+        with self._conn() as conn:
+            rows = conn.execute("SELECT DISTINCT owner_id FROM uploads").fetchall()
+        return [row["owner_id"] for row in rows]
+
     def owners_with_jobs(self) -> list[str]:
         """Every owner that has at least one job — what a sweep iterates."""
         with self._conn() as conn:

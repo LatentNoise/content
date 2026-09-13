@@ -361,12 +361,7 @@ def test_resolved_delivery_is_visible_in_the_plan_snapshot(policy_on, store):
     job_id = pipeline(minimal_payload())
     snapshot = _json.loads(
         (
-            _Path(settings.data_dir)
-            / "jobs"
-            / LOCAL_OWNER
-            / job_id
-            / "snapshots"
-            / "plan.json"
+            _Path(settings.data_dir) / "jobs" / job_id / "snapshots" / "plan.json"
         ).read_text()
     )
     assert snapshot["delivery"] == [
@@ -397,12 +392,7 @@ def test_the_three_paths_are_distinct_concepts(policy_on, store, settings):
     # Internal storage path: technical, id-based, physically present.
     assert artifact["filename"].startswith("audio_main")
     internal = (
-        run_settings.data_dir
-        / "jobs"
-        / LOCAL_OWNER
-        / job_id
-        / "artifacts"
-        / artifact["filename"]
+        run_settings.data_dir / "jobs" / job_id / "artifacts" / artifact["filename"]
     )
     assert internal.is_file()
 

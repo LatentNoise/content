@@ -49,7 +49,7 @@ def test_temporary_operation_dir_rejects_traversal(settings):
 
 def test_job_storage_rejects_unsafe_job_id(settings):
     with pytest.raises(ValueError):
-        JobStorage(settings.data_dir, LOCAL_OWNER, "../escape")
+        JobStorage.from_settings(settings, LOCAL_OWNER, "../escape")
 
 
 # --- roots + cache disabled (INV-STORAGE-009/010) ------------------------------

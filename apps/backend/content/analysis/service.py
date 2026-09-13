@@ -27,6 +27,7 @@ from content.domain.request import SourceDescriptor
 from content.persistence.store import Store, new_id, utcnow
 from content.planning.auth import resolve_source_credential
 from content.providers.base import AnalysisContext, ProviderRegistry
+from content.storage.roots import shared_roots
 
 # Bumped when the shape of the facts an analysis produces changes; stored on
 # each addressable record so a stale analyzer can be detected (ADR 0014).
@@ -69,10 +70,7 @@ class AnalysisService:
         self._providers = providers
         self._settings = settings
         self._json_cache = (
-            AnalysisJsonCache(
-                settings.cache_dir or settings.data_dir / "cache",
-                settings.analysis_ttl_hours,
-            )
+            AnalysisJsonCache(shared_roots(settings).cache, settings.analysis_ttl_hours)
             if settings.cache_enabled
             else None
         )
@@ -232,9 +230,9 @@ class AnalysisService:
         # The analysis *cache* is the DB (load_fresh_analysis); the filesystem
         # here is only disposable probe scratch, so it lives under tmp/ — never
         # under cache/ (INV-STORAGE-009).
-        analysis_tmp = (
-            self._settings.tmp_dir or self._settings.data_dir / "tmp"
-        ) / "analysis"
+        # Keyed by resource and not by person, so it sits with the other
+        # ownerless things in either layout (ADR 0037).
+        analysis_tmp = shared_roots(self._settings).tmp_analysis
         probe_ctx = AnalysisContext(self._settings, analysis_tmp / "probe")
         try:
             key = provider.resource_key(source, probe_ctx)

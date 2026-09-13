@@ -73,7 +73,7 @@ def delete_job(
                 if relative:
                     delivered_paths.append(root / relative)
 
-    storage = JobStorage(settings.data_dir, owner_id, job_id, tmp_root=settings.tmp_dir)
+    storage = JobStorage.from_settings(settings, owner_id, job_id)
     freed = _tree_bytes(storage.root)
     shutil.rmtree(storage.root, ignore_errors=True)
     shutil.rmtree(storage.tmp, ignore_errors=True)

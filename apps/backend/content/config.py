@@ -55,6 +55,21 @@ class ContentSettings:
     #   off        delivery refused. A hosted instance with no server-side
     #              library at all: the user downloads instead.
     delivery_scope: str = "shared"
+    # How owners are filed on disk (ADR 0037). A POLICY, never a question about
+    # the deployment mode — the code that builds paths reads this value and
+    # nothing else.
+    #
+    #   flat       <data>/jobs/<job>. One owner. The self-hosted majority, for
+    #              whom a `users/local/` level would be structure for a case
+    #              that never happens.
+    #   per_user   <data>/users/<owner>/{jobs,tmp,uploads,resources,output}.
+    #              One directory holds everything of one person: deleting an
+    #              account, measuring a quota or moving someone is one path.
+    #
+    # The default is DERIVED from the authentication mode at the one place that
+    # reads configuration, and nowhere else: flat when nobody signs in,
+    # per_user when people do. A flat tree with sign-in is refused at startup.
+    storage_layout: str = "flat"
     # Storage roots (docs/storage.md). None = derived from data_dir.
     tmp_dir: Path | None = None  # None = <data_dir>/tmp
     cache_dir: Path | None = None  # None = <data_dir>/cache
@@ -323,6 +338,14 @@ def describe_environment(
             settings.delivery_scope,
             "How the library is shared: 'shared' (one for everyone), "
             "'per_owner' (a subtree each) or 'off' (no delivery).",
+        ),
+        (
+            "CONTENT_STORAGE_LAYOUT",
+            "storage",
+            False,
+            settings.storage_layout,
+            "How owners are filed on disk: 'flat' (one owner, <data>/jobs/…) "
+            "or 'per_user' (<data>/users/<owner>/…). Defaults from the auth mode.",
         ),
         (
             "CONTENT_TMP_ROOT",
@@ -742,6 +765,20 @@ def settings_from_env() -> ContentSettings:
         raise ValueError(
             f"CONTENT_AUTH_MODE must be 'none' or 'token', got {auth_mode_raw!r}"
         )
+    # The only line in the codebase where the layout meets the mode, and it
+    # only picks a default. Everything below reads `storage_layout`.
+    layout_raw = (os.getenv("CONTENT_STORAGE_LAYOUT") or "").strip().lower()
+    if not layout_raw:
+        layout_raw = "per_user" if auth_mode_raw == "token" else "flat"
+    if layout_raw not in {"flat", "per_user"}:
+        raise ValueError(
+            f"CONTENT_STORAGE_LAYOUT must be 'flat' or 'per_user', got {layout_raw!r}"
+        )
+    if layout_raw == "flat" and auth_mode_raw == "token":
+        raise ValueError(
+            "CONTENT_STORAGE_LAYOUT=flat holds exactly one owner, but "
+            "CONTENT_AUTH_MODE=token will create many; set it to per_user."
+        )
     roots = tuple(
         Path(p).resolve()
         for p in os.getenv("CONTENT_ALLOWED_INPUT_ROOTS", "").split(":")
@@ -753,6 +790,7 @@ def settings_from_env() -> ContentSettings:
         delivery_dir=delivery_dir,
         delivery_default=_to_bool(os.getenv("CONTENT_DELIVERY_DEFAULT"), False),
         delivery_scope=delivery_scope_raw,
+        storage_layout=layout_raw,
         tmp_dir=tmp_dir,
         cache_dir=cache_dir,
         cache_enabled=_to_bool(os.getenv("CONTENT_CACHE_ENABLED"), False),

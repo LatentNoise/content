@@ -90,8 +90,9 @@ from content.storage.layout import (
     UploadTooLarge,
     delivery_root_for,
 )
-from content.storage.migrate_owner import migrate_jobs_to_owner
+from content.storage.migrate_layout import migrate_layout
 from content.storage.paths import owner_storage_report, storage_report
+from content.storage.roots import owner_roots, validate_layout
 
 
 class AnalysisRequest(BaseModel):
@@ -379,10 +380,12 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
-        # Filing existing work under its owner runs before the first request
-        # and before the worker claims anything: no job may be executed while
-        # its directory is mid-move. Idempotent, so this stays on every start.
-        migrate_jobs_to_owner(settings.data_dir, tmp_root=settings.tmp_dir)
+        # Filing existing work into the configured layout runs before the first
+        # request and before the worker claims anything: no job may be executed
+        # while its directory is mid-move. Idempotent, so this stays on every
+        # start (ADR 0037).
+        validate_layout(settings)
+        migrate_layout(settings, store)
         if start_worker:
             await queue.start()
         try:
@@ -689,10 +692,14 @@ def create_app(
         The stored path is deliberately absent from the response — the id is
         the address.
         """
-        store_root = settings.uploads_dir or (settings.data_dir / "uploads")
-        uploads = UploadStore(store_root)
+        uploads = UploadStore(owner_roots(settings, owner_id).uploads)
         if settings.uploads_total_bytes:
-            used = uploads.total_bytes()
+            # The installation-wide ceiling counts every owner's uploads, not
+            # only this caller's: it protects the disk the engine runs on.
+            used = sum(
+                UploadStore(owner_roots(settings, other).uploads).total_bytes()
+                for other in {*store.owners_with_uploads(), owner_id}
+            )
             if used >= settings.uploads_total_bytes:
                 raise HTTPException(
                     status_code=507,
@@ -749,8 +756,7 @@ def create_app(
         succeeds, since the caller's intent — that it be gone — already holds."""
         row = store.get_upload(owner_id, upload_id)
         if row is not None:
-            store_root = settings.uploads_dir or (settings.data_dir / "uploads")
-            UploadStore(store_root).remove(upload_id)
+            UploadStore(owner_roots(settings, owner_id).uploads).remove(upload_id)
             store.delete_upload(owner_id, upload_id)
         return Response(status_code=204)
 
@@ -1051,7 +1057,7 @@ def create_app(
         job's own logs/ directory; each stream is tail-truncated."""
         if store.get_job(owner_id, job_id) is None:
             raise HTTPException(status_code=404, detail="job not found")
-        logs_dir = JobStorage(settings.data_dir, owner_id, job_id).logs
+        logs_dir = JobStorage.from_settings(settings, owner_id, job_id).logs
         result: dict[str, dict] = {}
         if logs_dir.is_dir():
             for path in sorted(logs_dir.glob("*.log")):
@@ -1083,7 +1089,7 @@ def create_app(
         if artifact is None:
             raise HTTPException(status_code=404, detail="artifact not found")
         path = (
-            JobStorage(settings.data_dir, owner_id, artifact["job_id"]).artifacts
+            JobStorage.from_settings(settings, owner_id, artifact["job_id"]).artifacts
             / artifact["filename"]
         )
         if not path.is_file():

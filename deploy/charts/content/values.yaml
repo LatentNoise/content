@@ -90,6 +90,9 @@ config:
   # instance sets), or "off" (no server-side library — delivery is refused
   # and the user downloads instead). ADR 0018, revisited.
   CONTENT_DELIVERY_SCOPE: "shared"
+  # How owners are filed on disk (ADR 0037): "flat" for one owner, "per_user"
+  # for a hosted instance. Empty = derived from CONTENT_AUTH_MODE.
+  CONTENT_STORAGE_LAYOUT: ""
   CONTENT_MAX_CONCURRENT_JOBS: "2"
   CONTENT_STEP_TIMEOUT_SECONDS: "3600"
   CONTENT_ALLOW_PRIVATE_NETWORKS: "false"

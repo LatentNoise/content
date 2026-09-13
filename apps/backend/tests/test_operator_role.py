@@ -18,6 +18,7 @@ from fastapi.testclient import TestClient
 
 from content.api.app import create_app
 from content.identity import LOCAL_OWNER
+from content.storage.layout import JobStorage
 
 OPERATOR = "boss@example.test"
 ORDINARY = "someone@example.test"
@@ -42,6 +43,7 @@ def hosted(settings):
     return replace(
         settings,
         auth_mode="token",
+        storage_layout="per_user",
         public_base_url="http://engine",
         session_cookie_secure=False,
         operator_emails=(OPERATOR,),
@@ -158,7 +160,7 @@ def test_your_storage_never_names_the_machines_paths(client, mailer):
 def test_one_owners_bytes_are_not_anothers(client, mailer, hosted, store):
     _sign_in(client, mailer, ORDINARY)
     owner = client.get("/api/v1/auth/me").json()["owner_id"]
-    theirs = hosted.data_dir / "jobs" / owner / "job_1"
+    theirs = JobStorage.from_settings(hosted, owner, "job_1").artifacts
     theirs.mkdir(parents=True)
     (theirs / "a.bin").write_bytes(b"x" * 2048)
     assert client.get("/api/v1/storage").json()["jobs"]["bytes"] == 2048

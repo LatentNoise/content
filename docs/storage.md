@@ -17,6 +17,12 @@ or route invents its own tree.
 
 ## Tree
 
+Two layouts, one code path (ADR 0037). `CONTENT_STORAGE_LAYOUT` is a value read
+by one module, `content/storage/roots.py`; nothing else builds a path by hand.
+It defaults to `flat` when nobody signs in and to `per_user` when people do.
+
+**`flat` — one owner, the self-hosted majority:**
+
 ```text
 $CONTENT_DATA_DIR/
 ├── content.db                       # source of truth
@@ -26,13 +32,33 @@ $CONTENT_DATA_DIR/
 │   ├── artifacts/                   # persistent business results
 │   ├── logs/                        # stdout/stderr per step
 │   └── snapshots/                   # request / analysis / plan / result (immutable)
-├── tmp/                             # incomplete, technical, disposable
-│   ├── <job_id>/<step_id>/          # per-step execution scratch
-│   └── analysis/<resource_key>/     # analysis probe scratch
+├── tmp/<job_id>/<step_id>/          # incomplete, technical, disposable
+├── tmp/analysis/<resource_key>/     # analysis probe scratch — belongs to nobody
 ├── uploads/<upload_id>/             # bytes a client sent (ADR 0020)
-├── cache/                           # reusable across jobs — DISABLED in V1
+├── resources/                       # raw downloads, per resource — reserved (ADR 0037)
+├── cache/analysis/                  # public resource facts — belongs to nobody
 └── delivery/                        # the user-facing library (CONTENT_DELIVERY_DIR)
 ```
+
+**`per_user` — several owners, the hosted instance:**
+
+```text
+$CONTENT_DATA_DIR/
+├── content.db
+├── users/<owner_id>/                # ONE directory holds everything of one person
+│   ├── jobs/<job_id>/…              # same five subdirectories as above
+│   ├── tmp/<job_id>/…
+│   ├── uploads/<upload_id>/
+│   ├── resources/
+│   └── output/                      # their private library (delivery scope per_owner)
+├── tmp/analysis/                    # still nobody's
+└── cache/analysis/                  # still nobody's
+```
+
+A flat tree with `CONTENT_AUTH_MODE=token` is refused at startup: it holds
+exactly one owner by construction. `migrate_layout` files an existing disk into
+the configured layout on every start — idempotent, interruptible, and
+conservative about what it touches.
 
 The **delivery library** is the user-facing copy of finished artifacts
 (ADR 0018): files land under their `display_filename` (ADR 0017), the path is
@@ -152,6 +178,7 @@ The analysis probe scratch stays distinct from the cache: it lives under
 | Variable | Default | Role |
 | --- | --- | --- |
 | `CONTENT_DATA_DIR` | `./data` | The root of all data |
+| `CONTENT_STORAGE_LAYOUT` | `flat` / `per_user` by auth mode | How owners are filed: `flat` (one owner, `<data>/jobs/…`) or `per_user` (`<data>/users/<owner>/…`). `flat` + sign-in is refused (ADR 0037) |
 | `CONTENT_TMP_ROOT` | `<data>/tmp` | The root of the disposable |
 | `CONTENT_CACHE_ROOT` | `<data>/cache` | The cache root (reserved) |
 | `CONTENT_CACHE_ENABLED` | `false` | Enables the cross-job cache/reuse |

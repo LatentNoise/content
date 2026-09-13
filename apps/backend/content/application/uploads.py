@@ -17,13 +17,15 @@ survive long enough for that job to be retried.
 
 from __future__ import annotations
 
+import shutil
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
-from content.config import uploads_root
 from content.domain import errors as codes
 from content.domain.errors import ValidationIssue
 from content.domain.request import FileSource, SourceDescriptor, UploadSource
 from content.storage.layout import UploadStore
+from content.storage.roots import PER_USER, layout_of, owner_roots, users_root
 
 
 def resolve_upload_sources(
@@ -71,13 +73,32 @@ def resolve_upload_sources(
             FileSource(
                 id=source.id,
                 type="file",
-                path=row["path"],
+                path=str(upload_path(owner_id, row, settings)),
                 role=source.role,
                 hints=source.hints,
                 auth=source.auth,
             )
         )
     return resolved, issues
+
+
+def upload_path(owner_id: str, row: dict, settings) -> Path:
+    """Where this upload's bytes are, derived from the layout — never trusted
+    from the row.
+
+    The row records an absolute path as it was written, and a layout migration
+    moves directories without rewriting rows. Deriving the location from the
+    owner's roots makes the stored path informational, and the migration a
+    plain move. The recorded path is honoured only when nothing exists at the
+    derived one, which is the window during a migration and nowhere else.
+    """
+    derived = (
+        owner_roots(settings, owner_id).upload(row["id"]) / Path(row["filename"]).name
+    )
+    if derived.exists():
+        return derived
+    recorded = Path(row["path"])
+    return recorded if recorded.exists() else derived
 
 
 def _is_expired(row: dict, settings) -> bool:
@@ -134,7 +155,6 @@ def sweep_expired_uploads(store, settings) -> dict:
     without a trace is precisely what should leave one.
     """
     ttl = getattr(settings, "upload_ttl_hours", 0) or 0
-    uploads = UploadStore(uploads_root(settings))
     removed, reclaimed = 0, 0
 
     if ttl > 0:
@@ -144,18 +164,41 @@ def sweep_expired_uploads(store, settings) -> dict:
             # reclaimed whoever owns it. The explicit method name is what
             # keeps this out of any request path.
             store.delete_upload_any_owner(row["id"])
-            uploads.remove(row["id"])
+            UploadStore(owner_roots(settings, row["owner_id"]).uploads).remove(
+                row["id"]
+            )
             removed += 1
             reclaimed += int(row.get("size_bytes") or 0)
 
     orphans = 0
-    if uploads.root.exists():
-        for directory in uploads.root.iterdir():
+    for root in upload_roots_on_disk(store, settings):
+        for directory in root.iterdir():
             if directory.is_dir() and not store.upload_exists_any_owner(directory.name):
                 reclaimed += sum(
                     p.stat().st_size for p in directory.rglob("*") if p.is_file()
                 )
-                uploads.remove(directory.name)
+                shutil.rmtree(directory, ignore_errors=True)
                 orphans += 1
 
     return {"removed": removed, "orphans": orphans, "bytes_reclaimed": reclaimed}
+
+
+def upload_roots_on_disk(store, settings) -> list[Path]:
+    """Every uploads directory that exists: one per owner in the per-user
+    layout, the single configured one in the flat layout. The sweep walks
+    these for orphans, so it must not miss an owner who has no row left."""
+    roots: set[Path] = set()
+    for owner_id in {*store.owners_with_uploads(), "local"}:
+        try:
+            candidate = owner_roots(settings, owner_id).uploads
+        except ValueError:
+            continue
+        if candidate.is_dir():
+            roots.add(candidate)
+    if layout_of(settings) == PER_USER and users_root(settings).is_dir():
+        # Owners whose rows are all gone but whose directory is not.
+        for owner_dir in users_root(settings).iterdir():
+            candidate = owner_dir / "uploads"
+            if candidate.is_dir():
+                roots.add(candidate)
+    return sorted(roots)

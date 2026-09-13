@@ -45,14 +45,7 @@ def test_audio_job_succeeds_with_artifact_and_events(pipeline, store, settings):
     assert artifact["artifact_request_id"] == "audio_main"
     assert artifact["checksum"].startswith("sha256:")
     assert artifact["provenance"]["producer"]["operation"] == "media.acquire_audio"
-    path = (
-        settings.data_dir
-        / "jobs"
-        / LOCAL_OWNER
-        / job_id
-        / "artifacts"
-        / artifact["filename"]
-    )
+    path = settings.data_dir / "jobs" / job_id / "artifacts" / artifact["filename"]
     assert path.is_file() and path.read_bytes() == b"fake-audio-bytes"
 
     events = store.list_events(LOCAL_OWNER, job_id)
@@ -71,9 +64,7 @@ def test_audio_job_succeeds_with_artifact_and_events(pipeline, store, settings):
     assert [event["sequence"] for event in events] == list(range(1, len(events) + 1))
 
     # working files are purged, artifacts are kept
-    assert not any(
-        (settings.data_dir / "jobs" / LOCAL_OWNER / job_id / "work").iterdir()
-    )
+    assert not any((settings.data_dir / "jobs" / job_id / "work").iterdir())
 
 
 def test_optional_failure_yields_partial_success(pipeline, store):

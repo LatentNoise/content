@@ -32,10 +32,20 @@ def test_shared_is_the_default_and_is_the_plain_root(settings):
 
 
 def test_per_owner_puts_each_owner_in_their_own_subtree(settings):
+    """A private library lives with the rest of the owner's files, under the
+    per-user layout: one directory holds everything of one person (ADR 0037)."""
+    scoped = replace(settings, delivery_scope="per_owner", storage_layout="per_user")
+    users = settings.data_dir / "users"
+    assert delivery_root_for(scoped, LOCAL_OWNER) == users / "local" / "output"
+    assert delivery_root_for(scoped, "usr_abc") == users / "usr_abc" / "output"
+
+
+def test_per_owner_under_a_flat_tree_is_the_plain_library(settings):
+    """A flat tree holds one owner, so `per_owner` has nobody to separate.
+    It collapses to the library rather than inventing a `<root>/local/` level
+    that would break every path a media server already reads."""
     scoped = replace(settings, delivery_scope="per_owner")
-    root = settings.data_dir / "delivery"
-    assert delivery_root_for(scoped, LOCAL_OWNER) == root / "local"
-    assert delivery_root_for(scoped, "usr_abc") == root / "usr_abc"
+    assert delivery_root_for(scoped, LOCAL_OWNER) == settings.data_dir / "delivery"
 
 
 def test_off_has_no_root_at_all(settings):
@@ -99,15 +109,15 @@ def _asking_for_delivery():
 
 
 def test_per_owner_delivers_under_the_owner(settings, store, providers):
-    scoped = replace(settings, delivery_scope="per_owner")
+    scoped = replace(settings, delivery_scope="per_owner", storage_layout="per_user")
     run = _pipeline(scoped, store, providers)
     job_id = run(_asking_for_delivery())
     assert store.get_job(LOCAL_OWNER, job_id)["status"] == "succeeded"
 
-    root = scoped.data_dir / "delivery"
-    assert (root / "local" / "podcasts" / "episode-1.m4a").is_file()
+    mine = scoped.data_dir / "users" / "local" / "output"
+    assert (mine / "podcasts" / "episode-1.m4a").is_file()
     # and nothing landed in the shared position
-    assert not (root / "podcasts").exists()
+    assert not (scoped.data_dir / "delivery").exists()
 
 
 def test_the_recorded_path_stays_relative_to_the_owners_root(
@@ -115,7 +125,7 @@ def test_the_recorded_path_stays_relative_to_the_owners_root(
 ):
     """The owner prefix is where the file lives, not part of its address: a
     client asked for `podcasts/` and must read back `podcasts/`."""
-    scoped = replace(settings, delivery_scope="per_owner")
+    scoped = replace(settings, delivery_scope="per_owner", storage_layout="per_user")
     run = _pipeline(scoped, store, providers)
     job_id = run(_asking_for_delivery())
     artifact = store.list_artifacts(LOCAL_OWNER, job_id)[0]
@@ -172,10 +182,10 @@ def _folders(settings, store, providers) -> list[str]:
 
 
 def test_per_owner_offers_only_the_callers_own_folders(settings, store, providers):
-    scoped = replace(settings, delivery_scope="per_owner")
-    root = scoped.data_dir / "delivery"
-    (root / "local" / "mine").mkdir(parents=True)
-    (root / "usr_someone_else" / "theirs").mkdir(parents=True)
+    scoped = replace(settings, delivery_scope="per_owner", storage_layout="per_user")
+    users = scoped.data_dir / "users"
+    (users / "local" / "output" / "mine").mkdir(parents=True)
+    (users / "usr_someone_else" / "output" / "theirs").mkdir(parents=True)
 
     offered = _folders(scoped, store, providers)
     assert offered == ["", "mine"]

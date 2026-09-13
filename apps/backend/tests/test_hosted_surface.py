@@ -43,6 +43,7 @@ def hosted(settings):
     return replace(
         settings,
         auth_mode="token",
+        storage_layout="per_user",
         public_base_url="http://engine",
         session_cookie_secure=False,
     )

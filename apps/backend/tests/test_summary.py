@@ -247,12 +247,7 @@ def test_summary_job_end_to_end(providers, store, settings):
     assert artifact["provenance"]["attributes"]["model"] == "fake-model"
 
     path = (
-        settings.data_dir
-        / "jobs"
-        / LOCAL_OWNER
-        / result.job_id
-        / "artifacts"
-        / artifact["filename"]
+        settings.data_dir / "jobs" / result.job_id / "artifacts" / artifact["filename"]
     )
     assert path.read_text().startswith("# Summary")
 

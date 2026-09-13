@@ -19,14 +19,14 @@ from fastapi.testclient import TestClient
 from content.api.app import create_app
 from content.application import retention
 from content.identity import LOCAL_OWNER
-from content.storage.layout import JobStorage
+from content.storage.layout import JobStorage, delivery_root_for
 
 OWNER = "usr_someone"
 
 
 def _finished_job(store, settings, owner=OWNER, *, finished_at=None, bytes_=4096):
     job_id = store.create_job(owner, {"sources": []}, "fail_fast", None)
-    storage = JobStorage(settings.data_dir, owner, job_id).ensure()
+    storage = JobStorage.from_settings(settings, owner, job_id).ensure()
     (storage.artifacts / "video.mp4").write_bytes(b"x" * bytes_)
     _reach_running(store, job_id)
     store.transition_job(
@@ -94,9 +94,9 @@ def test_another_owners_job_is_not_found(settings, store):
 
 def test_the_delivered_copy_is_kept_unless_asked(settings, store):
     """The default that protects a library someone organised."""
-    scoped = replace(settings, delivery_scope="per_owner")
+    scoped = replace(settings, delivery_scope="per_owner", storage_layout="per_user")
     job_id, _ = _finished_job(store, scoped)
-    delivered = scoped.data_dir / "delivery" / OWNER / "My Film.mp4"
+    delivered = delivery_root_for(scoped, OWNER) / "My Film.mp4"
     delivered.parent.mkdir(parents=True)
     delivered.write_bytes(b"y" * 2048)
 
@@ -105,9 +105,9 @@ def test_the_delivered_copy_is_kept_unless_asked(settings, store):
 
 
 def test_the_delivered_copy_goes_when_asked(settings, store):
-    scoped = replace(settings, delivery_scope="per_owner")
+    scoped = replace(settings, delivery_scope="per_owner", storage_layout="per_user")
     job_id, storage = _finished_job(store, scoped)
-    delivered = scoped.data_dir / "delivery" / OWNER / "My Film.mp4"
+    delivered = delivery_root_for(scoped, OWNER) / "My Film.mp4"
     delivered.parent.mkdir(parents=True)
     delivered.write_bytes(b"y" * 2048)
     artifact_id = _register(store, job_id)
@@ -122,7 +122,7 @@ def test_the_delivered_copy_goes_when_asked(settings, store):
 
 def test_a_delivered_file_someone_moved_is_not_an_error(settings, store):
     """A library is for organising. Losing track of a file is expected."""
-    scoped = replace(settings, delivery_scope="per_owner")
+    scoped = replace(settings, delivery_scope="per_owner", storage_layout="per_user")
     job_id, _ = _finished_job(store, scoped)
     artifact_id = _register(store, job_id)
     store.set_artifact_delivered(OWNER, artifact_id, "gone/elsewhere.mp4")
@@ -169,7 +169,7 @@ def test_a_running_job_is_never_swept_however_old(settings, store):
     """Age is not a reason to delete work from under itself."""
     keeping = replace(settings, retention_days=1)
     job_id = store.create_job(OWNER, {"sources": []}, "fail_fast", None)
-    JobStorage(keeping.data_dir, OWNER, job_id).ensure()
+    JobStorage.from_settings(keeping, OWNER, job_id).ensure()
     _reach_running(store, job_id)
     assert retention.sweep_all(store=store, settings=keeping)["jobs"] == 0
     assert store.get_job(OWNER, job_id) is not None
@@ -177,10 +177,15 @@ def test_a_running_job_is_never_swept_however_old(settings, store):
 
 def test_the_sweep_never_touches_the_library(settings, store):
     """The rule this module exists to protect."""
-    keeping = replace(settings, retention_days=7, delivery_scope="per_owner")
+    keeping = replace(
+        settings,
+        retention_days=7,
+        delivery_scope="per_owner",
+        storage_layout="per_user",
+    )
     old = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
     job_id, _ = _finished_job(store, keeping, finished_at=old)
-    delivered = keeping.data_dir / "delivery" / OWNER / "My Film.mp4"
+    delivered = delivery_root_for(keeping, OWNER) / "My Film.mp4"
     delivered.parent.mkdir(parents=True)
     delivered.write_bytes(b"y" * 2048)
     artifact_id = _register(store, job_id)

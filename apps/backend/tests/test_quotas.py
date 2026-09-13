@@ -21,6 +21,7 @@ from content.domain.analysis import (
 )
 from content.domain.errors import RequestRejected
 from content.identity import LOCAL_OWNER
+from content.storage.layout import JobStorage
 
 OWNER = "usr_someone"
 
@@ -153,7 +154,7 @@ def test_concurrent_jobs_are_capped(settings, store):
 
 def test_storage_is_a_ceiling_on_what_is_held(settings, store):
     tight = replace(settings, quota_storage_bytes=1000)
-    held = settings.data_dir / "jobs" / OWNER / "job_1"
+    held = JobStorage.from_settings(tight, OWNER, "job_1").artifacts
     held.mkdir(parents=True)
     (held / "a.bin").write_bytes(b"x" * 1500)
     with pytest.raises(RequestRejected) as refusal:

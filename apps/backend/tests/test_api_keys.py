@@ -36,6 +36,7 @@ def hosted(settings):
     return replace(
         settings,
         auth_mode="token",
+        storage_layout="per_user",
         public_base_url="https://api.example.test",
         allowed_redirect_origins=(SURFACE,),
         session_cookie_domain=".example.test",

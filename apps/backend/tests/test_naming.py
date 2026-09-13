@@ -410,14 +410,7 @@ def test_artifacts_carry_display_filenames_end_to_end(pipeline, store, settings)
 
     # The NamingPlan is visible in the plan snapshot.
     snapshot = json.loads(
-        (
-            settings.data_dir
-            / "jobs"
-            / LOCAL_OWNER
-            / job_id
-            / "snapshots"
-            / "plan.json"
-        ).read_text()
+        (settings.data_dir / "jobs" / job_id / "snapshots" / "plan.json").read_text()
     )
     resolved = {entry["output_id"]: entry for entry in snapshot["naming"]["outputs"]}
     assert resolved["audio_main"]["base"] == "Fake conference"

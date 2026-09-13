@@ -225,20 +225,13 @@ def test_transcript_job_end_to_end(run_job, store, settings):
     assert artifact["provenance"]["producer"]["provider"] == "content.transcript"
     assert artifact["provenance"]["attributes"]["derived_from"] == "subtitles"
 
-    path = (
-        settings.data_dir
-        / "jobs"
-        / LOCAL_OWNER
-        / job_id
-        / "artifacts"
-        / artifact["filename"]
-    )
+    path = settings.data_dir / "jobs" / job_id / "artifacts" / artifact["filename"]
     transcript = json.loads(path.read_text())
     assert transcript["language"] == "en"
     assert transcript["segments"][0]["text"] == "hello"
 
     # the internal material was purged with work/
-    work = settings.data_dir / "jobs" / LOCAL_OWNER / job_id / "work"
+    work = settings.data_dir / "jobs" / job_id / "work"
     assert not any(work.iterdir())
 
 

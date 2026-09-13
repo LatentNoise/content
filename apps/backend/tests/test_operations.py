@@ -163,14 +163,7 @@ def test_identical_job_reuses_artifacts(pipeline, settings):
     ]
     assert events[0]["data"]["reused_from_job"] == first
 
-    path = (
-        settings.data_dir
-        / "jobs"
-        / LOCAL_OWNER
-        / second
-        / "artifacts"
-        / artifact["filename"]
-    )
+    path = settings.data_dir / "jobs" / second / "artifacts" / artifact["filename"]
     assert path.is_file()  # a real copy, not a reference
 
 
@@ -196,14 +189,7 @@ def test_reuse_existing_false_runs_again(pipeline):
 def test_corrupt_cache_falls_back_to_execution(pipeline, settings):
     first = pipeline(minimal_payload())
     artifact = pipeline.store.list_artifacts(LOCAL_OWNER, first)[0]
-    (
-        settings.data_dir
-        / "jobs"
-        / LOCAL_OWNER
-        / first
-        / "artifacts"
-        / artifact["filename"]
-    ).unlink()
+    (settings.data_dir / "jobs" / first / "artifacts" / artifact["filename"]).unlink()
 
     second = pipeline(minimal_payload())
     assert pipeline.fake.executed_operations == [
