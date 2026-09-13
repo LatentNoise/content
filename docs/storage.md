@@ -79,6 +79,51 @@ behaviour. Mount the root wherever the library should appear
 | **`cache`** | Validated results reusable across jobs. | **Disabled in V1** (`CONTENT_CACHE_ENABLED=false`). The directory is not created while the cache is off. |
 | **`uploads`** | Bytes a client supplied before any job exists (ADR 0020). Immutable, one directory per opaque id. | Swept `CONTENT_UPLOAD_TTL_HOURS` after the **last** job referenced it — not after creation, so a retry still finds its input. Untouched by `purge_work`/`purge_tmp`: an upload may outlive and feed several jobs. |
 
+## Retention: expiring is not deleting
+
+Two verbs act on the same files and they are not the same act.
+
+**Deleting** is what a person asks for, with `DELETE /api/v1/jobs/{id}`. The job
+goes: its row, its artifact rows, its whole directory, and — only when the call
+says `?delivered=true` — its delivered copies.
+
+**Expiring** is what the unattended sweep does, `CONTENT_RETENTION_DAYS` after a
+job finished. Only the bytes go: `artifacts/`, `sources/` and the job's `tmp`.
+The job row, its logs, its snapshots and its artifact rows stay, each marked
+with the moment its content went. A job's history weighs a few kilobytes
+against a video of hundreds of megabytes, so keeping it costs nothing and
+answers "what did I ask for in June?" three months later.
+
+The API then answers `410` with `artifact_content_expired` and the date, rather
+than the `artifact_content_missing` it uses for a file it lost. Those are
+different facts: expired means ask again and it will be produced anew.
+
+The sweep runs on the existing housekeeping tick, beside the upload sweep, not
+at a fixed hour. Retention removes what has passed the window, so the hour of
+the pass changes *when* bytes go, never *which* — and a tick cannot miss its
+day because the process restarted in that minute. A job whose artifacts are all
+expired already is skipped, which is what stops the sweep walking the same
+directory forever.
+
+**The library is never swept.** `/output` is a library a human organises and a
+media server reads (ADR 0018).
+
+## What counts against a quota
+
+`GET /api/v1/storage` reports every family; `total_bytes` counts three:
+
+| Counted | Why |
+| --- | --- |
+| `artifacts` | The results the person asked for |
+| `delivery` | The copies they asked to keep in their library |
+| `uploads` | The bytes they put there themselves |
+
+| Reported, not counted | Why |
+| --- | --- |
+| `resources` | Raw material the engine keeps so the *next* job need not fetch it. Charging for an optimisation would make the person who asks twice pay twice for one download |
+| `history` | Logs and snapshots — kilobytes, and the thing retention deliberately keeps |
+| `tmp` | Disposable by definition, and gone at the end of the job |
+
 ## Atomic publication
 
 A result is never made partially visible (INV-STORAGE-007/008).

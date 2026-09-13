@@ -867,12 +867,25 @@ with tab_access:
     try:
         mine = client.storage()
         columns = st.columns(4)
-        columns[0].metric("Total", _human_bytes(mine["total_bytes"]))
+        columns[0].metric(
+            "Counted total",
+            _human_bytes(mine["total_bytes"]),
+            help="Artifacts + delivered + uploads. What you asked for.",
+        )
         columns[1].metric(
-            "Jobs", _human_bytes(mine["jobs"]["bytes"]), f"{mine['jobs']['count']} jobs"
+            "Artifacts",
+            _human_bytes(mine["artifacts"]["bytes"]),
+            f"{mine['jobs']['count']} jobs",
         )
         columns[2].metric("Delivered", _human_bytes(mine["delivery"]["bytes"]))
         columns[3].metric("Uploads", _human_bytes(mine["uploads"]["bytes"]))
+        held = mine.get("resources", {}).get("bytes", 0)
+        if held:
+            st.caption(
+                f"Plus {_human_bytes(held)} of reusable source material the engine "
+                "keeps so a repeat request need not download again. It is not "
+                "counted against your quota."
+            )
     except Exception as exc:  # noqa: BLE001
         st.error(f"/storage failed: {exc}")
 

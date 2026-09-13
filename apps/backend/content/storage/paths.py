@@ -179,13 +179,18 @@ def _dir_stats(path: Path) -> dict:
 
 
 def owner_storage_report(settings, owner_id: str) -> dict:
-    """What one owner occupies, and where.
+    """What one owner occupies, and what of it counts against their quota.
 
-    The same shape as `storage_report` minus the families that belong to the
-    installation rather than to anyone: the shared fact cache is not theirs,
-    and the server's own paths are not their business. What is theirs is what
-    the layout files under them — jobs, uploads, resources, and the library
-    when it is theirs alone (ADR 0037).
+    The families that belong to the installation are absent: the shared fact
+    cache is not theirs, and the server's own paths are not their business.
+
+    **`total_bytes` counts what the person asked for, not what the engine keeps
+    to be fast.** Artifacts are the results they wanted, the library is where
+    they wanted them, uploads are what they put there themselves. `resources`
+    is the raw material the engine holds so the *next* job need not fetch it
+    again, and `tmp` is scratch — charging for either would bill someone for an
+    optimisation they did not request, and would punish the very reuse that
+    makes the engine cheaper to run.
 
     Paths are deliberately absent. An owner needs to know how much they hold,
     never where the machine keeps it.
@@ -193,10 +198,27 @@ def owner_storage_report(settings, owner_id: str) -> dict:
     from content.storage.roots import owner_roots
 
     roots = owner_roots(settings, owner_id)
-    jobs = _dir_stats(roots.jobs)
-    job_count = (
-        sum(1 for p in roots.jobs.iterdir() if p.is_dir()) if roots.jobs.exists() else 0
-    )
+    # Artifacts only, not the whole job tree: logs, snapshots and the request
+    # record are the history, a few kilobytes that nobody should pay for.
+    artifacts = {"bytes": 0, "files": 0}
+    history = {"bytes": 0, "files": 0}
+    job_count = 0
+    if roots.jobs.exists():
+        for job_dir in roots.jobs.iterdir():
+            if not job_dir.is_dir():
+                continue
+            job_count += 1
+            produced = _dir_stats(job_dir / "artifacts")
+            whole = _dir_stats(job_dir)
+            artifacts = {
+                "bytes": artifacts["bytes"] + produced["bytes"],
+                "files": artifacts["files"] + produced["files"],
+            }
+            history = {
+                "bytes": history["bytes"] + whole["bytes"] - produced["bytes"],
+                "files": history["files"] + whole["files"] - produced["files"],
+            }
+
     # Under a shared library none of it is this owner's to report — counting it
     # would bill them for other people's files.
     delivery = (
@@ -209,16 +231,15 @@ def owner_storage_report(settings, owner_id: str) -> dict:
     tmp = _dir_stats(roots.tmp)
     return {
         "owner_id": owner_id,
-        "jobs": {**jobs, "count": job_count},
+        "jobs": {"count": job_count},
+        "artifacts": artifacts,
         "delivery": delivery,
         "uploads": uploads,
+        # Reported so a person can see it, excluded from the total on purpose.
         "resources": resources,
+        "history": history,
         "tmp": tmp,
-        # The one number a quota is read against, and the one a person asks for.
-        "total_bytes": jobs["bytes"]
-        + delivery["bytes"]
-        + uploads["bytes"]
-        + resources["bytes"],
+        "total_bytes": artifacts["bytes"] + delivery["bytes"] + uploads["bytes"],
     }
 
 

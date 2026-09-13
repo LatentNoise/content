@@ -142,6 +142,31 @@ itself: cancel is a different verb with a different meaning.
 runs on the existing housekeeping tick rather than a timer of its own. Nothing
 an operator did not ask for starts deleting their data on upgrade.
 
+### Expiring is not deleting, and the sweep only expires
+
+The sweep takes `artifacts/` and `sources/` and leaves the job standing: its
+request, its plan, its steps, its logs and its snapshots stay answerable, and
+the artifact rows stay with the moment their bytes went. Measured on a real
+instance, that history is 8 KB against a video of hundreds of megabytes — the
+file is what costs, and someone re-reading what they asked for three months ago
+costs nothing.
+
+The API then answers a request for expired content with
+`artifact_content_expired` and the date, rather than the bare "content is gone"
+it uses for a file it actually lost. Those are different facts and a caller can
+act on the difference: expired means ask again and it will be produced.
+
+A job whose artifacts are already expired is skipped by the next sweep, which
+is what keeps it from walking the same directory every six hours forever.
+
+### Why the tick and not a nightly cron
+
+A fixed hour is intuitive and slightly worse. Retention removes what has passed
+the window, so whether the pass runs at 08:00 or at 14:00 changes *when* bytes
+go, never *which*. A nightly job misses its day if the process restarts in that
+minute; a tick every few hours cannot. And the work is a handful of indexed
+queries and a few `rmtree` calls — too light to deserve a quiet window.
+
 ### The library is never swept
 
 This is the rule the tests guard hardest. `/output` is a library a human

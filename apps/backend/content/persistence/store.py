@@ -76,6 +76,11 @@ CREATE TABLE IF NOT EXISTS artifacts (
     filename             TEXT NOT NULL,
     display_filename     TEXT NOT NULL DEFAULT '',
     delivered_path       TEXT NOT NULL DEFAULT '',
+    -- When retention removed the bytes. The row stays: a job's history is a
+    -- few kilobytes of JSON and worth keeping, the file is what costs. Non-empty
+    -- means "this existed and was expired", which the API can say honestly
+    -- instead of answering like a file it lost.
+    content_removed_at   TEXT NOT NULL DEFAULT '',
     media_type           TEXT NOT NULL DEFAULT '',
     size_bytes           INTEGER NOT NULL DEFAULT 0,
     checksum             TEXT NOT NULL DEFAULT '',
@@ -336,6 +341,13 @@ _MIGRATIONS: list[list[str]] = [
         "ALTER TABLE jobs ADD COLUMN media_seconds REAL NOT NULL DEFAULT 0",
         "CREATE INDEX IF NOT EXISTS idx_jobs_owner_created "
         "ON jobs(owner_id, created_at)",
+    ],
+    # 11: retention expires an artifact's BYTES, never its row (ADR 0023).
+    # A job's history is a few kilobytes of JSON and worth keeping; the file is
+    # what costs. The column says "this existed and was expired", which the API
+    # can report honestly rather than answering like a file it lost.
+    [
+        "ALTER TABLE artifacts ADD COLUMN content_removed_at TEXT NOT NULL DEFAULT ''",
     ],
 ]
 
@@ -995,6 +1007,38 @@ class Store:
                 conn.execute("ROLLBACK")
                 raise
         return True
+
+    def mark_artifact_content_removed(self, owner_id: str, artifact_id: str) -> None:
+        """Record that retention took the bytes and left the history."""
+        with self._conn() as conn:
+            conn.execute(
+                "UPDATE artifacts SET content_removed_at = ? "
+                "WHERE id = ? AND owner_id = ? AND content_removed_at = ''",
+                (utcnow(), artifact_id, owner_id),
+            )
+
+    def jobs_with_content_finished_before(
+        self, owner_id: str, cutoff: str
+    ) -> list[dict]:
+        """Terminal jobs of this owner, older than `cutoff`, that still hold
+        bytes worth reclaiming.
+
+        A job whose artifacts are all expired already is skipped: sweeping it
+        again would walk its directory every six hours for nothing, forever.
+        """
+        with self._conn() as conn:
+            rows = conn.execute(
+                "SELECT j.id, j.status, j.finished_at FROM jobs j "
+                "WHERE j.owner_id = ? AND j.finished_at IS NOT NULL "
+                "AND j.finished_at < ? "
+                "AND j.status IN ('succeeded', 'partially_succeeded', 'failed', "
+                "'cancelled') "
+                "AND EXISTS (SELECT 1 FROM artifacts a WHERE a.job_id = j.id "
+                "  AND a.content_removed_at = '') "
+                "ORDER BY j.finished_at",
+                (owner_id, cutoff),
+            ).fetchall()
+        return [dict(row) for row in rows]
 
     def jobs_finished_before(self, owner_id: str, cutoff: str) -> list[dict]:
         """Terminal jobs of this owner that ended before `cutoff`.

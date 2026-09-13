@@ -363,9 +363,13 @@ class FakeContentClient:
         """What the CURRENT owner holds: bytes, never the machine's paths."""
         return {
             "owner_id": "local",
-            "jobs": {"bytes": 2048, "files": 3, "count": 1},
+            "jobs": {"count": 1},
+            "artifacts": {"bytes": 2048, "files": 3},
             "delivery": {"bytes": 1024, "files": 1},
             "uploads": {"bytes": 0, "files": 0},
+            # Held and shown, but excluded from the total on purpose.
+            "resources": {"bytes": 9000, "files": 1},
+            "history": {"bytes": 500, "files": 2},
             "tmp": {"bytes": 0, "files": 0},
             "total_bytes": 3072,
         }

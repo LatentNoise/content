@@ -116,5 +116,7 @@ direction and leaves the rewrite for when it is needed.
 - A hosted install has one directory per person. Deleting an account, measuring
   a quota, backing up or moving one person is one path.
 - The uploads finally follow the rule ADR 0030 wrote for everything else.
-- `owner_storage_report` and the quotas read one tree per owner, `resources`
-  included, so a future raw-download cache is counted from the day it exists.
+- `owner_storage_report` reads one tree per owner and reports every family,
+  `resources` included — but the quota counts only what the person asked for:
+  artifacts, their library and their uploads (ADR 0036). A cache the engine
+  keeps on its own initiative is the engine's cost, not theirs.

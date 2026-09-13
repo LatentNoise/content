@@ -145,20 +145,35 @@ class ContentSettings:
     # A ceiling on what is held right now, not a running total: retention
     # already expires files (ADR 0023), so a cumulative count would bill
     # someone for bytes that no longer exist.
+    # Counted against what the person ASKED FOR: artifacts, their library, and
+    # what they uploaded. Never `resources`, the raw material the engine keeps
+    # so the next job need not fetch it again — charging for that would bill
+    # someone for an optimisation they did not request, and would punish the
+    # very reuse that makes the engine cheaper to run.
     quota_storage_bytes: int = 0
     quota_concurrent_jobs: int = 0
     # --- retention (ADR 0023, finally implemented) ---------------------------
-    # How many days a terminal job's files are kept before an unattended sweep
-    # removes them. 0 = never, which is the historical behaviour and stays the
+    # How many days a finished job keeps its BYTES before an unattended sweep
+    # expires them. 0 = never, which is the historical behaviour and stays the
     # default: nothing an operator did not ask for should start deleting their
     # data on upgrade.
     #
-    # The sweep NEVER touches the delivery library. /output is a library a
-    # human organises and a media server reads; unattended deletion of someone's
+    # The sweep takes `artifacts/` and `sources/` and leaves everything else:
+    # the job, its steps, its logs and its snapshots stay answerable. That
+    # history is a few kilobytes of JSON — 8 KB measured on a real instance —
+    # and the video is what costs.
+    #
+    # It NEVER touches the delivery library. /output is a library a human
+    # organises and a media server reads; unattended deletion of someone's
     # collection is not a feature. Deleting a job deliberately may remove its
     # delivered copies, if asked.
+    #
+    # It runs on the existing housekeeping tick, not on a clock of its own. A
+    # fixed hour is intuitive and slightly worse: retention removes what has
+    # passed the window, so the hour of the pass decides *when* bytes go, never
+    # *which* — and a nightly job misses its day if the process restarts in
+    # that minute, where a tick cannot.
     retention_days: float = 0.0
-    retention_sweep_hours: float = 6.0
     magic_link_ttl_minutes: float = 15.0
     magic_link_max_per_hour: int = 5
     # Where a sign-in may send the browser afterwards. An open redirect on a
@@ -457,8 +472,9 @@ def describe_environment(
             "storage",
             False,
             f"{settings.retention_days:g}",
-            "Days a finished job's files are kept before an unattended sweep "
-            "removes them. 0 = never. The delivery library is never swept.",
+            "Days a finished job keeps its bytes before an unattended sweep "
+            "expires them (artifacts and sources; the history and the delivery "
+            "library stay). 0 = never.",
         ),
         (
             "CONTENT_QUOTA_MEDIA_MINUTES_PER_MONTH",
@@ -473,8 +489,8 @@ def describe_environment(
             "security",
             False,
             str(settings.quota_storage_bytes),
-            "Bytes one owner may hold at once (jobs + uploads + delivered). "
-            "0 = unlimited.",
+            "Bytes one owner may hold at once: artifacts + delivered + "
+            "uploads. The reusable resource cache is excluded. 0 = unlimited.",
         ),
         (
             "CONTENT_QUOTA_CONCURRENT_JOBS",
@@ -830,9 +846,6 @@ def settings_from_env() -> ContentSettings:
         ),
         session_ttl_hours=_to_float(os.getenv("CONTENT_SESSION_TTL_HOURS"), 720.0),
         retention_days=max(0.0, _to_float(os.getenv("CONTENT_RETENTION_DAYS"), 0.0)),
-        retention_sweep_hours=max(
-            0.5, _to_float(os.getenv("CONTENT_RETENTION_SWEEP_HOURS"), 6.0)
-        ),
         quota_media_minutes_per_month=max(
             0.0, _to_float(os.getenv("CONTENT_QUOTA_MEDIA_MINUTES_PER_MONTH"), 0.0)
         ),

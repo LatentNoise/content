@@ -33,6 +33,17 @@ A playlist counts every member, because asking for a playlist asks for every
 video in it. A source whose duration cannot be read counts as zero: refusing
 what cannot be measured would turn every unusual source into a support ticket.
 
+### The quota counts what was asked for, not what the engine keeps
+
+Artifacts, the delivery library and uploads count: they are the results a
+person wanted, where they wanted them, and what they put there themselves.
+
+`resources` — the raw material the engine holds so the *next* job need not
+fetch it again — does not, and neither does `tmp`, nor the job history. Billing
+someone for a cache they did not request would charge them for an optimisation,
+and would punish the very reuse that makes the engine cheaper to run: the
+person who asks twice for the same video would pay twice for one download.
+
 ### Storage is a ceiling on what is held, not a running total
 
 Retention already expires files (ADR 0023), so counting cumulatively would

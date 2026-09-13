@@ -114,11 +114,14 @@ config:
   # Who may read facts about the machine (ADR 0035). Granted at sign-in;
   # unlisting never revokes it.
   CONTENT_OPERATOR_EMAILS: ""
-  # Per-owner quotas (ADR 0036). "0" = unlimited; operators are never counted.
-  # Media is minutes of SOURCE, checked before any work happens.
   # Days a finished job's files are kept before an unattended sweep (ADR 0023).
-  # "0" = never. The delivery library is never swept.
+  # "0" = never. It expires the artifacts, the sources and the job's tmp; the
+  # job, its logs and its artifact rows stay, so the history is still
+  # answerable. The delivery library is never swept.
   CONTENT_RETENTION_DAYS: "0"
+  # Per-owner quotas (ADR 0036). "0" = unlimited; operators are never counted.
+  # Media is minutes of SOURCE, checked before any work happens. Storage counts
+  # artifacts, the delivery library and uploads — never the engine's own cache.
   CONTENT_QUOTA_MEDIA_MINUTES_PER_MONTH: "0"
   CONTENT_QUOTA_STORAGE_BYTES: "0"
   CONTENT_QUOTA_CONCURRENT_JOBS: "0"

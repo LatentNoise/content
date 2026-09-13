@@ -163,10 +163,10 @@ def test_one_owners_bytes_are_not_anothers(client, mailer, hosted, store):
     theirs = JobStorage.from_settings(hosted, owner, "job_1").artifacts
     theirs.mkdir(parents=True)
     (theirs / "a.bin").write_bytes(b"x" * 2048)
-    assert client.get("/api/v1/storage").json()["jobs"]["bytes"] == 2048
+    assert client.get("/api/v1/storage").json()["artifacts"]["bytes"] == 2048
 
     _sign_in(client, mailer, OPERATOR)
-    assert client.get("/api/v1/storage").json()["jobs"]["bytes"] == 0
+    assert client.get("/api/v1/storage").json()["artifacts"]["bytes"] == 0
     # The operator sees the machine's total through the other door.
     assert client.get("/api/v1/operator/storage").json()["jobs"]["bytes"] >= 2048
 
