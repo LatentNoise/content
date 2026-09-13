@@ -42,7 +42,7 @@ from .models import (
 )
 from .resources import Analysis, Job
 
-__version__ = "0.8.1"
+__version__ = "0.8.2"
 
 __all__ = [
     "ORIGINAL",
