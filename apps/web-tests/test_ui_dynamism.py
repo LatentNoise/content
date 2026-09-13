@@ -381,10 +381,19 @@ def test_every_surface_resolves_its_visitor_per_request(run_app):
 def test_a_refused_visitor_gets_a_way_in_and_nothing_else(run_app, monkeypatch):
     """A surface the engine refuses must stop and offer the door.
 
-    Not a redirect: Streamlit renders inside an isolated frame where one is
-    unreliable, and a redirect that fires on a misread refusal traps the
-    visitor in a loop. A page that explains and offers one button cannot loop —
-    but it must also not keep rendering the surface behind it.
+    The refusal that matters is **`whoami`**, not some later call. The routes a
+    surface boots on carry no owner by design — health, config, the catalog —
+    and the owner-scoped ones sit in blocks that degrade to a dash. So a
+    visitor whose session was deleted used to be shown a complete, working
+    product that silently did nothing. Asking who they are, first, is what
+    makes the refusal arrive where it can be acted on.
+
+    Not a redirect: Streamlit components render inside an iframe sandboxed
+    without `allow-top-navigation`, so a script cannot move the browser out of
+    the app at all. A page that explains and offers one button is the same
+    outcome, reached by a click.
+
+    All three surfaces, because a fourth must not quietly skip the gate.
     """
     from conftest import FakeContentClient
     from content_sdk.errors import APIError
@@ -392,14 +401,41 @@ def test_a_refused_visitor_gets_a_way_in_and_nothing_else(run_app, monkeypatch):
     def refuse(self):
         raise APIError(401, {"detail": "Authentication required."})
 
-    monkeypatch.setattr(FakeContentClient, "health", refuse, raising=False)
-    monkeypatch.setattr(FakeContentClient, "system", refuse, raising=False)
+    monkeypatch.setattr(FakeContentClient, "whoami", refuse, raising=False)
+
+    for surface, title, behind in (
+        ("studio", "Content Studio", "1 · Sources"),
+        ("console", "Content Admin", "backend cockpit"),
+        ("hometube", "HomeTube", "Video or Playlist URL"),
+    ):
+        at = run_app(surface)
+        assert not at.exception, (surface, at.exception)
+        text = _all_text(at)
+        assert f"Sign in to {title}" in text, surface
+        assert "we will send you a link" in text, surface
+        # The surface itself must not have rendered: st.stop() ran.
+        assert behind not in text, surface
+
+
+def test_an_unreachable_engine_is_not_reported_as_a_missing_session(
+    run_app, monkeypatch
+):
+    """A door is the wrong answer to a backend that is down.
+
+    401 means sign in. A refused connection, a timeout or a 500 means the
+    engine, and sending someone to a form they cannot complete would hide the
+    one fact they need.
+    """
+    from conftest import FakeContentClient
+
+    def explode(self):
+        raise ConnectionError("no route to host")
+
+    monkeypatch.setattr(FakeContentClient, "whoami", explode, raising=False)
+    monkeypatch.setattr(FakeContentClient, "health", explode, raising=False)
 
     at = run_app("studio")
     assert not at.exception, at.exception
-
     text = _all_text(at)
-    assert "Sign in to Content Studio" in text
-    assert "we will send you a link" in text
-    # The surface itself must not have rendered: st.stop() ran.
-    assert "Add a source" not in text
+    assert "Sign in to Content Studio" not in text
+    assert "Back-end unreachable" in text

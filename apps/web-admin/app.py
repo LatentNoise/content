@@ -19,10 +19,9 @@ from content_sdk import legal, notifications
 from content_sdk.compat import (
     ApiError,
     ContentClient,
-    is_unauthenticated,
-    sign_in_url,
     streamlit_visitor_headers,
 )
+from content_sdk.signin import require_identity
 from content_sdk.status import ago as _ago
 from content_sdk.status import capability_display, display
 
@@ -182,49 +181,6 @@ st.markdown(
 APP_TITLE = "Content Admin"
 
 
-def _ask_to_sign_in() -> None:
-    """Replace the page with a way in, and stop.
-
-    A block rather than a redirect, on purpose. Streamlit renders inside an
-    isolated frame where an automatic redirect is unreliable, and one that
-    fires on a refusal it misread traps the visitor in a loop they cannot
-    leave. A page that says what happened and offers one button cannot loop.
-
-    The door itself lives in the engine (ADR 0033): this only points at it, and
-    carries the current address so the visitor comes back where they were.
-    """
-    st.markdown(f"## Sign in to {APP_TITLE}")
-    st.write(
-        "This instance asks who you are before it does anything. "
-        "Enter your email on the next page and we will send you a link — "
-        "no password, and it works once."
-    )
-    st.link_button(
-        "Sign in",
-        sign_in_url(PUBLIC_API_URL or API_URL, _current_url()),
-        type="primary",
-    )
-    st.caption(
-        "Already signed in on another surface? Reload this page — "
-        "one session covers all of them."
-    )
-    st.stop()
-
-
-def _current_url() -> str:
-    """Where to send the visitor back after signing in.
-
-    Read from the browser's own address rather than built from configuration,
-    so a surface reached under any of its names returns to that same name. The
-    engine checks it against its allowlist anyway, so a value that cannot be
-    read is simply omitted.
-    """
-    try:
-        return str(st.context.url or "")
-    except Exception:  # noqa: BLE001 — older Streamlit, or no context
-        return ""
-
-
 @st.cache_resource
 def get_client(base_url: str) -> ContentClient:
     """One client for the whole process, and an identity per request.
@@ -241,14 +197,24 @@ def get_client(base_url: str) -> ContentClient:
 
 client = get_client(API_URL)
 
+# The identity gate, before anything is drawn (ADR 0033/0034). It asks the
+# engine who the visitor is rather than waiting for some later call to refuse:
+# the boot calls are open by design and the owner-scoped ones sit in blocks that
+# degrade politely, so a visitor with no session used to be shown a whole
+# working product that quietly did nothing. In `none` mode this answers `local`
+# and nobody is ever asked for anything.
+identity = require_identity(
+    client, app_title=APP_TITLE, api_base_url=PUBLIC_API_URL or API_URL
+)
+
 backend_ok = False
 version = "?"
 try:
     version = client.health().get("version", "?")
     backend_ok = True
 except Exception as exc:  # noqa: BLE001
-    if is_unauthenticated(exc):
-        _ask_to_sign_in()
+    # Not a refusal: the gate above already settled identity, and these two
+    # routes carry no owner. Anything failing here is the engine itself.
     st.error(f"⚠️ Back-end unreachable at {API_URL} — {exc}")
 
 st.markdown(
@@ -839,11 +805,9 @@ with tab_storage:
 
 with tab_access:
     st.subheader("Who this console is")
-    try:
-        me = client.whoami()
-    except Exception as exc:  # noqa: BLE001
-        me = {}
-        st.error(f"/auth/me failed: {exc}")
+    # The gate at the top of the script already asked, and a refusal never
+    # reaches here: it replaced the page.
+    me = identity
     if me:
         badge = " · **operator**" if me.get("is_operator") else ""
         if me.get("account"):

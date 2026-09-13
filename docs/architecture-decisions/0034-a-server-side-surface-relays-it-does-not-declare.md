@@ -78,6 +78,40 @@ The `next` value is checked by the *engine* against its allowlist. The surface
 does not validate it, because a surface cannot be trusted to guard a redirect
 it also supplies.
 
+### The challenge is asked, never awaited (added 2026-09-13)
+
+The rule above said what to do with a 401. It did not say where the 401 comes
+from, and the answer turned out to be "nowhere".
+
+A surface boots on routes that carry no owner by design — `/health`,
+`/config`, `/system` — because an installation must be able to say it is alive
+before it knows who is asking. Everything owner-scoped then sits inside a
+`try/except` that degrades politely, a dash instead of a job list, because a
+surface must survive one endpoint being slow. Put together, those two
+reasonable habits meant a visitor whose session had been deleted was shown a
+complete, working product that silently did nothing, and never met the door.
+
+Nothing leaked: every owner-scoped call still refused. But a UI that renders
+for someone it will not serve is a broken promise, and no amount of care in
+individual call sites fixes it, because each one is right on its own.
+
+So every surface asks first, on every run: **`GET /api/v1/auth/me`**. It is the
+one route whose answer *is* an identity, so it cannot be satisfied by anything
+else, and in `none` mode it answers `local` — no surface branches on the
+deployment mode. The answer is not cached: a session deleted between two clicks
+must stop working on the next one, which is precisely the case that exposed
+this.
+
+**And it is a page, not a redirect.** Streamlit components render inside an
+iframe sandboxed without `allow-top-navigation`, so a script cannot move the
+browser out of the app at all. Since the automatic redirect is not available,
+the block that replaces the page and stops the script is not a compromise but
+the whole mechanism: the same outcome, reached by a click.
+
+One implementation, in the SDK (`content_sdk.signin`), because it is the only
+place three single-file Streamlit apps can share code from — D-21 records what
+happened the last time a helper was copy-pasted into three UIs.
+
 ## Consequences
 
 - **Self-hosted is untouched.** No cookie is sent, none is needed, and
