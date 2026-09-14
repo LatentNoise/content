@@ -148,6 +148,32 @@ class ContentClient:
     def purge_cache(self) -> dict:
         return self._t.post("/cache/purge")
 
+    # --- who you are, and the keys a program holds (ADR 0030, 0033) -------------
+    #
+    # These four were on the typed client and not here, so every call the three
+    # surfaces made to them raised AttributeError — the Console's whole Access
+    # tab, and the sign-in banner, which read the failure as "the engine is
+    # unreachable" and drew nothing. A test guards the pair now: whatever a
+    # surface calls on its client has to exist on this class.
+
+    def whoami(self) -> dict:
+        """Who this client is to the engine. On a self-hosted instance that is
+        the single implicit user, with no account behind it."""
+        return self._t.get("/auth/me")
+
+    def api_keys(self) -> list[dict]:
+        """The keys of the current owner: name, created, last used. Never the
+        key, because the engine does not have it either."""
+        return self._t.get("/auth/keys")
+
+    def create_api_key(self, name: str) -> dict:
+        """Mint a named key for a program. **The secret is in the returned
+        ``key`` field and nowhere else**: only its fingerprint is stored."""
+        return self._t.post("/auth/keys", {"name": name})
+
+    def revoke_api_key(self, key_id: str) -> None:
+        self._t.request("DELETE", f"/auth/keys/{key_id}")
+
     def openapi(self) -> dict:
         # OpenAPI lives at the server root, not under /api/v1.
         return self._t._client.get(f"{self._t.base_url}/openapi.json").json()

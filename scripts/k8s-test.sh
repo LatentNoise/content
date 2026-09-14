@@ -32,6 +32,7 @@ TAG="${TAG:-test}"
 VALUES="${VALUES:-$HOME/Dev/kubernetes-k3s/content/values-test.yaml}"
 ONLY="${ONLY:-}"
 SKIP_BUILD="${SKIP_BUILD:-}"
+SKIP_DEPLOY_RESTART="${SKIP_DEPLOY_RESTART:-}"
 
 # name : dockerfile : image
 SURFACES=(
@@ -64,6 +65,24 @@ fi
 printf '▸ deploying %s in namespace %s\n' "$RELEASE" "$NAMESPACE"
 helm upgrade --install "$RELEASE" deploy/charts/content \
   -n "$NAMESPACE" --create-namespace -f "$VALUES" --wait --timeout 5m
+
+# The tag never changes here, so nothing in the manifest changes, so Kubernetes
+# sees no reason to replace a pod — and the freshly imported image would sit on
+# the node unused while the old one kept serving. A rollout is what actually
+# picks it up, and it is the whole reason a mutable tag needs one.
+if [ -z "$SKIP_DEPLOY_RESTART" ]; then
+  printf '▸ restarting the pods onto the imported images\n'
+  for entry in "${SURFACES[@]}"; do
+    IFS=: read -r name _ _ <<<"$entry"
+    selected "$name" || continue
+    case "$name" in
+      engine) deployment="$RELEASE-content" ;;
+      *) deployment="$RELEASE-content-$name" ;;
+    esac
+    kubectl -n "$NAMESPACE" rollout restart "deploy/$deployment" >/dev/null
+    kubectl -n "$NAMESPACE" rollout status "deploy/$deployment" --timeout=3m >/dev/null
+  done
+fi
 
 cat <<EOF
 
