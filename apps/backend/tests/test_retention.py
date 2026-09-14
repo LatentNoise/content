@@ -25,9 +25,13 @@ OWNER = "usr_someone"
 
 
 def _finished_job(store, settings, owner=OWNER, *, finished_at=None, bytes_=4096):
+    """A job as the executor leaves one: bytes on disk and a row pointing at
+    them. The row matters now — the sweep looks for jobs that still hold
+    content, so a job without a registered artifact is nothing to reclaim."""
     job_id = store.create_job(owner, {"sources": []}, "fail_fast", None)
     storage = JobStorage.from_settings(settings, owner, job_id).ensure()
     (storage.artifacts / "video.mp4").write_bytes(b"x" * bytes_)
+    _register(store, job_id, owner)
     _reach_running(store, job_id)
     store.transition_job(
         job_id,
@@ -110,7 +114,7 @@ def test_the_delivered_copy_goes_when_asked(settings, store):
     delivered = delivery_root_for(scoped, OWNER) / "My Film.mp4"
     delivered.parent.mkdir(parents=True)
     delivered.write_bytes(b"y" * 2048)
-    artifact_id = _register(store, job_id)
+    artifact_id = store.list_artifacts(OWNER, job_id)[0]["id"]
     store.set_artifact_delivered(OWNER, artifact_id, "My Film.mp4")
 
     done = retention.delete_job(
@@ -124,7 +128,7 @@ def test_a_delivered_file_someone_moved_is_not_an_error(settings, store):
     """A library is for organising. Losing track of a file is expected."""
     scoped = replace(settings, delivery_scope="per_owner", storage_layout="per_user")
     job_id, _ = _finished_job(store, scoped)
-    artifact_id = _register(store, job_id)
+    artifact_id = store.list_artifacts(OWNER, job_id)[0]["id"]
     store.set_artifact_delivered(OWNER, artifact_id, "gone/elsewhere.mp4")
     done = retention.delete_job(
         OWNER, job_id, store=store, settings=scoped, include_delivered=True
@@ -138,7 +142,7 @@ def test_a_delivered_file_someone_moved_is_not_an_error(settings, store):
 def test_nothing_is_swept_by_default(settings, store):
     """Upgrading must not start deleting data nobody asked to delete."""
     old = (datetime.now(timezone.utc) - timedelta(days=90)).isoformat()
-    job_id, storage = _finished_job(store, settings, finished_at=old)
+    _, storage = _finished_job(store, settings, finished_at=old)
     assert retention.sweep_all(store=store, settings=settings) == {
         "enabled": False,
         "jobs": 0,
@@ -147,22 +151,40 @@ def test_nothing_is_swept_by_default(settings, store):
     assert storage.root.exists()
 
 
-def test_a_job_older_than_the_window_is_swept(settings, store):
+def test_a_job_past_the_window_loses_its_bytes_and_keeps_its_history(settings, store):
+    """The distinction this sweep exists for: the video goes, the record stays."""
     keeping = replace(settings, retention_days=7)
     old = (datetime.now(timezone.utc) - timedelta(days=10)).isoformat()
     job_id, storage = _finished_job(store, keeping, finished_at=old)
+    (storage.snapshots / "plan.json").write_text("{}")
 
     result = retention.sweep_all(store=store, settings=keeping)
+
     assert result["jobs"] == 1 and result["freed_bytes"] >= 4096
-    assert not storage.root.exists()
-    assert store.get_job(OWNER, job_id) is None
+    # The bytes are gone…
+    assert not storage.artifacts.exists()
+    # …and everything that makes the job answerable is not.
+    assert store.get_job(OWNER, job_id) is not None
+    assert (storage.snapshots / "plan.json").exists()
+    artifact = store.list_artifacts(OWNER, job_id)[0]
+    assert artifact["content_removed_at"]
+
+
+def test_an_already_expired_job_is_not_swept_again(settings, store):
+    """Otherwise the sweep walks the same directory on every tick, forever."""
+    keeping = replace(settings, retention_days=7)
+    old = (datetime.now(timezone.utc) - timedelta(days=10)).isoformat()
+    _finished_job(store, keeping, finished_at=old)
+
+    assert retention.sweep_all(store=store, settings=keeping)["jobs"] == 1
+    assert retention.sweep_all(store=store, settings=keeping)["jobs"] == 0
 
 
 def test_a_recent_job_is_left_alone(settings, store):
     keeping = replace(settings, retention_days=7)
     _, storage = _finished_job(store, keeping)
     assert retention.sweep_all(store=store, settings=keeping)["jobs"] == 0
-    assert storage.root.exists()
+    assert (storage.artifacts / "video.mp4").exists()
 
 
 def test_a_running_job_is_never_swept_however_old(settings, store):
@@ -188,11 +210,28 @@ def test_the_sweep_never_touches_the_library(settings, store):
     delivered = delivery_root_for(keeping, OWNER) / "My Film.mp4"
     delivered.parent.mkdir(parents=True)
     delivered.write_bytes(b"y" * 2048)
-    artifact_id = _register(store, job_id)
+    artifact_id = store.list_artifacts(OWNER, job_id)[0]["id"]
     store.set_artifact_delivered(OWNER, artifact_id, "My Film.mp4")
 
     retention.sweep_all(store=store, settings=keeping)
     assert delivered.exists()
+
+
+def test_one_pass_is_bounded_so_a_first_run_never_blocks_the_tick(settings, store):
+    """Switching retention on has every old job past the window at once."""
+    keeping = replace(settings, retention_days=7)
+    old_date = (datetime.now(timezone.utc) - timedelta(days=10)).isoformat()
+    for _ in range(3):
+        _finished_job(store, keeping, finished_at=old_date)
+
+    original = retention.SWEEP_BATCH
+    retention.SWEEP_BATCH = 2
+    try:
+        assert retention.sweep_all(store=store, settings=keeping)["jobs"] == 2
+        assert retention.sweep_all(store=store, settings=keeping)["jobs"] == 1
+        assert retention.sweep_all(store=store, settings=keeping)["jobs"] == 0
+    finally:
+        retention.SWEEP_BATCH = original
 
 
 def test_the_sweep_covers_every_owner(settings, store):
@@ -234,3 +273,24 @@ def test_a_running_job_must_be_cancelled_first(client, settings, store):
     # 409 and not 404: it exists, and the verb is wrong for its state.
     assert response.status_code == 409
     assert "cancel" in response.json()["detail"]
+
+
+def test_expired_content_says_so_rather_than_reading_as_a_lost_file(
+    client, settings, store
+):
+    """The one thing a caller can act on: expired means ask again, missing does
+    not. Both are 410, and only the code tells them apart."""
+    keeping = replace(settings, retention_days=7)
+    old = (datetime.now(timezone.utc) - timedelta(days=10)).isoformat()
+    job_id, _ = _finished_job(store, keeping, owner=LOCAL_OWNER, finished_at=old)
+    artifact_id = store.list_artifacts(LOCAL_OWNER, job_id)[0]["id"]
+    assert client.get(f"/api/v1/artifacts/{artifact_id}/content").status_code == 200
+
+    retention.sweep_all(store=store, settings=keeping)
+
+    response = client.get(f"/api/v1/artifacts/{artifact_id}/content")
+    assert response.status_code == 410
+    assert response.json()["detail"]["code"] == "artifact_content_expired"
+    # The record answers for itself with no bytes behind it: that is the point
+    # of expiring rather than deleting.
+    assert client.get(f"/api/v1/artifacts/{artifact_id}").status_code == 200

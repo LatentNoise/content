@@ -123,6 +123,45 @@ clean:  ## Remove caches
 run:  ## Run the engine locally (uvicorn on :8000, no Docker)
 	cd apps/backend && .venv/bin/python -m uvicorn content.api.app:app --port 8000
 
+# The everyday loop. Four processes from the working tree, all reloading on
+# save, so a change is visible on a browser refresh — no image to build and
+# nothing pushed. Runs in `token` mode by default because that is where the
+# interesting behaviour lives (sign-in, sessions, per-user storage, quotas);
+# `make dev AUTH=none` gives the self-hosted contract instead.
+dev: ui-venv  ## Run engine + the three surfaces locally, reloading on save (Ctrl-C stops)
+	@AUTH=$(AUTH) OPERATOR_EMAILS=$(OPERATOR_EMAILS) ./scripts/dev.sh
+
+# Ctrl-C is the normal way out, and it is not the only one: a stack started
+# detached (or from another terminal, or by an agent) has no Ctrl-C to press.
+dev-stop:  ## Stop a local stack started by make dev
+	@pkill -f 'scripts/dev.sh' 2>/dev/null || true
+	@pkill -f 'uvicorn content.api.app' 2>/dev/null || true
+	@pkill -f 'streamlit run .*/apps/web-' 2>/dev/null || true
+	@echo "local stack stopped"
+
+AUTH ?= token
+OPERATOR_EMAILS ?= you@example.com
+
+# The other loop: the same code, in the cluster, end to end — ingress, a
+# session cookie on a parent domain, per-user volumes, the migration on a real
+# disk. Slower than `make dev` by minutes, so it is the check before a release,
+# not the one between two edits. Production is a separate release on separate
+# volumes and is never touched; nothing here is reachable from the internet.
+k8s-test:  ## Build the working tree into the cluster's test release (ONLY=studio to move one)
+	@ONLY=$(ONLY) SKIP_BUILD=$(SKIP_BUILD) ./scripts/k8s-test.sh
+
+k8s-test-link:  ## Print the last sign-in link the test engine wrote to its log
+	@kubectl -n content-test logs deploy/content-test-content --tail=500 \
+	  | grep -o 'http://api.content-test.k3s.lab[^ ]*auth/callback?token=[A-Za-z0-9_-]*' \
+	  | tail -1 || echo "no link yet — ask for one on a surface first"
+
+k8s-test-down:  ## Remove the test release and its volumes (production untouched)
+	helm uninstall content-test -n content-test || true
+	kubectl delete namespace content-test --wait=false || true
+
+ONLY ?=
+SKIP_BUILD ?=
+
 # --- release management ---------------------------------------------------------
 
 version:  ## Show every version declaration and fail if they disagree

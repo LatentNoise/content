@@ -18,10 +18,9 @@ from content_sdk import legal, notifications
 from content_sdk.compat import (
     ApiError,
     ContentClient,
-    is_unauthenticated,
-    sign_in_url,
     streamlit_visitor_headers,
 )
+from content_sdk.signin import render_identity
 from content_sdk.status import better_status, display, is_producible
 from content_sdk.uploads import upload_once
 
@@ -31,7 +30,7 @@ PUBLIC_API_URL = os.getenv("CONTENT_PUBLIC_API_URL", API_URL).rstrip("/")
 # This app's own release, in lockstep with the whole monorepo (`make version`
 # guards every declaration). Passed to the notification bar so the launch check
 # can compare it against the backend's version and warn on a torn deployment.
-__version__ = "0.8.2"
+__version__ = "0.8.3"
 
 # Fallback ordering only. The real list comes from the server's resolved
 # capabilities, each of which carries its own `output_type` — see
@@ -129,49 +128,6 @@ st.markdown(
 APP_TITLE = "Content Studio"
 
 
-def _ask_to_sign_in() -> None:
-    """Replace the page with a way in, and stop.
-
-    A block rather than a redirect, on purpose. Streamlit renders inside an
-    isolated frame where an automatic redirect is unreliable, and one that
-    fires on a refusal it misread traps the visitor in a loop they cannot
-    leave. A page that says what happened and offers one button cannot loop.
-
-    The door itself lives in the engine (ADR 0033): this only points at it, and
-    carries the current address so the visitor comes back where they were.
-    """
-    st.markdown(f"## Sign in to {APP_TITLE}")
-    st.write(
-        "This instance asks who you are before it does anything. "
-        "Enter your email on the next page and we will send you a link — "
-        "no password, and it works once."
-    )
-    st.link_button(
-        "Sign in",
-        sign_in_url(PUBLIC_API_URL or API_URL, _current_url()),
-        type="primary",
-    )
-    st.caption(
-        "Already signed in on another surface? Reload this page — "
-        "one session covers all of them."
-    )
-    st.stop()
-
-
-def _current_url() -> str:
-    """Where to send the visitor back after signing in.
-
-    Read from the browser's own address rather than built from configuration,
-    so a surface reached under any of its names returns to that same name. The
-    engine checks it against its allowlist anyway, so a value that cannot be
-    read is simply omitted.
-    """
-    try:
-        return str(st.context.url or "")
-    except Exception:  # noqa: BLE001 — older Streamlit, or no context
-        return ""
-
-
 @st.cache_resource
 def get_client(base_url: str) -> ContentClient:
     """One client for the whole process, and an identity per request.
@@ -187,6 +143,15 @@ def get_client(base_url: str) -> ContentClient:
 
 
 client = get_client(API_URL)
+
+# Who is visiting, asked before anything is drawn (ADR 0033/0034). It asks the
+# engine rather than waiting for some later call to refuse: the boot calls are
+# open by design and the owner-scoped ones sit in blocks that degrade politely,
+# so a visitor with no session was shown a whole working product that quietly
+# did nothing. The interface still renders — the banner this puts above it is
+# what says why nothing works. In `none` mode this answers `local` and nobody
+# is ever asked for anything.
+render_identity(client, app_title=APP_TITLE, api_base_url=PUBLIC_API_URL or API_URL)
 st.session_state.setdefault("analysis", None)
 st.session_state.setdefault("job_id", None)
 
@@ -202,8 +167,8 @@ try:
     version = health.get("version", "?")
     credentials = client.config().get("credentials", [])
 except Exception as exc:  # noqa: BLE001
-    if is_unauthenticated(exc):
-        _ask_to_sign_in()
+    # Not a refusal: the gate above already settled identity, and these two
+    # routes carry no owner. Anything failing here is the engine itself.
     st.error(f"⚠️ Back-end unreachable at {API_URL} — {exc}")
 
 with st.sidebar:

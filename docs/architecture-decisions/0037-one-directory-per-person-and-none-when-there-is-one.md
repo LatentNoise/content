@@ -61,7 +61,12 @@ targets a path, and nothing about that path being inside another volume
 prevents it. That was the argument against this layout, and it was wrong.
 
 `delivery_scope` keeps its three answers on top: `shared` gives every account
-the one configured library (a family instance), `off` gives none. Under `flat`,
+the one configured library (a family instance), `off` gives none. **Its default
+is derived from the mode, exactly like the layout's**: one library for
+everybody is right for one person or a household that chose to share, and wrong
+the moment strangers sign in — their files would mix in the same folders, and a
+shared library is counted against nobody's quota and swept by nothing. Under
+`flat`,
 `per_owner` has nobody to separate and collapses to the plain library rather
 than inventing a `<root>/local/` level that would break every path a media
 server already reads.
@@ -116,5 +121,7 @@ direction and leaves the rewrite for when it is needed.
 - A hosted install has one directory per person. Deleting an account, measuring
   a quota, backing up or moving one person is one path.
 - The uploads finally follow the rule ADR 0030 wrote for everything else.
-- `owner_storage_report` and the quotas read one tree per owner, `resources`
-  included, so a future raw-download cache is counted from the day it exists.
+- `owner_storage_report` reads one tree per owner and reports every family,
+  `resources` included — but the quota counts only what the person asked for:
+  artifacts, their library and their uploads (ADR 0036). A cache the engine
+  keeps on its own initiative is the engine's cost, not theirs.

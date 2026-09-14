@@ -1,8 +1,18 @@
-"""Reclaiming disk: deleting a job on purpose, and sweeping old ones.
+"""Reclaiming disk: deleting a job on purpose, and expiring old content.
 
 Two families accumulate and nothing removed them: `artifacts`, which are the
 results themselves, and the delivery library. `tmp` and `work` were already
 purged at the end of every job.
+
+The two verbs are not the same, and the difference is deliberate:
+
+**Deleting** is what a person asks for. The job and its history go with the
+bytes, because they asked for it to be gone.
+
+**Expiring** is what the unattended sweep does. Only the bytes go; the job
+stays answerable. A job's record is a few kilobytes of JSON — 8 KB measured on
+a real instance — and someone re-reading what they asked for three months ago
+costs nothing.
 
 This matters more since quotas exist. A ceiling with no way to free space is a
 dead end: someone who reaches it can never do anything again, and their only
@@ -94,40 +104,77 @@ def delete_job(
     return Deletion(job_id=job_id, freed_bytes=freed, delivered_removed=removed)
 
 
-def sweep_owner(
-    owner_id: str, *, store, settings, now: datetime | None = None
-) -> list[Deletion]:
-    """Delete this owner's terminal jobs older than the retention window.
+def expire_job_content(
+    owner_id: str, job_id: str, *, store, settings
+) -> Deletion | None:
+    """Take a finished job's bytes and leave its history.
 
-    Never touches the delivery library: a sweep runs unattended, and unattended
-    deletion of someone's film collection is not a feature. The artifacts go;
-    the copy the person organised stays.
+    This is what the unattended sweep does, and the difference from
+    `delete_job` is the whole point. A job's record — its request, its plan,
+    its steps, its logs, what it produced and when — is a few kilobytes of
+    JSON, measured at 8 KB on a real instance. The video is what costs. So
+    retention removes `artifacts/` and `sources/`, and the job stays
+    answerable: you can still see that you asked for it, what it made, and
+    what happened.
+
+    The artifact rows stay too, marked with the moment their bytes went. The
+    API then says "this expired" rather than answering like a file it lost,
+    which are different facts and deserve different words.
+
+    The delivery library is untouched, as ever: the copy the person organised
+    is theirs.
     """
-    days = float(getattr(settings, "retention_days", 0) or 0)
-    if days <= 0:
-        return []
-    cutoff = ((now or datetime.now(timezone.utc)) - timedelta(days=days)).isoformat()
-    deletions: list[Deletion] = []
-    for job in store.jobs_finished_before(owner_id, cutoff):
-        done = delete_job(
-            owner_id, job["id"], store=store, settings=settings, include_delivered=False
-        )
-        if done is not None:
-            deletions.append(done)
-    return deletions
+    job = store.get_job(owner_id, job_id)
+    if job is None:
+        return None
+
+    storage = JobStorage.from_settings(settings, owner_id, job_id)
+    freed = _tree_bytes(storage.artifacts) + _tree_bytes(storage.sources)
+    shutil.rmtree(storage.artifacts, ignore_errors=True)
+    shutil.rmtree(storage.sources, ignore_errors=True)
+    shutil.rmtree(storage.tmp, ignore_errors=True)
+
+    for artifact in store.list_artifacts(owner_id, job_id):
+        store.mark_artifact_content_removed(owner_id, artifact["id"])
+
+    return Deletion(job_id=job_id, freed_bytes=freed, delivered_removed=0)
+
+
+# At most this many jobs are expired in one pass. The sweep is housekeeping
+# beside a job queue, so it must stay a short, predictable errand: an instance
+# switching retention on for the first time has every old job past the window
+# at once, and draining that over a few ticks costs nothing while doing it in
+# one blocks the tick for as long as the disk takes.
+SWEEP_BATCH = 200
 
 
 def sweep_all(*, store, settings, now: datetime | None = None) -> dict:
-    """Sweep every owner. Returns what it freed, for a log line worth reading."""
+    """Expire the content of every terminal job past the window.
+
+    One indexed query finds them, across all owners, oldest first. On a normal
+    tick it returns nothing and the sweep is over.
+
+    Two things it deliberately does not do. It does not delete the jobs — the
+    history is cheap and someone re-reading what they asked for three months
+    ago costs nothing. And it does not touch the delivery library: a sweep runs
+    unattended, and unattended deletion of someone's film collection is not a
+    feature.
+    """
     days = float(getattr(settings, "retention_days", 0) or 0)
     if days <= 0:
         return {"enabled": False, "jobs": 0, "freed_bytes": 0}
+    cutoff = ((now or datetime.now(timezone.utc)) - timedelta(days=days)).isoformat()
     jobs = 0
     freed = 0
-    for owner_id in store.owners_with_jobs():
-        for deletion in sweep_owner(owner_id, store=store, settings=settings, now=now):
+    for job in store.jobs_with_expired_content(cutoff, SWEEP_BATCH):
+        done = expire_job_content(
+            job["owner_id"], job["id"], store=store, settings=settings
+        )
+        if done is not None:
             jobs += 1
-            freed += deletion.freed_bytes
+            freed += done.freed_bytes
     if jobs:
-        log.info("retention swept %s job(s), freeing %s bytes", jobs, freed)
+        log.info(
+            "retention expired the content of %s job(s), freeing %s bytes", jobs, freed
+        )
     return {"enabled": True, "jobs": jobs, "freed_bytes": freed}

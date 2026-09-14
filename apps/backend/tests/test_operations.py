@@ -375,7 +375,7 @@ def test_the_operator_storage_endpoint_reports_families(client):
 def test_the_plain_storage_endpoint_reports_the_caller(client):
     body = client.get("/api/v1/storage").json()
     assert body["owner_id"] == "local"
-    assert {"jobs", "delivery", "uploads", "total_bytes"} <= set(body)
+    assert {"artifacts", "delivery", "uploads", "total_bytes"} <= set(body)
     # Never the machine's layout: how much you hold, not where it is kept.
     assert "path" not in str(body)
 

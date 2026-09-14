@@ -378,13 +378,25 @@ def test_every_surface_resolves_its_visitor_per_request(run_app):
         assert clients, f"{surface} builds its client without a headers provider"
 
 
-def test_a_refused_visitor_gets_a_way_in_and_nothing_else(run_app, monkeypatch):
-    """A surface the engine refuses must stop and offer the door.
+def test_a_refused_visitor_gets_a_way_in_without_losing_the_page(run_app, monkeypatch):
+    """A surface the engine refuses shows the door, above the interface.
 
-    Not a redirect: Streamlit renders inside an isolated frame where one is
-    unreliable, and a redirect that fires on a misread refusal traps the
-    visitor in a loop. A page that explains and offers one button cannot loop —
-    but it must also not keep rendering the surface behind it.
+    The refusal that matters is **`whoami`**, not some later call. The routes a
+    surface boots on carry no owner by design — health, config, the catalog —
+    and the owner-scoped ones sit in blocks that degrade to a dash. So a
+    visitor whose session was deleted saw a complete, working product that
+    silently did nothing. Asking who they are, first, is what makes the refusal
+    arrive where it can be acted on.
+
+    The page is not replaced. Someone arriving at a public instance should see
+    what the product is before being asked for anything; what they must not do
+    is wonder why nothing happens.
+
+    Not a redirect: Streamlit components render inside an iframe sandboxed
+    without `allow-top-navigation`, so a script cannot move the browser out of
+    the app at all. A button is the whole mechanism, not a fallback.
+
+    All three surfaces, because a fourth must not quietly skip it.
     """
     from conftest import FakeContentClient
     from content_sdk.errors import APIError
@@ -392,14 +404,85 @@ def test_a_refused_visitor_gets_a_way_in_and_nothing_else(run_app, monkeypatch):
     def refuse(self):
         raise APIError(401, {"detail": "Authentication required."})
 
-    monkeypatch.setattr(FakeContentClient, "health", refuse, raising=False)
-    monkeypatch.setattr(FakeContentClient, "system", refuse, raising=False)
+    monkeypatch.setattr(FakeContentClient, "whoami", refuse, raising=False)
+
+    # The marker is each surface's own brand line, rendered *after* the gate:
+    # it proves the script carried on rather than stopping at the banner.
+    for surface, title, behind in (
+        ("studio", "Content Studio", "every source, every output"),
+        ("console", "Content Admin", "backend cockpit"),
+        ("hometube", "HomeTube", 'class="ht-brand"'),
+    ):
+        at = run_app(surface)
+        assert not at.exception, (surface, at.exception)
+        text = _all_text(at)
+        assert "You are not signed in" in text, surface
+        assert f"{title} needs to know who you are" in text, surface
+        # The way in is a real link to the engine's door, twice: once above the
+        # interface, once in the sidebar where it stays after scrolling.
+        targets = [b.proto.url for b in at.get("link_button")]
+        assert sum("/auth/sign-in" in t for t in targets) == 2, (surface, targets)
+        # And the interface itself is still there.
+        assert behind in text, surface
+
+
+def test_a_signed_in_visitor_is_asked_for_nothing(run_app):
+    """The self-hosted contract, and the ordinary hosted one: no banner."""
+    for surface in ("studio", "console", "hometube"):
+        at = run_app(surface)
+        assert not at.exception, (surface, at.exception)
+        assert "You are not signed in" not in _all_text(at), surface
+
+
+def test_an_account_can_see_who_it_is_and_leave(run_app, monkeypatch):
+    """An account that cannot be left is a defect of signing in, not a missing
+    extra: a shared machine, or simply wanting to see what a visitor sees."""
+    from conftest import FakeContentClient
+
+    monkeypatch.setattr(
+        FakeContentClient,
+        "whoami",
+        lambda self: {
+            "owner_id": "usr_abc",
+            "email": "someone@example.com",
+            "account": True,
+            "is_operator": False,
+        },
+        raising=False,
+    )
+    for surface in ("studio", "console", "hometube"):
+        at = run_app(surface)
+        assert not at.exception, (surface, at.exception)
+        assert "someone@example.com" in _all_text(at), surface
+        assert "Sign out" in _labels(at, "button"), surface
+
+
+def test_the_self_hosted_user_is_never_offered_a_way_out(run_app):
+    """One implicit user who never signed in (ADR 0030). Offering to sign them
+    out would be offering to break their own install."""
+    at = run_app("studio")
+    assert "Sign out" not in _labels(at, "button")
+
+
+def test_an_unreachable_engine_is_not_reported_as_a_missing_session(
+    run_app, monkeypatch
+):
+    """A door is the wrong answer to a backend that is down.
+
+    401 means sign in. A refused connection, a timeout or a 500 means the
+    engine, and sending someone to a form they cannot complete would hide the
+    one fact they need.
+    """
+    from conftest import FakeContentClient
+
+    def explode(self):
+        raise ConnectionError("no route to host")
+
+    monkeypatch.setattr(FakeContentClient, "whoami", explode, raising=False)
+    monkeypatch.setattr(FakeContentClient, "health", explode, raising=False)
 
     at = run_app("studio")
     assert not at.exception, at.exception
-
     text = _all_text(at)
-    assert "Sign in to Content Studio" in text
-    assert "we will send you a link" in text
-    # The surface itself must not have rendered: st.stop() ran.
-    assert "Add a source" not in text
+    assert "Sign in to Content Studio" not in text
+    assert "Back-end unreachable" in text

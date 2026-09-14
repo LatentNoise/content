@@ -1093,6 +1093,21 @@ def create_app(
             / artifact["filename"]
         )
         if not path.is_file():
+            # Two different facts, and a caller can act on the difference: an
+            # expired artifact means "ask again and it will be produced", a
+            # missing one means something went wrong here.
+            if artifact.get("content_removed_at"):
+                raise HTTPException(
+                    status_code=410,
+                    detail={
+                        "code": "artifact_content_expired",
+                        "message": (
+                            "This artifact's content was removed by retention on "
+                            f"{artifact['content_removed_at'][:10]}. Its record is "
+                            "kept; submit the request again to produce it anew."
+                        ),
+                    },
+                )
             raise HTTPException(status_code=410, detail="artifact content is gone")
         return FileResponse(
             path,

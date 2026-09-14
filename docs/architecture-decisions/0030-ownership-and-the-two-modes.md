@@ -44,6 +44,17 @@ Chosen over `default` (which reads as "a default value" and could collide with
 a real account of that name) and over `self_hosted` (which names a deployment,
 not a person). Real accounts get `usr_<random>` ids, so `local` cannot collide.
 
+**And `local` is reserved, by refusal and not by convention** (added
+2026-09-13). The `usr_` prefix makes the collision impossible by accident, but
+the id reaches account creation as an argument, and `local` is not an ordinary
+owner: it owns everything a self-hosted instance ever produced, and
+`is_operator` grants it the machine unconditionally. So two locks, not one
+habit. Creating an account on it raises. And on an instance where people sign
+in, a credential that resolves to `local` is refused at the edge and logged as
+an error — a row saying `local` hands nothing out, whether it came from data
+carried over from before sign-in was turned on, from an edited database, or
+from a bug upstream.
+
 ### Identity is established once, at the edge, and derived — never declared
 
 `content/api/auth.py` is the only place that turns a request into an identity,

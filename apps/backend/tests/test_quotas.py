@@ -247,3 +247,58 @@ def test_a_submission_records_the_media_it_asked_for(settings, store, providers)
     # The fixture source has a duration, so the job carries it.
     assert store.media_seconds_since("usr_counted", "2000-01-01") > 0
     assert result.job_id
+
+
+# --- what the quota counts, and what it deliberately does not --------------------
+
+
+def test_the_quota_counts_what_was_asked_for_not_what_the_engine_keeps(settings, store):
+    """Artifacts, the library and uploads are the person's. `resources` is raw
+    material the engine holds so the NEXT job need not fetch it again — billing
+    for it would charge someone for an optimisation they did not request, and
+    punish the reuse that makes the engine cheaper to run."""
+    from content.storage.paths import owner_storage_report
+    from content.storage.roots import owner_roots
+
+    scoped = replace(settings, delivery_scope="per_owner", storage_layout="per_user")
+    roots = owner_roots(scoped, OWNER)
+    job = roots.job("job_1")
+    (job / "artifacts").mkdir(parents=True)
+    (job / "artifacts" / "video.mp4").write_bytes(b"a" * 1000)
+    (job / "snapshots").mkdir(parents=True)
+    (job / "snapshots" / "plan.json").write_bytes(b"h" * 500)
+    roots.uploads.mkdir(parents=True)
+    (roots.uploads / "sent.bin").write_bytes(b"u" * 200)
+    roots.output.mkdir(parents=True)
+    (roots.output / "My Film.mp4").write_bytes(b"d" * 300)
+    roots.resources.mkdir(parents=True)
+    (roots.resources / "raw.mkv").write_bytes(b"r" * 9000)
+
+    report = owner_storage_report(scoped, OWNER)
+
+    assert report["artifacts"]["bytes"] == 1000
+    assert report["uploads"]["bytes"] == 200
+    assert report["delivery"]["bytes"] == 300
+    # Reported so a person can see them, excluded from the total.
+    assert report["resources"]["bytes"] == 9000
+    assert report["history"]["bytes"] == 500
+    assert report["total_bytes"] == 1500
+
+
+def test_a_big_resource_cache_never_trips_the_storage_quota(settings, store):
+    tight = replace(
+        settings,
+        quota_storage_bytes=1000,
+        delivery_scope="per_owner",
+        storage_layout="per_user",
+    )
+    roots = owner_roots_for(tight)
+    roots.resources.mkdir(parents=True)
+    (roots.resources / "raw.mkv").write_bytes(b"r" * 50_000)
+    quotas.check(OWNER, store, tight)  # must not raise
+
+
+def owner_roots_for(settings):
+    from content.storage.roots import owner_roots
+
+    return owner_roots(settings, OWNER)

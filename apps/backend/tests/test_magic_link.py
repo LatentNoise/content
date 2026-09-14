@@ -373,3 +373,34 @@ def test_a_landing_page_outside_the_allowlist_is_ignored(
         )
     assert response.headers["location"] != "https://phishing.example"
     assert response.headers["location"] == hosted.public_base_url
+
+
+# --- `local` is the self-hosted owner and never an account ------------------------
+
+
+def test_a_real_account_can_never_be_called_local(store):
+    """`local` owns everything a self-hosted instance ever produced, and
+    `is_operator` grants it the machine unconditionally. An account landing on
+    it would inherit all of that."""
+    with pytest.raises(ValueError, match="local"):
+        store.create_account(LOCAL_OWNER, "someone@example.com")
+
+
+def test_a_credential_resolving_to_local_is_refused(client, mailer, store, hosted):
+    """The second lock, and the one that matters: even a row that says `local`
+    hands nothing out on an instance where people sign in.
+
+    Rows like that are not hypothetical — an instance that ran self-hosted
+    before sign-in was turned on has `local` all over its jobs.
+    """
+    _sign_in(client, mailer, "someone@example.com")
+    cookie = client.cookies[hosted.session_cookie_name]
+    with store._conn() as conn:  # noqa: SLF001 — forging the row is the point
+        conn.execute(
+            "UPDATE sessions SET owner_id = ? WHERE owner_id != ?",
+            (LOCAL_OWNER, LOCAL_OWNER),
+        )
+
+    client.cookies.set(hosted.session_cookie_name, cookie)
+    assert client.get("/api/v1/auth/me").status_code == 401
+    assert client.get("/api/v1/jobs").status_code == 401

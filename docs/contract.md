@@ -314,9 +314,10 @@ them, because every request already belongs to the single implicit user.
 | `GET` | `/auth/callback` | Follow the link: the token is burnt, a session cookie is set, the browser is redirected to a `next` that must be on the allowlist |
 | `GET` | `/auth/me` | The current owner, and the address behind it when there is an account |
 | `POST` | `/auth/logout` | Revoke this session (204) |
+| `GET` | `/artifacts/{id}/content` | The bytes. `410` with `artifact_content_expired` once retention has taken them — the record stays, so asking again produces it anew |
 | `DELETE` | `/jobs/{id}` | Delete one of your jobs and free what it holds. `?delivered=true` also removes its copies in the library (off by default). 409 while it is still running — cancel first |
 | `GET` | `/usage` | Where you stand against this installation's limits. `allowed: null` = not set here |
-| `GET` | `/storage` | **What you hold**: your jobs, uploads and delivered files, plus a total. No paths |
+| `GET` | `/storage` | **What you hold**, broken down: `artifacts`, `delivery`, `uploads` (counted in `total_bytes`), plus `resources`, `history` and `tmp` (shown, not counted). No paths |
 | `GET` | `/operator/storage` | Disk usage across the installation, paths included. **Operator only** (403 otherwise) |
 | `GET` | `/cache` · `POST` `/cache/purge` | The shared resource-fact cache. **Operator only** — it belongs to nobody, and purging decides for everyone |
 | `POST` | `/auth/keys` | Mint a named API key. **The secret is in this response and nowhere else** — only its fingerprint is stored |
