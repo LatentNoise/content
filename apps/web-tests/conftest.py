@@ -139,6 +139,25 @@ class FakeContentClient:
                 "vo_first": True,
                 "primary_include_subtitles": False,
             },
+            # What the engine declares about its siblings (ADR 0038), in the
+            # canonical order it publishes them.
+            "surfaces": [
+                {
+                    "kind": "studio",
+                    "title": "Content Studio",
+                    "url": "http://studio.test",
+                },
+                {
+                    "kind": "console",
+                    "title": "Content Admin",
+                    "url": "http://console.test",
+                },
+                {
+                    "kind": "hometube",
+                    "title": "HomeTube",
+                    "url": "http://hometube.test",
+                },
+            ],
         }
 
     def folders(self):

@@ -163,8 +163,34 @@ class AsyncContentClient:
     async def cache(self) -> dict[str, Any]:
         return await self._t.get("/cache")
 
+    async def operator_storage(self) -> dict[str, Any]:
+        """Disk usage across the whole installation. Operator-only, and it
+        reports the server's own paths — which is why it is."""
+        return await self._t.get("/operator/storage")
+
+    async def notifications(self) -> list[dict[str, Any]]:
+        return (await self._t.get("/notifications")).get("notifications", [])
+
     async def purge_cache(self) -> dict[str, Any]:
         return await self._t.post("/cache/purge")
+
+    # --- who you are, and the keys a program holds -------------------------------
+
+    async def whoami(self) -> dict[str, Any]:
+        return await self._t.get("/auth/me")
+
+    async def sign_out(self) -> None:
+        await self._t.post("/auth/logout")
+
+    async def create_api_key(self, name: str) -> dict[str, Any]:
+        """**The secret is in the returned ``key`` field and nowhere else.**"""
+        return await self._t.post("/auth/keys", {"name": name})
+
+    async def api_keys(self) -> list[dict[str, Any]]:
+        return await self._t.get("/auth/keys")
+
+    async def revoke_api_key(self, key_id: str) -> None:
+        await self._t.request("DELETE", f"/auth/keys/{key_id}")
 
     async def folders(self) -> list[str]:
         return (await self._t.get("/folders")).get("folders", [])

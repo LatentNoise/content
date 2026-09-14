@@ -22,6 +22,7 @@ from fastapi import APIRouter, Form, HTTPException, Request, Response, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BaseModel, field_validator
 
+from content.config import surface_at
 from content.identity import credentials
 from content.persistence.store import utcnow
 
@@ -139,6 +140,13 @@ def build_auth_router(settings, store, mailer) -> APIRouter:
     cookie_name = settings.session_cookie_name
     product = settings.product_name
 
+    def _product_for(next_target: str) -> str:
+        """What the page and the email call the place someone is signing in
+        to. "Sign in to Content Studio" when the return address is a surface
+        we know; the product's own name otherwise — never the bare target."""
+        surface = surface_at(settings, next_target)
+        return surface["title"] if surface else product
+
     def _set_session_cookie(response: Response, secret: str) -> None:
         response.set_cookie(
             cookie_name,
@@ -169,7 +177,7 @@ def build_auth_router(settings, store, mailer) -> APIRouter:
             "magic-link",
             {
                 "link": link,
-                "product": product,
+                "product": _product_for(next_target),
                 "minutes": f"{settings.magic_link_ttl_minutes:g}",
             },
         )
@@ -268,9 +276,10 @@ def build_auth_router(settings, store, mailer) -> APIRouter:
         safe_next = (
             next if redirect_is_allowed(next, settings.allowed_redirect_origins) else ""
         )
+        going_to = _product_for(safe_next)
         return _page(
-            f"Sign in to {product}",
-            f"<h1>Sign in to {html.escape(product)}</h1>"
+            f"Sign in to {going_to}",
+            f"<h1>Sign in to {html.escape(going_to)}</h1>"
             "<p>Enter your email and we will send you a link. No password.</p>"
             '<form method="post" action="/auth/sign-in">'
             f'<input type="hidden" name="next" value="{html.escape(safe_next, True)}">'

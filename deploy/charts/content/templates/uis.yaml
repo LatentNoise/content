@@ -42,15 +42,6 @@ spec:
             # L'API vue par le NAVIGATEUR de l'utilisateur.
             - name: CONTENT_PUBLIC_API_URL
               value: {{ $.Values.publicApiUrl | quote }}
-            {{- /* The sister surfaces, declared by the deployment rather
-                   than hard-coded: each UI is given the public URL of the
-                   other surfaces that are actually deployed. */}}
-            {{- range $sib, $sibUi := $.Values.uis }}
-            {{- if and $sibUi.enabled $sibUi.ingress.enabled (ne $sib $key) }}
-            - name: CONTENT_{{ $sib | upper }}_URL
-              value: "http://{{ $sibUi.ingress.host }}"
-            {{- end }}
-            {{- end }}
             {{- with $ui.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}

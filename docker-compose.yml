@@ -33,6 +33,9 @@ services:
     environment:
       - TZ=${TZ:-Europe/Paris}
       - CONTENT_DATA_DIR=/data
+      # Where a browser reaches each surface (ADR 0038): what lets every UI
+      # offer the others, and the sign-in page name where it sends someone.
+      - CONTENT_SURFACES=studio=http://localhost:${STUDIO_PORT:-8502},console=http://localhost:${CONSOLE_PORT:-8503},hometube=http://localhost:${HOMETUBE_PORT:-8501}
       - CONTENT_DB_PATH=/data/content.db
       - CONTENT_MAX_CONCURRENT_JOBS=${CONTENT_MAX_CONCURRENT_JOBS:-2}
       - CONTENT_STEP_TIMEOUT_SECONDS=${CONTENT_STEP_TIMEOUT_SECONDS:-3600}

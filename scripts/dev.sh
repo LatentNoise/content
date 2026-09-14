@@ -58,7 +58,9 @@ export CONTENT_SESSION_COOKIE_SECURE=false
 # Empty domain means host-only: the browser files it under `localhost`, and
 # cookies ignore the port, so one sign-in covers all four ports.
 export CONTENT_SESSION_COOKIE_DOMAIN=""
-export CONTENT_ALLOWED_REDIRECT_ORIGINS="$STUDIO,$CONSOLE,$HOMETUBE"
+# The surfaces, declared once on the engine (ADR 0038): every UI learns the
+# others from /config, and the redirect allowlist follows from this list.
+export CONTENT_SURFACES="studio=$STUDIO,console=$CONSOLE,hometube=$HOMETUBE"
 export CONTENT_SIGN_IN_DEFAULT_TARGET="$STUDIO"
 # No mailer: the sign-in link goes to the log, which is where this script
 # reads it from.

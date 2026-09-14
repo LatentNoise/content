@@ -1,4 +1,4 @@
-"""Telling a visitor they are not signed in, on every surface, without lying.
+"""Who is visiting a surface, where else they can go, and how they leave.
 
 A Streamlit surface runs on a server and calls the engine from its own process,
 so nothing about the visitor's browser reaches the engine except the cookie the
@@ -32,6 +32,12 @@ gone, while the reason the page is not working lasts until it is fixed.
 components render inside an iframe sandboxed without `allow-top-navigation`, so
 a script cannot move the browser out of the app at all.
 
+**The other surfaces come from the engine** (ADR 0038). A surface knows one
+address, the engine's; it learns its siblings from `/config` rather than from
+three more environment variables per deployment, and offers them as a row of
+small chips in the sidebar — plain anchors, so the browser navigates in the
+same tab, which is what moving between rooms of one product should feel like.
+
 The door itself stays in the engine (ADR 0033). This module points at it and
 never becomes a second one. It lives in the SDK because that is the only place
 three single-file Streamlit apps can share code from — D-21 records what
@@ -40,82 +46,155 @@ happened the last time a helper was copy-pasted into three UIs.
 
 from __future__ import annotations
 
+import html as _html
+from dataclasses import dataclass, field
 from typing import Any
 
 from content_sdk.compat import is_unauthenticated, sign_in_url
 
-__all__ = ["render_identity"]
+__all__ = ["Visitor", "render_identity", "render_sidebar"]
+
+# The icon each surface carries in its own sidebar heading, so a chip pointing
+# at it looks like the place it leads to.
+_ICONS = {"studio": "🧩", "console": "🛠️", "hometube": "🎬"}
 
 
-def render_identity(
-    client: Any, *, app_title: str, api_base_url: str
-) -> dict[str, Any]:
-    """Ask the engine who the visitor is, and show the answer where it matters.
+@dataclass(frozen=True)
+class Visitor:
+    """What the engine said about whoever is looking at this run of the page."""
 
-    Returns the identity, so a caller that wants to greet someone or hide an
-    operator view does not ask twice. Returns `{}` both when the visitor is
-    refused and when the engine could not be reached — the two are told apart
-    where it counts, which is what gets rendered: a way in for the first, and
-    nothing at all for the second, because an engine that is down is not an
-    engine that refused, and sending someone to a door they cannot use would
-    hide the one fact they need.
+    identity: dict[str, Any] = field(default_factory=dict)
+    # True when the engine answered 401 — a refusal, not a failure. An engine
+    # that could not be reached leaves both this and `identity` empty.
+    refused: bool = False
+    sign_in_url: str = ""
+
+    @property
+    def signed_in(self) -> bool:
+        return bool(self.identity)
+
+    @property
+    def account(self) -> bool:
+        """Is there an account behind this identity, or is it the implicit
+        user of a self-hosted instance, who never signed in and cannot sign
+        out (ADR 0030)?"""
+        return bool(self.identity.get("account"))
+
+
+def render_identity(client: Any, *, app_title: str, api_base_url: str) -> Visitor:
+    """Ask the engine who the visitor is; put the door above the page if it
+    refuses. Returns what it learned, for the sidebar and for anything that
+    wants to greet someone or hide an operator view without asking twice.
+
+    Nothing is drawn for an engine that could not be reached: that is not an
+    engine that refused, and the caller's own health check reports it with
+    the address, which is the useful message.
     """
+    url = sign_in_url(api_base_url, _current_url())
     try:
         identity = client.whoami()
     except Exception as exc:  # noqa: BLE001 — every failure is handled here
         if is_unauthenticated(exc):
-            _offer_the_door(app_title=app_title, api_base_url=api_base_url)
-        return {}
+            _banner(app_title=app_title, url=url)
+            return Visitor(refused=True, sign_in_url=url)
+        return Visitor(sign_in_url=url)
     if not isinstance(identity, dict):
-        return {}
-    _show_who_and_offer_the_way_out(client, identity)
-    return identity
+        return Visitor(sign_in_url=url)
+    return Visitor(identity=identity, sign_in_url=url)
 
 
-def _show_who_and_offer_the_way_out(client: Any, identity: dict[str, Any]) -> None:
-    """Who you are, and how to stop being them.
+def render_sidebar(visitor: Visitor, client: Any, *, surface: str) -> None:
+    """The sidebar's first lines: where else to go, then who you are.
 
-    An account that cannot be left is a defect of the sign-in feature, not a
-    missing extra: a shared machine, a borrowed laptop, or simply wanting to
-    see what a new visitor sees. Nothing else in the product could do it, so
-    the only way out was deleting a cookie by hand in browser settings.
-
-    Nothing is drawn where there is no account to leave. A self-hosted
-    instance has one implicit user who never signed in (ADR 0030), and
-    offering to sign them out would be offering to break their own install.
+    Called by each app inside its own `with st.sidebar:` block, under its
+    heading, so the app decides the layout and this decides the content.
     """
     import streamlit as st
 
-    if not identity.get("account"):
+    _elsewhere(client, surface)
+
+    if visitor.refused:
+        # The sidebar's copy of the door stays put after the banner has
+        # scrolled away; it is where somebody looks once they have wondered
+        # why nothing happens.
+        st.link_button(
+            "🔒 Sign in", visitor.sign_in_url, type="primary", use_container_width=True
+        )
+        st.caption("Signed in on another surface? Reload — one session covers all.")
         return
 
-    with st.sidebar:
-        who = identity.get("email") or identity.get("owner_id", "")
-        badge = " · operator" if identity.get("is_operator") else ""
-        st.caption(f"Signed in as **{who}**{badge}")
-        if st.button("Sign out", use_container_width=True, key="_sign_out"):
-            try:
-                client.sign_out()
-            except Exception:  # noqa: BLE001,S110 — already gone is already out
-                pass
-            # The engine revokes the session; the browser keeps a cookie that
-            # now unlocks nothing. The next run asks who the visitor is, gets
-            # a refusal, and draws the door — which is the correct page for
-            # somebody who just signed out.
-            st.rerun()
+    if not visitor.account:
+        # Nobody to name, nobody to sign out: a self-hosted instance has one
+        # implicit user, and offering to sign them out would be offering to
+        # break their own install.
+        return
+
+    who = visitor.identity.get("email") or visitor.identity.get("owner_id", "")
+    badge = " · operator" if visitor.identity.get("is_operator") else ""
+    st.caption(f"Signed in as **{who}**{badge}")
+    if st.button("Sign out", use_container_width=True, key="_sign_out"):
+        try:
+            client.sign_out()
+        except Exception:  # noqa: BLE001,S110 — already gone is already out
+            pass
+        # The engine revokes the session; the browser keeps a cookie that now
+        # unlocks nothing. The next run asks who the visitor is, is refused,
+        # and draws the door — the correct page for somebody who just left.
+        st.rerun()
 
 
-def _offer_the_door(*, app_title: str, api_base_url: str) -> None:
-    """A banner above the interface, and a button in the sidebar with it.
-
-    Two places because they fail differently: the banner is unmissable on
-    arrival and then scrolls away, while the sidebar button stays put and is
-    where somebody looks once they have scrolled past it and wondered why
-    nothing happens.
-    """
+def _elsewhere(client: Any, surface: str) -> None:
+    """The other surfaces, as a row of small chips. Nothing when the engine
+    declares none, or only this one."""
     import streamlit as st
 
-    url = sign_in_url(api_base_url, _current_url())
+    key = "_content_surfaces"
+    if key not in st.session_state:
+        # Once per browser session: the deployment does not change while
+        # somebody is looking at it, and this runs on every click otherwise.
+        try:
+            st.session_state[key] = list(client.config().get("surfaces") or [])
+        except Exception:  # noqa: BLE001 — no siblings is a fine answer
+            st.session_state[key] = []
+    others = [
+        s
+        for s in st.session_state[key]
+        if isinstance(s, dict) and s.get("kind") != surface and s.get("url")
+    ]
+    if not others:
+        return
+
+    chips = "".join(
+        '<a href="{url}">{icon} {label}</a>'.format(
+            url=_html.escape(str(s["url"]), quote=True),
+            icon=_ICONS.get(str(s.get("kind")), "↗"),
+            label=_html.escape(_short(str(s.get("title") or s["kind"]))),
+        )
+        for s in others
+    )
+    st.html(
+        "<style>"
+        ".content-elsewhere{display:flex;flex-wrap:wrap;gap:.35rem;"
+        "margin:.1rem 0 .7rem}"
+        ".content-elsewhere a{font-size:.8rem;line-height:1;padding:.34rem .62rem;"
+        "border-radius:999px;border:1px solid rgba(128,128,128,.35);"
+        "color:inherit;text-decoration:none;opacity:.78}"
+        ".content-elsewhere a:hover{opacity:1;border-color:rgba(128,128,128,.7)}"
+        "</style>"
+        f'<nav class="content-elsewhere" aria-label="Other surfaces">{chips}</nav>'
+    )
+
+
+def _short(title: str) -> str:
+    """`Content Studio` → `Studio`: a chip has no room for the family name, and
+    the family is the one you are already in."""
+    prefix = "Content "
+    return title.removeprefix(prefix)
+
+
+def _banner(*, app_title: str, url: str) -> None:
+    """Above the interface, unmissable on arrival."""
+    import streamlit as st
 
     with st.container(border=True):
         message, action = st.columns([3, 1], vertical_alignment="center")
@@ -127,10 +206,6 @@ def _offer_the_door(*, app_title: str, api_base_url: str) -> None:
             "one click — no password."
         )
         action.link_button("Sign in", url, type="primary", use_container_width=True)
-
-    with st.sidebar:
-        st.link_button("🔒 Sign in", url, type="primary", use_container_width=True)
-        st.caption("Signed in on another surface? Reload — one session covers all.")
 
 
 def _current_url() -> str:

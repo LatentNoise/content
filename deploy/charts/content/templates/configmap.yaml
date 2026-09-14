@@ -9,3 +9,17 @@ data:
   {{ $k }}: {{ toString $v | quote }}
   {{- end }}
   {{- end }}
+  {{- /* The surfaces this deployment serves, declared once here for the
+         engine to publish (ADR 0038). Built from each enabled surface's
+         publicUrl; an explicit config.CONTENT_SURFACES wins, untouched. */}}
+  {{- if not (hasKey .Values.config "CONTENT_SURFACES") }}
+  {{- $surfaces := list }}
+  {{- range $kind, $ui := .Values.uis }}
+  {{- if and $ui.enabled ($ui.publicUrl | default "") }}
+  {{- $surfaces = append $surfaces (printf "%s=%s" $kind $ui.publicUrl) }}
+  {{- end }}
+  {{- end }}
+  {{- if $surfaces }}
+  CONTENT_SURFACES: {{ join "," $surfaces | quote }}
+  {{- end }}
+  {{- end }}

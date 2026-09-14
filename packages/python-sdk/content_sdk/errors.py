@@ -26,6 +26,35 @@ class APIError(ContentError):
         super().__init__(f"HTTP {status}: {body}")
 
     @property
+    def message(self) -> str:
+        """The human sentence in the body, for a UI to show as it is.
+
+        The contract's messages are written to be read by the person who asked
+        — a quota refusal says what was used and what is allowed — so a surface
+        that prints the raw body instead throws that work away and shows a
+        dict. Several issues are joined; a body with none falls back to the
+        status line, which is at least honest about what happened.
+        """
+        body = self.body
+        if isinstance(body, dict):
+            detail = body.get("detail", body)
+            if isinstance(detail, str) and detail.strip():
+                return detail
+            if isinstance(detail, dict):
+                issues = detail.get("errors")
+                if isinstance(issues, list):
+                    texts = [
+                        i["message"]
+                        for i in issues
+                        if isinstance(i, dict) and i.get("message")
+                    ]
+                    if texts:
+                        return " · ".join(texts)
+                if isinstance(detail.get("message"), str) and detail["message"]:
+                    return detail["message"]
+        return f"HTTP {self.status}"
+
+    @property
     def codes(self) -> list[str]:
         """Stable machine codes carried in the body, when present (the contract's
         ValidationResult shape, or a single {code, message})."""

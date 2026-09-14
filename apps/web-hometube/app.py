@@ -22,7 +22,7 @@ from content_sdk.compat import (
     ContentClient,
     streamlit_visitor_headers,
 )
-from content_sdk.signin import render_identity
+from content_sdk.signin import render_identity, render_sidebar
 from content_sdk.status import ago, better_status, display, is_producible
 
 API_URL = os.getenv("CONTENT_API_URL", "http://localhost:8000")
@@ -209,7 +209,9 @@ client = get_client(API_URL)
 # did nothing. The interface still renders — the banner this puts above it is
 # what says why nothing works. In `none` mode this answers `local` and nobody
 # is ever asked for anything.
-render_identity(client, app_title=APP_TITLE, api_base_url=PUBLIC_API_URL or API_URL)
+visitor = render_identity(
+    client, app_title=APP_TITLE, api_base_url=PUBLIC_API_URL or API_URL
+)
 st.session_state.setdefault("analysis", None)
 st.session_state.setdefault("capabilities", None)
 st.session_state.setdefault("analyzed_url", None)
@@ -332,6 +334,7 @@ def _language_policy_caption() -> str:
 
 with st.sidebar:
     st.markdown("### 🎬 HomeTube")
+    render_sidebar(visitor, client, surface="hometube")
     st.caption(
         f"{'🟢' if backend_ok else '🔴'} back-end v{version}"
         if backend_ok
@@ -408,20 +411,6 @@ def source_dict(
 # --- URL (Enter = analyze) -----------------------------------------------------
 
 
-def _error_message(body) -> str:
-    """A clean human message from an API error body (never a raw dict dump)."""
-    if isinstance(body, dict):
-        detail = body.get("detail", body)
-        if isinstance(detail, dict):
-            errors = detail.get("errors") or []
-            messages = [e.get("message") for e in errors if e.get("message")]
-            if messages:
-                return " · ".join(messages)
-            if detail.get("message"):
-                return detail["message"]
-    return str(body)
-
-
 url = st.text_input(
     "Video or Playlist URL",
     placeholder="youtube.com/watch?v=…   ·   or a playlist: …/playlist?list=…",
@@ -443,7 +432,7 @@ if backend_ok and url_clean and url_clean != st.session_state.analyzed_url:
             st.session_state.analysis = None
             st.session_state.capabilities = None
             st.session_state.analyzed_url = url_clean
-            st.error(f"⚠️ Couldn't analyze this URL — {_error_message(exc.body)}")
+            st.error(f"⚠️ Couldn't analyze this URL — {exc.message}")
         except Exception as exc:  # noqa: BLE001
             st.session_state.analysis = None
             st.session_state.capabilities = None

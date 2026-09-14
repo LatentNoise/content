@@ -57,6 +57,7 @@ from content.config import (
     ContentSettings,
     describe_environment,
     settings_from_env,
+    surfaces_of,
 )
 from content.domain import errors as codes
 from content.domain.capability import ResolvedCapability
@@ -639,6 +640,9 @@ def create_app(
         return {
             "credentials": sorted(settings.credentials),
             "credentials_info": _credentials_info(settings),
+            # The other places a visitor can go: what lets a surface offer
+            # its siblings without each deployment naming every other one.
+            "surfaces": surfaces_of(settings),
             "language": {
                 "primary": settings.language_primary,
                 "secondaries": list(settings.languages_secondaries),

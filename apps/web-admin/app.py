@@ -21,7 +21,7 @@ from content_sdk.compat import (
     ContentClient,
     streamlit_visitor_headers,
 )
-from content_sdk.signin import render_identity
+from content_sdk.signin import render_identity, render_sidebar
 from content_sdk.status import ago as _ago
 from content_sdk.status import capability_display, display
 
@@ -204,7 +204,7 @@ client = get_client(API_URL)
 # did nothing. The interface still renders — the banner this puts above it is
 # what says why nothing works. In `none` mode this answers `local` and nobody
 # is ever asked for anything.
-identity = render_identity(
+visitor = render_identity(
     client, app_title=APP_TITLE, api_base_url=PUBLIC_API_URL or API_URL
 )
 
@@ -234,6 +234,7 @@ if not backend_ok:
 notifications.render_streamlit(client, app_version=__version__)
 
 with st.sidebar:
+    render_sidebar(visitor, client, surface="console")
     st.caption(f"🟢 back-end v{version}")
     st.caption(f"API base: `{PUBLIC_API_URL}`")
     # AGPL §13: the source offer, from the instance (never hard-coded).
@@ -808,7 +809,7 @@ with tab_access:
     st.subheader("Who this console is")
     # Asked once at the top of the script, not again here: a rerun happens on
     # every click and the answer would be the same every time.
-    me = identity
+    me = visitor.identity
     if not me:
         st.info(
             "Nobody. Sign in with the button above to see your account, your "

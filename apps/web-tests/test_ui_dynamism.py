@@ -486,3 +486,44 @@ def test_an_unreachable_engine_is_not_reported_as_a_missing_session(
     text = _all_text(at)
     assert "Sign in to Content Studio" not in text
     assert "Back-end unreachable" in text
+
+
+def test_every_surface_offers_the_others_and_never_itself(run_app):
+    """Where else to go, learned from the engine and not from three more
+    environment variables per deployment (ADR 0038). Plain anchors, so the
+    browser stays in the same tab — moving between rooms of one product."""
+    for surface, others in (
+        ("studio", ("console", "hometube")),
+        ("console", ("studio", "hometube")),
+        ("hometube", ("studio", "console")),
+    ):
+        at = run_app(surface)
+        assert not at.exception, (surface, at.exception)
+        markup = " ".join(getattr(el, "body", "") for el in at.get("html"))
+        for other in others:
+            assert f'href="http://{other}.test"' in markup, (surface, other)
+        assert f"http://{surface}.test" not in markup, surface
+        assert 'target="_blank"' not in markup, surface
+
+
+def test_a_lonely_surface_offers_nothing(run_app, monkeypatch):
+    """An engine that declares no siblings, or only this one: no chips, no
+    empty row, no error."""
+    from conftest import FakeContentClient
+
+    monkeypatch.setattr(
+        FakeContentClient,
+        "config",
+        lambda self: {
+            "credentials": [],
+            "surfaces": [
+                {"kind": "studio", "title": "Content Studio", "url": "http://s.test"}
+            ],
+        },
+        raising=False,
+    )
+    at = run_app("studio")
+    assert not at.exception, at.exception
+    assert not [
+        el for el in at.get("html") if "content-elsewhere" in getattr(el, "body", "")
+    ]

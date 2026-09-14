@@ -174,10 +174,16 @@ publicApiUrl: http://api.content.example.com
 # as CONTENT_STUDIO_URL / CONTENT_CONSOLE_URL / CONTENT_HOMETUBE_URL.
 # ⚠️ These variables are NOT read by the applications yet: the deployment is
 # ready, the code is not.
+# Each surface's `publicUrl` is the address a BROWSER reaches it at — the
+# public name when there is one, the ingress host otherwise. The chart folds
+# them into CONTENT_SURFACES on the engine (ADR 0038), which is how every
+# surface learns where the others are and how the sign-in page names where it
+# sends someone back. Empty = the surface is not offered to the others.
 uis:
   studio:
     enabled: true
     image: {repository: ghcr.io/latentnoise/content-studio, tag: ""}
+    publicUrl: http://studio.content.example.com
     ingress: {enabled: true, className: "", host: studio.content.example.com, extraHosts: []}
     resources:
       requests: {cpu: 50m, memory: 128Mi}
@@ -186,6 +192,7 @@ uis:
   console:
     enabled: true
     image: {repository: ghcr.io/latentnoise/content-console, tag: ""}
+    publicUrl: http://console.content.example.com
     ingress: {enabled: true, className: "", host: console.content.example.com, extraHosts: []}
     resources:
       requests: {cpu: 50m, memory: 128Mi}
@@ -194,6 +201,7 @@ uis:
   hometube:
     enabled: true
     image: {repository: ghcr.io/latentnoise/content-hometube, tag: ""}
+    publicUrl: http://hometube.content.example.com
     ingress: {enabled: true, className: "", host: hometube.content.example.com, extraHosts: []}
     resources:
       requests: {cpu: 50m, memory: 128Mi}

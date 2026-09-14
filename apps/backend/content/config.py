@@ -9,6 +9,7 @@ import shlex
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
+from urllib.parse import urlparse
 
 
 def _to_bool(value: str | None, default: bool) -> bool:
@@ -29,6 +30,43 @@ def _to_float(value: str | None, default: float) -> float:
         return float(value) if value is not None else default
     except ValueError:
         return default
+
+
+# The surfaces a Content installation can have, in the order a client should
+# show them. A closed set: a surface has to know which entry is *itself* to
+# leave it out of a switcher, and a name it does not recognise is not a surface
+# it can reason about. The titles are the ones the applications carry, kept
+# here too so the sign-in page and the email can name the place someone is
+# going back to.
+SURFACES: dict[str, str] = {
+    "studio": "Content Studio",
+    "console": "Content Admin",
+    "hometube": "HomeTube",
+}
+
+
+def surfaces_of(settings) -> list[dict[str, str]]:
+    """The deployed surfaces as a client sees them: kind, title, URL, in the
+    canonical order rather than the configured one."""
+    configured = dict(settings.surfaces)
+    return [
+        {"kind": kind, "title": title, "url": configured[kind]}
+        for kind, title in SURFACES.items()
+        if kind in configured
+    ]
+
+
+def surface_at(settings, url: str) -> dict[str, str] | None:
+    """Which surface, if any, this URL belongs to — by origin, the same unit
+    the redirect allowlist uses, so a `next` that is allowed is also named."""
+    parsed = urlparse(url or "")
+    if not parsed.scheme or not parsed.netloc:
+        return None
+    origin = f"{parsed.scheme}://{parsed.netloc}"
+    for surface in surfaces_of(settings):
+        if surface["url"] == origin:
+            return surface
+    return None
 
 
 @dataclass(frozen=True)
@@ -183,9 +221,16 @@ class ContentSettings:
     retention_days: float = 0.0
     magic_link_ttl_minutes: float = 15.0
     magic_link_max_per_hour: int = 5
+    # The surfaces this installation serves, as (kind, public URL) pairs: what
+    # the engine tells every client so each surface can offer the others, and
+    # the sign-in page can say where it is sending someone back. Declared once,
+    # on the engine, rather than once per surface about every other surface.
+    surfaces: tuple[tuple[str, str], ...] = field(default_factory=tuple)
     # Where a sign-in may send the browser afterwards. An open redirect on a
     # sign-in endpoint is how a phishing link borrows your domain, so `next`
-    # is checked against this list and nothing else is accepted.
+    # is checked against this list and nothing else is accepted. Defaults to
+    # the surfaces' origins — they are, by definition, the places a sign-in
+    # comes back to — and an explicit list replaces that entirely.
     allowed_redirect_origins: tuple[str, ...] = field(default_factory=tuple)
     # The outbound-email service (ADR 0031). Empty URL = no mail is sent and
     # the link is logged instead, which is what a self-hosted instance and the
@@ -539,11 +584,20 @@ def describe_environment(
             "How many sign-in links one address may ask for per hour.",
         ),
         (
+            "CONTENT_SURFACES",
+            "security",
+            False,
+            ",".join(f"{kind}={url}" for kind, url in settings.surfaces),
+            "The deployed surfaces, `<kind>=<public url>` each, so every "
+            "client can offer the others and a sign-in names where it returns.",
+        ),
+        (
             "CONTENT_ALLOWED_REDIRECT_ORIGINS",
             "security",
             False,
             ",".join(settings.allowed_redirect_origins),
-            "Origins a sign-in may redirect to. Everything else is refused.",
+            "Origins a sign-in may redirect to. Everything else is refused. "
+            "Defaults to the surfaces' origins.",
         ),
         (
             "CONTENT_MAILER_URL",
@@ -763,6 +817,37 @@ def describe_environment(
     ]
 
 
+def _parse_surfaces(raw: str) -> tuple[tuple[str, str], ...]:
+    """`studio=https://studio.example.com,console=https://…` → pairs.
+
+    Refused loudly rather than skipped: a surface nobody can reason about, or
+    a URL without an origin, is a configuration mistake, and the person who
+    made it is reading the startup log right now.
+    """
+    pairs: list[tuple[str, str]] = []
+    for entry in raw.split(","):
+        entry = entry.strip()
+        if not entry:
+            continue
+        kind, sep, url = entry.partition("=")
+        kind, url = kind.strip().lower(), url.strip().rstrip("/")
+        if not sep or kind not in SURFACES:
+            raise ValueError(
+                f"CONTENT_SURFACES: {entry!r} is not `<kind>=<url>` with a kind "
+                f"among {sorted(SURFACES)}"
+            )
+        parsed = urlparse(url)
+        if not parsed.scheme or not parsed.netloc or parsed.path not in ("", "/"):
+            raise ValueError(
+                f"CONTENT_SURFACES: {url!r} must be an origin — scheme and host, "
+                "no path"
+            )
+        if any(k == kind for k, _ in pairs):
+            raise ValueError(f"CONTENT_SURFACES: {kind!r} is listed twice")
+        pairs.append((kind, f"{parsed.scheme}://{parsed.netloc}"))
+    return tuple(pairs)
+
+
 def settings_from_env() -> ContentSettings:
     data_dir = Path(os.getenv("CONTENT_DATA_DIR", "./data")).resolve()
     db_path = Path(os.getenv("CONTENT_DB_PATH", str(data_dir / "content.db")))
@@ -813,6 +898,17 @@ def settings_from_env() -> ContentSettings:
         for p in os.getenv("CONTENT_ALLOWED_INPUT_ROOTS", "").split(":")
         if p.strip()
     )
+    surfaces = _parse_surfaces(os.getenv("CONTENT_SURFACES") or "")
+    redirect_origins = tuple(
+        origin.strip().rstrip("/")
+        for origin in (os.getenv("CONTENT_ALLOWED_REDIRECT_ORIGINS") or "").split(",")
+        if origin.strip()
+    )
+    if not redirect_origins:
+        # The surfaces are where a sign-in comes back to; listing them twice
+        # is how one of them ends up missing from the allowlist and a sign-in
+        # lands on the default target instead of where the person was.
+        redirect_origins = tuple(url for _, url in surfaces)
     return ContentSettings(
         data_dir=data_dir,
         db_path=db_path,
@@ -882,13 +978,8 @@ def settings_from_env() -> ContentSettings:
         magic_link_max_per_hour=max(
             1, _to_int(os.getenv("CONTENT_MAGIC_LINK_MAX_PER_HOUR"), 5)
         ),
-        allowed_redirect_origins=tuple(
-            origin.strip().rstrip("/")
-            for origin in (os.getenv("CONTENT_ALLOWED_REDIRECT_ORIGINS") or "").split(
-                ","
-            )
-            if origin.strip()
-        ),
+        surfaces=surfaces,
+        allowed_redirect_origins=redirect_origins,
         mailer_url=(os.getenv("CONTENT_MAILER_URL") or "").strip().rstrip("/"),
         mailer_api_key=(os.getenv("CONTENT_MAILER_API_KEY") or "").strip(),
         mailer_timeout_seconds=_to_float(

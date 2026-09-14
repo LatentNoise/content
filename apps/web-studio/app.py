@@ -20,7 +20,7 @@ from content_sdk.compat import (
     ContentClient,
     streamlit_visitor_headers,
 )
-from content_sdk.signin import render_identity
+from content_sdk.signin import render_identity, render_sidebar
 from content_sdk.status import better_status, display, is_producible
 from content_sdk.uploads import upload_once
 
@@ -151,7 +151,9 @@ client = get_client(API_URL)
 # did nothing. The interface still renders — the banner this puts above it is
 # what says why nothing works. In `none` mode this answers `local` and nobody
 # is ever asked for anything.
-render_identity(client, app_title=APP_TITLE, api_base_url=PUBLIC_API_URL or API_URL)
+visitor = render_identity(
+    client, app_title=APP_TITLE, api_base_url=PUBLIC_API_URL or API_URL
+)
 st.session_state.setdefault("analysis", None)
 st.session_state.setdefault("job_id", None)
 
@@ -173,6 +175,7 @@ except Exception as exc:  # noqa: BLE001
 
 with st.sidebar:
     st.markdown("### 🧩 Content Studio")
+    render_sidebar(visitor, client, surface="studio")
     st.caption(f"🟢 back-end v{version}" if backend_ok else "🔴 back-end offline")
     # AGPL §13: the source offer, from the instance (never hard-coded).
     legal.render_streamlit_footer(client)
@@ -560,7 +563,7 @@ if st.button(
             st.warning(f"{w['code']}: {w['message']}")
         st.rerun()
     except ApiError as exc:
-        st.error(f"Request refused: {exc.body}")
+        st.error(f"Request refused: {exc.message}")
     except Exception as exc:  # noqa: BLE001
         st.error(f"Submit failed: {exc}")
 
