@@ -143,6 +143,11 @@ class ContentClient:
     def revoke_api_key(self, key_id: str) -> None:
         self._t.request("DELETE", f"/auth/keys/{key_id}")
 
+    def sign_out(self) -> None:
+        """End this session on the engine. A key is revoked, not signed out:
+        this is the browser's verb."""
+        self._t.post("/auth/logout")
+
     def whoami(self) -> dict[str, Any]:
         """Who this client is to the engine. On a self-hosted instance that is
         the single implicit user, with no account behind it."""

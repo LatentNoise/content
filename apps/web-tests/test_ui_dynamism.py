@@ -434,6 +434,36 @@ def test_a_signed_in_visitor_is_asked_for_nothing(run_app):
         assert "You are not signed in" not in _all_text(at), surface
 
 
+def test_an_account_can_see_who_it_is_and_leave(run_app, monkeypatch):
+    """An account that cannot be left is a defect of signing in, not a missing
+    extra: a shared machine, or simply wanting to see what a visitor sees."""
+    from conftest import FakeContentClient
+
+    monkeypatch.setattr(
+        FakeContentClient,
+        "whoami",
+        lambda self: {
+            "owner_id": "usr_abc",
+            "email": "someone@example.com",
+            "account": True,
+            "is_operator": False,
+        },
+        raising=False,
+    )
+    for surface in ("studio", "console", "hometube"):
+        at = run_app(surface)
+        assert not at.exception, (surface, at.exception)
+        assert "someone@example.com" in _all_text(at), surface
+        assert "Sign out" in _labels(at, "button"), surface
+
+
+def test_the_self_hosted_user_is_never_offered_a_way_out(run_app):
+    """One implicit user who never signed in (ADR 0030). Offering to sign them
+    out would be offering to break their own install."""
+    at = run_app("studio")
+    assert "Sign out" not in _labels(at, "button")
+
+
 def test_an_unreachable_engine_is_not_reported_as_a_missing_session(
     run_app, monkeypatch
 ):

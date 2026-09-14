@@ -66,7 +66,43 @@ def render_identity(
         if is_unauthenticated(exc):
             _offer_the_door(app_title=app_title, api_base_url=api_base_url)
         return {}
-    return identity if isinstance(identity, dict) else {}
+    if not isinstance(identity, dict):
+        return {}
+    _show_who_and_offer_the_way_out(client, identity)
+    return identity
+
+
+def _show_who_and_offer_the_way_out(client: Any, identity: dict[str, Any]) -> None:
+    """Who you are, and how to stop being them.
+
+    An account that cannot be left is a defect of the sign-in feature, not a
+    missing extra: a shared machine, a borrowed laptop, or simply wanting to
+    see what a new visitor sees. Nothing else in the product could do it, so
+    the only way out was deleting a cookie by hand in browser settings.
+
+    Nothing is drawn where there is no account to leave. A self-hosted
+    instance has one implicit user who never signed in (ADR 0030), and
+    offering to sign them out would be offering to break their own install.
+    """
+    import streamlit as st
+
+    if not identity.get("account"):
+        return
+
+    with st.sidebar:
+        who = identity.get("email") or identity.get("owner_id", "")
+        badge = " · operator" if identity.get("is_operator") else ""
+        st.caption(f"Signed in as **{who}**{badge}")
+        if st.button("Sign out", use_container_width=True, key="_sign_out"):
+            try:
+                client.sign_out()
+            except Exception:  # noqa: BLE001,S110 — already gone is already out
+                pass
+            # The engine revokes the session; the browser keeps a cookie that
+            # now unlocks nothing. The next run asks who the visitor is, gets
+            # a refusal, and draws the door — which is the correct page for
+            # somebody who just signed out.
+            st.rerun()
 
 
 def _offer_the_door(*, app_title: str, api_base_url: str) -> None:

@@ -161,6 +161,11 @@ class ContentClient:
         the single implicit user, with no account behind it."""
         return self._t.get("/auth/me")
 
+    def sign_out(self) -> None:
+        """End this session on the engine. The browser keeps a cookie that now
+        unlocks nothing, which is why the next request is a refusal."""
+        self._t.post("/auth/logout")
+
     def api_keys(self) -> list[dict]:
         """The keys of the current owner: name, created, last used. Never the
         key, because the engine does not have it either."""
