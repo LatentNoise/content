@@ -28,6 +28,7 @@ PORT_HOMETUBE="${PORT_HOMETUBE:-8501}"
 PORT_STUDIO="${PORT_STUDIO:-8502}"
 PORT_CONSOLE="${PORT_CONSOLE:-8503}"
 DATA="${DATA:-$ROOT/playground/dev-data}"
+ADDRESS="${ADDRESS:-127.0.0.1}"
 LOGS="$DATA/logs"
 
 BACKEND_PY="$ROOT/apps/backend/.venv/bin/python"
@@ -78,8 +79,13 @@ trap stop INT TERM EXIT
 
 start_surface() {
   local name="$1" app="$2" port="$3"
+  # Bound to the loopback like the engine. Streamlit listens on every
+  # interface by default, which on a laptop on someone's LAN means the whole
+  # network can reach a development build. `ADDRESS=0.0.0.0` opts back in for
+  # the case that wants it — looking at the UI from a phone.
   "$UI_PY" -m streamlit run "$app" \
     --server.port "$port" --server.headless true \
+    --server.address "$ADDRESS" \
     --browser.gatherUsageStats false \
     >"$LOGS/$name.log" 2>&1 &
   pids+=("$!")

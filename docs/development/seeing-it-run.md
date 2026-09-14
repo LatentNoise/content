@@ -35,10 +35,20 @@ Two settings differ from production, and only two. The session cookie is not
 then never sent back. And its domain is empty, so the browser files it under
 `localhost` — cookies ignore the port, so one sign-in covers all four.
 
+Nothing is containerised: four ordinary Python processes, the engine from
+`apps/backend/.venv` and the surfaces from `.venv-ui`. Docker does not need to
+be installed, let alone running.
+
+All four bind to the loopback only. Streamlit listens on every interface by
+default, which on a laptop means the LAN can reach a development build;
+`ADDRESS=0.0.0.0 make dev` opts back in when you want to look at it from a
+phone.
+
 Data lives in `playground/dev-data/`, separate from the compose stack's, so
 neither can surprise the other. Logs are in `playground/dev-data/logs/`.
 
-Ctrl-C stops all four.
+Ctrl-C stops all four, and `make dev-stop` does it from anywhere — a stack
+started from another terminal has no Ctrl-C to press.
 
 ## `make k8s-test` — the end-to-end check
 

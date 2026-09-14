@@ -131,6 +131,14 @@ run:  ## Run the engine locally (uvicorn on :8000, no Docker)
 dev: ui-venv  ## Run engine + the three surfaces locally, reloading on save (Ctrl-C stops)
 	@AUTH=$(AUTH) OPERATOR_EMAILS=$(OPERATOR_EMAILS) ./scripts/dev.sh
 
+# Ctrl-C is the normal way out, and it is not the only one: a stack started
+# detached (or from another terminal, or by an agent) has no Ctrl-C to press.
+dev-stop:  ## Stop a local stack started by make dev
+	@pkill -f 'scripts/dev.sh' 2>/dev/null || true
+	@pkill -f 'uvicorn content.api.app' 2>/dev/null || true
+	@pkill -f 'streamlit run .*/apps/web-' 2>/dev/null || true
+	@echo "local stack stopped"
+
 AUTH ?= token
 OPERATOR_EMAILS ?= you@example.com
 
