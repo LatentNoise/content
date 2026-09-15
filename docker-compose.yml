@@ -147,6 +147,60 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  # A language model, only if you want one and have nowhere else to get it.
+  #
+  #   docker compose --profile llm up -d
+  #
+  # Summaries, translations and derived chapters need an Ollama. Three honest
+  # situations, and only the third starts this container:
+  #
+  #   1. You do not want them. Change nothing; those outputs are reported as
+  #      unavailable up front, never discovered half-way through a job.
+  #   2. You already run Ollama — on this host, on a box with a GPU, anywhere.
+  #      Change nothing either: CONTENT_OLLAMA_URL already defaults to the
+  #      host's own daemon, and you can point it anywhere in .env.
+  #   3. You have nothing and want summaries out of the box: run the command
+  #      above, and set CONTENT_OLLAMA_URL=http://ollama:11434 in .env so the
+  #      engine calls this container instead of the host.
+  #
+  # ⚠️ Not started by default on purpose: the image plus one small model is a
+  # multi-gigabyte download and a resident process, which would triple the cost
+  # of "Docker Compose is the only prerequisite" for everyone who does not need
+  # it.
+  ollama:
+    image: ollama/ollama:${OLLAMA_VERSION:-0.12.11}
+    container_name: content-ollama
+    profiles: ["llm"]
+    environment:
+      - OLLAMA_HOST=0.0.0.0:11434
+      # Keep the weights resident between requests: the default (5m) reloads
+      # gigabytes from disk before every summary on a quiet instance.
+      - OLLAMA_KEEP_ALIVE=${OLLAMA_KEEP_ALIVE:--1}
+    # `ollama serve` has to be running before `ollama pull` can work, so the
+    # container starts the server, waits for it, pulls the model, and hands the
+    # process back. The pull is idempotent: on later starts the weights are
+    # already in the volume and it returns at once.
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -e
+        /bin/ollama serve &
+        pid=$$!
+        until /bin/ollama list >/dev/null 2>&1; do sleep 1; done
+        /bin/ollama pull "$${OLLAMA_MODEL:-qwen3:4b}"
+        wait $$pid
+    volumes:
+      - ./data/ollama:/root/.ollama
+    ports:
+      - "${OLLAMA_PORT:-11434}:11434"
+    healthcheck:
+      test: ["CMD-SHELL", "ollama list >/dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+
   # Content Console — observe & pilot the backend. Always on, whichever
   # download UI is chosen: it is how an operator sees jobs, configuration,
   # storage and logs. It creates no downloads.

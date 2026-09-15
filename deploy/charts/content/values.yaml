@@ -139,6 +139,51 @@ config:
   # docker-compose default, which would point at a file that is not there.
   CONTENT_CREDENTIALS: ""
 
+# A language model, bundled — only for the instance that has nowhere else to
+# get one.
+#
+# Summaries, translations and derived chapters need an Ollama. Two situations:
+#
+#   - You already run one (a box with a GPU, a workstation, another cluster):
+#     leave `enabled` false and set config.CONTENT_OLLAMA_URL to its address.
+#     Nothing here is created, and your address is never overridden.
+#   - You have nothing: set `enabled` true. The chart deploys Ollama, pulls the
+#     model on first start, keeps the weights on a volume of their own, and
+#     wires CONTENT_OLLAMA_URL to it — no other setting to touch.
+#
+# ⚠️ Sizing, because this is the one thing that can starve the engine. A 3-4B
+# model quantised to Q4 holds in ~2.5 GiB and answers in seconds on CPU; an 8B
+# doubles both. `requests` are not decoration here — without them the scheduler
+# cannot protect the engine from the model.
+ollama:
+  enabled: false
+  image:
+    repository: ollama/ollama
+    tag: "0.12.11"
+    pullPolicy: IfNotPresent
+  # Pulled on first start, in order. The FIRST one becomes
+  # CONTENT_OLLAMA_MODEL unless config sets it explicitly.
+  models:
+    - qwen3:4b
+  # How long the weights stay in RAM after the last request. "-1" keeps them
+  # resident: on a quiet instance the default (5m) reloads gigabytes from disk
+  # for every summary, which is the slowest part of the job.
+  keepAlive: "-1"
+  persistence:
+    size: 20Gi
+    storageClass: local-path
+    accessMode: ReadWriteOnce
+  resources:
+    requests:
+      cpu: 250m
+      memory: 1Gi
+    limits:
+      cpu: "3"
+      memory: 6Gi
+  extraEnv: []
+  nodeSelector: {}
+  tolerations: []
+
 # Secrets (LLM API keys). The Secret is created OUTSIDE git:
 #   kubectl -n content create secret generic content-secrets \
 #     --from-literal=CONTENT_ANTHROPIC_API_KEY=...

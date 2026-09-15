@@ -1,0 +1,141 @@
+{{- if .Values.ollama.enabled }}
+{{- /*
+  A language model, bundled — for the instance that has nowhere else to get one.
+
+  The engine needs an Ollama for summaries, translations and derived chapters
+  (providers/ollama.py). Two honest situations, and this template covers only
+  the second:
+
+    - You already run Ollama somewhere (a box with a GPU, a workstation).
+      Leave `ollama.enabled` false and set `config.CONTENT_OLLAMA_URL` to it.
+      Nothing here is created.
+    - You have nothing. Turn `ollama.enabled` on and the chart deploys one,
+      pulls the model on first start, and wires CONTENT_OLLAMA_URL to it by
+      itself. Nothing else to configure.
+
+  ⚠️ An explicit `config.CONTENT_OLLAMA_URL` always wins (see configmap
+  wiring in deployment.yaml): the chart never overrides an address someone
+  deliberately typed.
+*/}}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "content.ollamaFullname" . }}-models
+  labels: {{- include "content.ollamaLabels" . | nindent 4 }}
+  annotations:
+    # Keep the weights if the release is uninstalled: re-pulling a model is a
+    # multi-gigabyte download, and a slow one on a home connection.
+    helm.sh/resource-policy: keep
+spec:
+  accessModes: [{{ .Values.ollama.persistence.accessMode | quote }}]
+  storageClassName: {{ .Values.ollama.persistence.storageClass }}
+  resources:
+    requests:
+      storage: {{ .Values.ollama.persistence.size }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "content.ollamaFullname" . }}
+  labels: {{- include "content.ollamaLabels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - port: 11434
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector: {{- include "content.ollamaSelectorLabels" . | nindent 4 }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "content.ollamaFullname" . }}
+  labels: {{- include "content.ollamaLabels" . | nindent 4 }}
+spec:
+  replicas: 1
+  # Recreate, not RollingUpdate: the model volume is ReadWriteOnce, so two
+  # pods would deadlock on the same claim instead of handing over.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels: {{- include "content.ollamaSelectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels: {{- include "content.ollamaSelectorLabels" . | nindent 8 }}
+    spec:
+      {{- with .Values.ollama.nodeSelector }}
+      nodeSelector: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.ollama.tolerations }}
+      tolerations: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: ollama
+          image: "{{ .Values.ollama.image.repository }}:{{ .Values.ollama.image.tag }}"
+          imagePullPolicy: {{ .Values.ollama.image.pullPolicy }}
+          {{- /*
+            The model is not in the image. `ollama serve` must already be
+            running for `ollama pull` to work, so the container starts the
+            server, waits for it to answer, pulls, and then hands the process
+            back to PID 1. Doing the pull in an initContainer cannot work:
+            there is no server to pull into.
+
+            The pull is idempotent — on every later restart the weights are
+            already on the volume and it returns immediately.
+          */}}
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -e
+              /bin/ollama serve &
+              pid=$!
+              echo "waiting for the ollama API to answer…"
+              until /bin/ollama list >/dev/null 2>&1; do sleep 1; done
+              for m in {{ .Values.ollama.models | join " " }}; do
+                echo "pulling $m (a no-op if the weights are already on the volume)…"
+                /bin/ollama pull "$m"
+              done
+              echo "ready: $(/bin/ollama list | tail -n +2 | wc -l) model(s) available"
+              wait $pid
+          ports:
+            - name: http
+              containerPort: 11434
+              protocol: TCP
+          env:
+            - name: OLLAMA_HOST
+              value: "0.0.0.0:11434"
+            {{- /* How long a model stays resident after its last request.
+                   The default (5m) reloads the weights from disk for every
+                   summary on a quiet instance, which is the slowest part of
+                   the job. */}}
+            - name: OLLAMA_KEEP_ALIVE
+              value: {{ .Values.ollama.keepAlive | quote }}
+            {{- with .Values.ollama.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- /* Readiness is "the API answers", not "the model is pulled":
+                 during a first pull the server is already able to serve any
+                 model that is present. The engine reports a missing model as
+                 an unavailable runner, up front, which is the honest
+                 behaviour and better than a pod that never goes ready. */}}
+          readinessProbe:
+            httpGet: {path: /api/tags, port: http}
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 5
+          livenessProbe:
+            httpGet: {path: /, port: http}
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 6
+          resources: {{- toYaml .Values.ollama.resources | nindent 12 }}
+          volumeMounts:
+            - name: models
+              mountPath: /root/.ollama
+      volumes:
+        - name: models
+          persistentVolumeClaim:
+            claimName: {{ include "content.ollamaFullname" . }}-models
+{{- end }}

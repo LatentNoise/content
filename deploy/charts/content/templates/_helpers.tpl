@@ -51,3 +51,36 @@ app.kubernetes.io/component: worker
 {{ include "content.labels" . }}
 app.kubernetes.io/component: worker
 {{- end -}}
+
+{{/*
+The bundled Ollama, when the chart deploys one. Same shape as the other
+workloads: the release's app name, a `component` label of its own.
+*/}}
+{{- define "content.ollamaFullname" -}}
+{{- printf "%s-ollama" (include "content.fullname" .) | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+
+{{- define "content.ollamaSelectorLabels" -}}
+{{ include "content.selectorLabelsBase" . }}
+app.kubernetes.io/component: ollama
+{{- end -}}
+
+{{- define "content.ollamaLabels" -}}
+{{ include "content.labels" . }}
+app.kubernetes.io/component: ollama
+{{- end -}}
+
+{{/*
+The Ollama address the engine should use.
+
+An explicit config.CONTENT_OLLAMA_URL always wins — someone who typed an
+address meant it. Otherwise, if the chart deploys an Ollama, its in-cluster
+Service is used. Otherwise, empty: no summaries, reported as such.
+*/}}
+{{- define "content.ollamaUrl" -}}
+{{- if .Values.config.CONTENT_OLLAMA_URL -}}
+{{ .Values.config.CONTENT_OLLAMA_URL }}
+{{- else if .Values.ollama.enabled -}}
+http://{{ include "content.ollamaFullname" . }}:11434
+{{- end -}}
+{{- end -}}
