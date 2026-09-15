@@ -55,7 +55,10 @@ PRIMARY_PRECEDENCE = (
 # `synced_audio` joins them: it is the audio, with its words written in —
 # the extension says the rest, and "Talk - synced_audio.mp3" tells a
 # reader nothing "Talk.mp3" beside a "Talk.lrc" does not already say.
-INHERIT_QUALIFIER_TYPES = frozenset({"pdf", "synced_audio", "translation"})
+# `speech` joins them too: a spoken summary is still the summary — the
+# extension is what says it is audio, and a file called "Talk - speech.mp3"
+# tells the reader nothing about which text was read.
+INHERIT_QUALIFIER_TYPES = frozenset({"pdf", "speech", "synced_audio", "translation"})
 
 
 class OutputNaming(BaseModel):

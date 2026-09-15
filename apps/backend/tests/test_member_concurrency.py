@@ -21,6 +21,7 @@ import time
 from content.analysis.service import AnalysisService
 from content.application.submit import submit_generation
 from content.domain.analysis import CollectionEntry
+from content.execution import executor as executor_module
 from content.execution.executor import JobExecutor
 from content.identity import LOCAL_OWNER
 from content.providers.base import StepExecutionError
@@ -198,10 +199,23 @@ def test_fail_fast_lets_running_members_finish_and_starts_no_new_ones(
     required member stops members that have not started, while a member
     already downloading runs to completion — its artifact is valid work and is
     kept. With three members and a bound of 2: member 1 fails, member 2 (in
-    flight when the failure lands) still succeeds, member 3 never starts."""
+    flight when the failure lands) still succeeds, member 3 never starts.
+
+    Member 2 waits for the *fact* that stops new members — ``request_stop()``
+    having been called — and not for a duration. The pool submits all three
+    members up front, so member 3 sits in the queue and is taken by whichever
+    worker frees up first, gated only by ``state.stopping``. Member 1 sets that
+    flag only after recording its failure and publishing ``step.failed``, i.e.
+    after two synchronous store writes; a member 2 that merely slept assumed
+    those writes fit in the nap, and on a loaded two-core runner they do not —
+    member 3 then legitimately starts, and the test fails for the one case the
+    documented semantics allow ("members already in flight run to completion").
+    """
     barrier = threading.Barrier(2)
+    stop_requested = threading.Event()
     original_execute = FakeProvider.execute
     original_analyze = FakeProvider.analyze
+    original_request_stop = executor_module._RunState.request_stop
 
     def analyze_with_three_members(self, source, ctx):
         analysis = original_analyze(self, source, ctx)
@@ -211,6 +225,10 @@ def test_fail_fast_lets_running_members_finish_and_starts_no_new_ones(
             )
         return analysis
 
+    def announce_stop(self):
+        original_request_stop(self)
+        stop_requested.set()
+
     def first_fails_while_second_runs(self, step, ctx):
         uri = step.params.get("uri", "")
         if uri.endswith("/v1"):
@@ -218,9 +236,13 @@ def test_fail_fast_lets_running_members_finish_and_starts_no_new_ones(
             raise StepExecutionError("provider_error", "simulated member failure")
         if uri.endswith("/v2"):
             barrier.wait(timeout=_BARRIER_TIMEOUT)
-            time.sleep(0.05)  # still running when member 1's failure lands
+            # Still running when member 1's failure has actually landed.
+            assert stop_requested.wait(timeout=_BARRIER_TIMEOUT), (
+                "member 1's failure never requested a stop"
+            )
         return original_execute(self, step, ctx)
 
+    monkeypatch.setattr(executor_module._RunState, "request_stop", announce_stop)
     monkeypatch.setattr(FakeProvider, "analyze", analyze_with_three_members)
     monkeypatch.setattr(FakeProvider, "execute", first_fails_while_second_runs)
 
