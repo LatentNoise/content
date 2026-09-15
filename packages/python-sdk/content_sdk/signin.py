@@ -50,7 +50,7 @@ import html as _html
 from dataclasses import dataclass, field
 from typing import Any
 
-from content_sdk.compat import is_unauthenticated, sign_in_url
+from content_sdk.compat import is_unauthenticated, sign_in_url, sign_out_url
 
 __all__ = ["Visitor", "render_identity", "render_sidebar"]
 
@@ -68,6 +68,7 @@ class Visitor:
     # that could not be reached leaves both this and `identity` empty.
     refused: bool = False
     sign_in_url: str = ""
+    sign_out_url: str = ""
 
     @property
     def signed_in(self) -> bool:
@@ -90,17 +91,19 @@ def render_identity(client: Any, *, app_title: str, api_base_url: str) -> Visito
     engine that refused, and the caller's own health check reports it with
     the address, which is the useful message.
     """
-    url = sign_in_url(api_base_url, _current_url())
+    here = _current_url()
+    url = sign_in_url(api_base_url, here)
+    out = sign_out_url(api_base_url, here)
     try:
         identity = client.whoami()
     except Exception as exc:  # noqa: BLE001 — every failure is handled here
         if is_unauthenticated(exc):
             _banner(app_title=app_title, url=url)
-            return Visitor(refused=True, sign_in_url=url)
-        return Visitor(sign_in_url=url)
+            return Visitor(refused=True, sign_in_url=url, sign_out_url=out)
+        return Visitor(sign_in_url=url, sign_out_url=out)
     if not isinstance(identity, dict):
-        return Visitor(sign_in_url=url)
-    return Visitor(identity=identity, sign_in_url=url)
+        return Visitor(sign_in_url=url, sign_out_url=out)
+    return Visitor(identity=identity, sign_in_url=url, sign_out_url=out)
 
 
 def render_sidebar(visitor: Visitor, client: Any, *, surface: str) -> None:
@@ -132,15 +135,11 @@ def render_sidebar(visitor: Visitor, client: Any, *, surface: str) -> None:
     who = visitor.identity.get("email") or visitor.identity.get("owner_id", "")
     badge = " · operator" if visitor.identity.get("is_operator") else ""
     st.caption(f"Signed in as **{who}**{badge}")
-    if st.button("Sign out", use_container_width=True, key="_sign_out"):
-        try:
-            client.sign_out()
-        except Exception:  # noqa: BLE001,S110 — already gone is already out
-            pass
-        # The engine revokes the session; the browser keeps a cookie that now
-        # unlocks nothing. The next run asks who the visitor is, is refused,
-        # and draws the door — the correct page for somebody who just left.
-        st.rerun()
+    # A link, not a button that calls the engine from here. Calling from here
+    # revokes the session but leaves the cookie in the browser and in this
+    # page's captured snapshot; sending the browser to the engine does both
+    # and comes back with nothing to present. See `sign_out_url`.
+    st.link_button("Sign out", visitor.sign_out_url, use_container_width=True)
 
 
 def _elsewhere(client: Any, surface: str) -> None:

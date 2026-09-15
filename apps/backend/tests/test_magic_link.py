@@ -404,3 +404,48 @@ def test_a_credential_resolving_to_local_is_refused(client, mailer, store, hoste
     client.cookies.set(hosted.session_cookie_name, cookie)
     assert client.get("/api/v1/auth/me").status_code == 401
     assert client.get("/api/v1/jobs").status_code == 401
+
+
+# --- leaving, as a place the browser goes ----------------------------------------
+
+
+def test_the_sign_out_door_revokes_and_clears_and_returns(client, mailer, hosted):
+    """Both halves at once. `POST /auth/logout` revokes the session, which is
+    what matters, but it is called by the surface — so the browser keeps its
+    cookie and a server-rendered page keeps the copy it captured when its
+    websocket opened (ADR 0034). Sending the browser here ends both."""
+    _sign_in(client, mailer)
+    assert client.get("/api/v1/auth/me").status_code == 200
+
+    response = client.get(
+        "/auth/sign-out", params={"next": SURFACE}, follow_redirects=False
+    )
+
+    assert response.status_code == 303
+    assert response.headers["location"] == SURFACE
+    # The browser is told to drop it, not merely to stop being trusted.
+    assert 'content_session=""' in response.headers.get(
+        "set-cookie", ""
+    ) or "Max-Age=0" in response.headers.get("set-cookie", "")
+    # And the session is gone on the engine, so the copy any page still holds
+    # unlocks nothing.
+    client.cookies.set(hosted.session_cookie_name, "anything")
+    assert client.get("/api/v1/auth/me").status_code == 401
+
+
+def test_the_sign_out_door_refuses_an_open_redirect(client, mailer):
+    """Same rule as signing in: a sign-out that returns anywhere is a way to
+    borrow the domain for a phishing page."""
+    _sign_in(client, mailer)
+    response = client.get(
+        "/auth/sign-out", params={"next": "https://evil.test"}, follow_redirects=False
+    )
+    assert response.status_code == 303
+    assert response.headers["location"] == "/auth/sign-in"
+
+
+def test_signing_out_twice_is_not_an_error(client):
+    """A link is clicked by people, and people click twice. An unknown cookie
+    is nothing to revoke, not a failure."""
+    response = client.get("/auth/sign-out", follow_redirects=False)
+    assert response.status_code == 303

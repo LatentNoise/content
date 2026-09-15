@@ -454,7 +454,12 @@ def test_an_account_can_see_who_it_is_and_leave(run_app, monkeypatch):
         at = run_app(surface)
         assert not at.exception, (surface, at.exception)
         assert "someone@example.com" in _all_text(at), surface
-        assert "Sign out" in _labels(at, "button"), surface
+        # A link to the engine, not a button that calls it from here: only the
+        # browser can drop its own cookie, and only a reconnect refreshes the
+        # copy this page captured when its websocket opened (ADR 0034).
+        out = [b for b in at.get("link_button") if "/auth/sign-out" in b.proto.url]
+        assert len(out) == 1, surface
+        assert "Sign out" not in _labels(at, "button"), surface
 
 
 def test_the_self_hosted_user_is_never_offered_a_way_out(run_app):

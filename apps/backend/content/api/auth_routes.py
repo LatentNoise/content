@@ -147,6 +147,9 @@ def build_auth_router(settings, store, mailer) -> APIRouter:
         surface = surface_at(settings, next_target)
         return surface["title"] if surface else product
 
+    def allowed_origins() -> tuple[str, ...]:
+        return settings.allowed_redirect_origins
+
     def _set_session_cookie(response: Response, secret: str) -> None:
         response.set_cookie(
             cookie_name,
@@ -302,6 +305,37 @@ def build_auth_router(settings, store, mailer) -> APIRouter:
             f"/auth/check-your-mail?email={quote(email)}",
             status_code=status.HTTP_303_SEE_OTHER,
         )
+
+    @router.get("/auth/sign-out", include_in_schema=False)
+    async def sign_out_door(request: Request, next: str = "") -> Response:
+        """Leaving, as a place the browser goes rather than a call a page makes.
+
+        `POST /api/v1/auth/logout` revokes the session, which is the half that
+        matters, but it is called *by the surface* — so the browser keeps the
+        cookie, and a server-rendered surface keeps the copy it captured when
+        its websocket opened (ADR 0034). The person is signed out and nothing
+        they can see says so until the page reconnects.
+
+        Sending the browser here instead does both halves at once: the session
+        is revoked, the cookie is cleared in the browser that actually holds
+        it, and the redirect reloads the surface — which reconnects with no
+        cookie and draws the door.
+
+        It is deliberately a GET with no identity required. A link is what a
+        person clicks, an unknown cookie is simply nothing to revoke, and the
+        worst a forged link achieves is signing somebody out.
+        """
+        presented = request.cookies.get(cookie_name, "")
+        if presented:
+            store.revoke_session(credentials.fingerprint(presented))
+        target = next if redirect_is_allowed(next, allowed_origins()) else ""
+        response = RedirectResponse(
+            target or "/auth/sign-in", status_code=status.HTTP_303_SEE_OTHER
+        )
+        response.delete_cookie(
+            cookie_name, domain=settings.session_cookie_domain or None, path="/"
+        )
+        return response
 
     @router.get("/auth/check-your-mail", include_in_schema=False)
     async def check_your_mail(email: str = "") -> HTMLResponse:

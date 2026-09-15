@@ -119,6 +119,40 @@ One implementation, in the SDK (`content_sdk.signin`), because it is the only
 place three single-file Streamlit apps can share code from — D-21 records what
 happened the last time a helper was copy-pasted into three UIs.
 
+### The forwarded cookie is a snapshot, and leaving has to account for it
+
+Streamlit captures the request headers **once, when the websocket opens**, and
+every rerun after that — a click, a fragment timer — reads that same snapshot.
+So a surface forwards the cookie the browser presented at connection time, for
+as long as the page stays open.
+
+Measured against a real deployment, that gives four behaviours and only the
+last one surprises:
+
+| What happens | What the surface does |
+| --- | --- |
+| No cookie at connection | Refused, the door is drawn |
+| Session revoked while the page is open | The next rerun is refused — the engine is the authority |
+| Cookie deleted, page reloaded | New websocket, no cookie, the door is drawn |
+| **Cookie deleted, page left open** | **Nothing changes** |
+
+The last row is not a bug to fix in the surface: deleting a cookie in a browser
+does not end a session, it forgets a credential, and the session on the engine
+is still perfectly valid. There is also no mechanism by which a page can learn
+that the browser's cookies changed.
+
+What follows from it is that **signing out must be a place the browser goes,
+not a call the page makes.** `POST /api/v1/auth/logout` revokes the session,
+which is the half that matters, but it is called by the *surface* — so the
+browser keeps its cookie and the page keeps its snapshot. `GET /auth/sign-out`
+does both halves at once: revokes the session, clears the cookie in the browser
+that actually holds it, and redirects back, which reconnects the surface with
+nothing to present.
+
+It requires no identity, deliberately. A link is what a person clicks, an
+unknown cookie is nothing to revoke, and the worst a forged link achieves is
+signing somebody out.
+
 ## Consequences
 
 - **Self-hosted is untouched.** No cookie is sent, none is needed, and

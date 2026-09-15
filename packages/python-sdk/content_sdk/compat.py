@@ -29,6 +29,7 @@ __all__ = [
     "ContentClient",
     "is_unauthenticated",
     "sign_in_url",
+    "sign_out_url",
     "streamlit_visitor_headers",
 ]
 
@@ -45,6 +46,23 @@ def sign_in_url(api_base_url: str, come_back_to: str = "") -> str:
     """
     base = (api_base_url or "").rstrip("/")
     target = f"{base}/auth/sign-in"
+    if come_back_to:
+        return f"{target}?next={quote(come_back_to, safe='')}"
+    return target
+
+
+def sign_out_url(api_base_url: str, come_back_to: str = "") -> str:
+    """Where to send a visitor who wants to leave.
+
+    A place the browser goes, not a call the surface makes. `POST
+    /auth/logout` revokes the session — the half that matters — but it is
+    called by the *surface*, so the browser keeps its cookie and a
+    server-rendered page keeps the copy it captured when its websocket opened.
+    Sending the browser here revokes the session, clears the cookie where it
+    actually lives, and reloads the surface with nothing to present.
+    """
+    base = (api_base_url or "").rstrip("/")
+    target = f"{base}/auth/sign-out"
     if come_back_to:
         return f"{target}?next={quote(come_back_to, safe='')}"
     return target

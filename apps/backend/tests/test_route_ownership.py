@@ -44,7 +44,7 @@ OWNERLESS = {
     ("GET", "/api/v1/catalog"): "what the engine can do — static",
     ("GET", "/api/v1/config"): "client-facing settings; holds nobody's data",
     ("POST", "/api/v1/capabilities"): "resolves against the installation",
-    # The sign-in door (ADR 0033). These four run *before* anyone is known —
+    # The sign-in door (ADR 0033). These five run *before* anyone is known —
     # they are what establishes an identity, so requiring one would be
     # circular. They are the only routes in the codebase allowed to be in
     # that position, which is why they are named one by one rather than
@@ -52,6 +52,9 @@ OWNERLESS = {
     ("POST", "/api/v1/auth/link"): "AUTH: asks for a sign-in link",
     ("GET", "/api/v1/auth/callback"): "AUTH: burns a token, opens a session",
     ("GET", "/auth/sign-in"): "AUTH: the sign-in form",
+    # Leaving needs no proof of who you are: an unknown cookie is nothing to
+    # revoke, and the worst a forged link achieves is signing somebody out.
+    ("GET", "/auth/sign-out"): "AUTH: burns the session, clears the cookie",
     ("POST", "/auth/sign-in"): "AUTH: the sign-in form's submission",
     ("GET", "/auth/check-your-mail"): "AUTH: confirmation page, holds nothing",
 }
