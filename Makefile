@@ -39,7 +39,7 @@ help:  ## List the available targets
 	  | awk -F ':.*## ' '{printf "  \033[1m%-18s\033[0m %s\n", $$1, $$2}'
 
 install: hooks  ## Create the venv and install the engine + SDK + CLI + MCP + shared client
-	cd apps/backend && uv venv .venv && uv pip install -e ".[test,dev,pdf,read,lyrics]" --python .venv/bin/python
+	cd apps/backend && { test -x .venv/bin/python || uv venv .venv; } && uv pip install -e ".[test,dev,pdf,read,lyrics]" --python .venv/bin/python
 	uv pip install -e packages/python-sdk --python apps/backend/.venv/bin/python
 	uv pip install -e apps/cli -e apps/mcp --python apps/backend/.venv/bin/python
 
@@ -65,8 +65,13 @@ test-all:  ## Full suite including external tools (yt-dlp / ffmpeg / ollama)
 
 # The UI AppTests need Streamlit, which the backend venv does not carry, so
 # they run in a throwaway venv of their own.
+# `test -x` first: from uv 0.12 onwards, `uv venv` on an existing directory is a
+# hard error rather than the old warning, so re-running any of these targets on a
+# machine that already has its venv fails the whole build. Creating only when the
+# interpreter is missing keeps them idempotent, and keeps `uv pip install` as the
+# thing that reconciles the dependencies on every run.
 ui-venv:
-	uv venv .venv-ui --python 3.13
+	@test -x .venv-ui/bin/python || uv venv .venv-ui --python 3.13
 	uv pip install --python .venv-ui/bin/python -q "streamlit>=1.40" pytest -e packages/python-sdk
 
 # Opt-in like the external suite. Hermetic all the same — a fake client stands
@@ -85,7 +90,7 @@ test-ui-live: ui-venv  ## Drive the three UIs against a live backend (slow)
 # and no import of the engine, so it gets its own venv rather than widening the
 # backend's. Opt-in like the UI tests; `validate` stays the engine's gate.
 mailer-venv:
-	uv venv services/mailer/.venv --python 3.13
+	@test -x services/mailer/.venv/bin/python || uv venv services/mailer/.venv --python 3.13
 	uv pip install --python services/mailer/.venv/bin/python -q -e "services/mailer[test,dev]"
 
 test-mailer: mailer-venv  ## The outbound-email service test suite (ADR 0031)
