@@ -84,3 +84,44 @@ Service is used. Otherwise, empty: no summaries, reported as such.
 http://{{ include "content.ollamaFullname" . }}:11434
 {{- end -}}
 {{- end -}}
+
+{{/*
+The bundled speech service (speech-to-text and text-to-speech), when the chart
+deploys one. Same shape as Ollama: a `component` label of its own.
+*/}}
+{{- define "content.speechFullname" -}}
+{{- printf "%s-speech" (include "content.fullname" .) | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+
+{{- define "content.speechSelectorLabels" -}}
+{{ include "content.selectorLabelsBase" . }}
+app.kubernetes.io/component: speech
+{{- end -}}
+
+{{- define "content.speechLabels" -}}
+{{ include "content.labels" . }}
+app.kubernetes.io/component: speech
+{{- end -}}
+
+{{/*
+The speech service address the engine should use. An explicit
+config.CONTENT_SPEECH_URL always wins; otherwise the bundled Service when the
+chart deploys one; otherwise empty — transcription reported unavailable.
+*/}}
+{{- define "content.speechUrl" -}}
+{{- if .Values.config.CONTENT_SPEECH_URL -}}
+{{ .Values.config.CONTENT_SPEECH_URL }}
+{{- else if .Values.speech.enabled -}}
+http://{{ include "content.speechFullname" . }}:8000
+{{- end -}}
+{{- end -}}
+
+{{/*
+PRELOAD_MODELS as the JSON list speaches reads: the models that are set, in order.
+*/}}
+{{- define "content.speechPreload" -}}
+{{- $models := list -}}
+{{- with .Values.speech.sttModel }}{{ $models = append $models . }}{{ end -}}
+{{- with .Values.speech.ttsModel }}{{ $models = append $models . }}{{ end -}}
+{{- toJson $models -}}
+{{- end -}}

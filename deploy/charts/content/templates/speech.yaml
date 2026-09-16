@@ -1,0 +1,142 @@
+{{- if .Values.speech.enabled }}
+{{- /*
+  A speech service, bundled — speech-to-text and text-to-speech in one
+  container, for the instance that has nowhere else to get them.
+
+  The engine's own image cannot transcribe: it is Alpine, and faster-whisper's
+  dependencies (ctranslate2, av) publish no musl wheels, so `INSTALL_STT=true`
+  fails to build. Transcription therefore runs next to the engine, in speaches,
+  behind the OpenAI audio API — the way Ollama runs the language half. The same
+  server also speaks text-to-speech (Kokoro); the engine does not use that half
+  yet, but the service is ready when it does.
+
+  Two honest situations, and this template covers only the second:
+
+    - You already run a speech server that speaks the OpenAI audio API on your
+      network. Leave `speech.enabled` false and set config.CONTENT_SPEECH_URL.
+    - You have nothing. Turn `speech.enabled` on and the chart deploys one,
+      downloads the models on first start, and wires CONTENT_SPEECH_URL to it.
+
+  ⚠️ An explicit config.CONTENT_SPEECH_URL always wins (see the configmap):
+  the chart never overrides an address someone deliberately typed.
+*/}}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "content.speechFullname" . }}-models
+  labels: {{- include "content.speechLabels" . | nindent 4 }}
+  annotations:
+    # Keep the weights if the release is uninstalled: re-downloading them is
+    # the slowest part of a first start.
+    helm.sh/resource-policy: keep
+spec:
+  accessModes: [{{ .Values.speech.persistence.accessMode | quote }}]
+  storageClassName: {{ .Values.speech.persistence.storageClass }}
+  resources:
+    requests:
+      storage: {{ .Values.speech.persistence.size }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "content.speechFullname" . }}
+  labels: {{- include "content.speechLabels" . | nindent 4 }}
+spec:
+  # ClusterIP only: the engine is the one caller. The service has no user
+  # accounts of its own, so it is never exposed through an Ingress.
+  type: ClusterIP
+  ports:
+    - port: 8000
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector: {{- include "content.speechSelectorLabels" . | nindent 4 }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "content.speechFullname" . }}
+  labels: {{- include "content.speechLabels" . | nindent 4 }}
+spec:
+  replicas: 1
+  # Recreate, not RollingUpdate: the model volume is ReadWriteOnce, so two
+  # pods would deadlock on the same claim instead of handing over.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels: {{- include "content.speechSelectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels: {{- include "content.speechSelectorLabels" . | nindent 8 }}
+    spec:
+      {{- /* The image runs as `ubuntu` (uid 1000) and writes the models under
+             its home. fsGroup makes the volume writable to it; without it a
+             local-path volume is root's and the first download fails with a
+             PermissionError. */}}
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      {{- with .Values.speech.nodeSelector }}
+      nodeSelector: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.speech.tolerations }}
+      tolerations: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: speech
+          image: "{{ .Values.speech.image.repository }}:{{ .Values.speech.image.tag }}"
+          imagePullPolicy: {{ .Values.speech.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8000
+              protocol: TCP
+          env:
+            {{- /* Downloaded during startup, before the server answers — so a
+                   first start is ready only once the weights are on the
+                   volume. Later starts find them there and return at once. */}}
+            - name: PRELOAD_MODELS
+              value: {{ include "content.speechPreload" . | quote }}
+            {{- /* How long a model stays in RAM after its last request. The
+                   service idles at ~420 MiB with nothing loaded (measured
+                   2026-09-16); a loaded Whisper adds ~1 GiB. Unloading after a
+                   quiet spell is what lets it share a small node. */}}
+            - name: STT_MODEL_TTL
+              value: {{ .Values.speech.modelTtl | quote }}
+            - name: TTS_MODEL_TTL
+              value: {{ .Values.speech.modelTtl | quote }}
+            - name: WHISPER__COMPUTE_TYPE
+              value: "int8"
+            - name: ENABLE_UI
+              value: "false"
+            - name: LOG_LEVEL
+              value: "info"
+            {{- with .Values.speech.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- /* A first start downloads the models before the server listens.
+                 The startup probe gives it up to ten minutes; liveness only
+                 begins once it has answered, so a slow download is not read as
+                 a dead container and restarted in a loop. */}}
+          startupProbe:
+            httpGet: {path: /health, port: http}
+            periodSeconds: 10
+            failureThreshold: 60
+          readinessProbe:
+            httpGet: {path: /health, port: http}
+            periodSeconds: 10
+            timeoutSeconds: 5
+          livenessProbe:
+            httpGet: {path: /health, port: http}
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 6
+          resources: {{- toYaml .Values.speech.resources | nindent 12 }}
+          volumeMounts:
+            - name: models
+              mountPath: /home/ubuntu/.cache/huggingface/hub
+      volumes:
+        - name: models
+          persistentVolumeClaim:
+            claimName: {{ include "content.speechFullname" . }}-models
+{{- end }}

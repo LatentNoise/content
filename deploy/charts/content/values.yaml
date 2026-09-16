@@ -135,6 +135,8 @@ config:
   # ⚠️ Empty = no summaries. See the README, "What is not wired up".
   CONTENT_OLLAMA_URL: ""
   CONTENT_OLLAMA_MODEL: ""
+  # Empty = the bundled speech service when `speech.enabled`, otherwise none.
+  CONTENT_SPEECH_URL: ""
   # No cookie file is mounted in Kubernetes yet: this neutralises the
   # docker-compose default, which would point at a file that is not there.
   CONTENT_CREDENTIALS: ""
@@ -180,6 +182,57 @@ ollama:
     limits:
       cpu: "3"
       memory: 6Gi
+  extraEnv: []
+  nodeSelector: {}
+  tolerations: []
+
+# A speech service, bundled — speech-to-text and text-to-speech in one
+# container, for the instance that has nowhere else to get them.
+#
+# The engine image cannot transcribe by itself: it is Alpine, and faster-whisper
+# has no musl wheels, so the service runs next to it — speaches, behind the
+# OpenAI audio API. Two situations:
+#
+#   - You already run a server that speaks the OpenAI audio API on your
+#     network: leave `enabled` false and set config.CONTENT_SPEECH_URL.
+#   - You have nothing: set `enabled` true. The chart deploys it, downloads both
+#     models on first start, and wires CONTENT_SPEECH_URL — nothing else to set.
+#
+# ⚠️ The engine only sends audio to a host on a private network. That is why
+# this Service is ClusterIP and never gets an Ingress.
+#
+# Sizing, measured on 2026-09-16: ~420 MiB idle with no model loaded; a loaded
+# Whisper `small` (int8) adds ~1 GiB and transcribes ~5x faster than real time
+# on 2 cores. Models unload after `modelTtl` seconds without a request.
+speech:
+  enabled: false
+  image:
+    repository: ghcr.io/speaches-ai/speaches
+    # 0.9.0-rc.3, not the 0.8.3 stable: only 0.9 has PRELOAD_MODELS and the
+    # model TTLs — without them the weights are never fetched before the first
+    # request and never leave RAM after it. Published 2025-12-27, and still the
+    # release GitHub marks as latest.
+    tag: "0.9.0-rc.3-cpu"
+    pullPolicy: IfNotPresent
+  # The transcription model. Becomes CONTENT_SPEECH_STT_MODEL unless config
+  # sets it explicitly.
+  sttModel: Systran/faster-whisper-small
+  # Preloaded so the service is ready for text-to-speech; the engine does not
+  # call it yet. Set to "" to download only the transcription model.
+  ttsModel: speaches-ai/Kokoro-82M-v1.0-ONNX
+  # Seconds a model stays in RAM after its last request (-1 = forever).
+  modelTtl: 300
+  persistence:
+    size: 5Gi
+    storageClass: local-path
+    accessMode: ReadWriteOnce
+  resources:
+    requests:
+      cpu: 250m
+      memory: 1Gi
+    limits:
+      cpu: "3"
+      memory: 4Gi
   extraEnv: []
   nodeSelector: {}
   tolerations: []

@@ -19,6 +19,14 @@ data:
   CONTENT_OLLAMA_MODEL: {{ first .Values.ollama.models | quote }}
   {{- end }}
   {{- end }}
+  {{- /* The speech service, same rule as Ollama: an explicit config value
+         wins, otherwise the bundled one when the chart deploys it. */}}
+  {{- if and (not .Values.config.CONTENT_SPEECH_URL) .Values.speech.enabled }}
+  CONTENT_SPEECH_URL: {{ include "content.speechUrl" . | quote }}
+  {{- if and (not .Values.config.CONTENT_SPEECH_STT_MODEL) .Values.speech.sttModel }}
+  CONTENT_SPEECH_STT_MODEL: {{ .Values.speech.sttModel | quote }}
+  {{- end }}
+  {{- end }}
   {{- /* The surfaces this deployment serves, declared once here for the
          engine to publish (ADR 0038). Built from each enabled surface's
          publicUrl; an explicit config.CONTENT_SURFACES wins, untouched. */}}
