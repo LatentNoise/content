@@ -644,6 +644,10 @@ def create_app(
             # The other places a visitor can go: what lets a surface offer
             # its siblings without each deployment naming every other one.
             "surfaces": surfaces_of(settings),
+            # Where a BROWSER reaches this engine. A surface builds its sign-in,
+            # sign-out and documentation links from this, rather than from an
+            # address of its own that can disagree with the one in the email.
+            "public_api_url": settings.public_base_url,
             "language": {
                 "primary": settings.language_primary,
                 "secondaries": list(settings.languages_secondaries),

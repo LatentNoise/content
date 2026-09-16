@@ -532,3 +532,63 @@ def test_a_lonely_surface_offers_nothing(run_app, monkeypatch):
     assert not [
         el for el in at.get("html") if "content-elsewhere" in getattr(el, "body", "")
     ]
+
+
+def test_every_link_a_visitor_follows_uses_the_engines_public_address(
+    run_app, monkeypatch
+):
+    """Not the surface's own setting. The public HomeTube once sent visitors to
+    http://api.content.k3s.lab because its CONTENT_PUBLIC_API_URL named the LAN
+    while the engine's emails named the public host. Here the surface is set to
+    a LAN name on purpose, and nothing it draws may carry it."""
+    from conftest import FakeContentClient
+    from content_sdk.errors import APIError
+
+    monkeypatch.setenv("CONTENT_PUBLIC_API_URL", "http://api.lan.test")
+
+    def refuse(self):
+        raise APIError(401, {"detail": "Authentication required."})
+
+    monkeypatch.setattr(FakeContentClient, "whoami", refuse, raising=False)
+    for surface in ("studio", "console", "hometube"):
+        at = run_app(surface)
+        assert not at.exception, (surface, at.exception)
+        buttons = [b.proto.url for b in at.get("link_button")]
+        assert buttons and all(
+            u.startswith("https://api.public.test/auth/sign-in") for u in buttons
+        ), (surface, buttons)
+        rendered = " ".join(
+            [
+                getattr(e, "value", "") or ""
+                for k in ("markdown", "caption")
+                for e in getattr(at, k)
+            ]
+        )
+        assert "api.lan.test" not in rendered + " ".join(buttons), surface
+
+
+def test_an_engine_that_declares_no_address_keeps_the_surfaces_own(
+    run_app, monkeypatch
+):
+    """A self-hosted engine has no public address to declare, and nobody
+    follows an email there: the surface's setting is the right fallback."""
+    from conftest import FakeContentClient
+    from content_sdk.errors import APIError
+
+    monkeypatch.setenv("CONTENT_PUBLIC_API_URL", "http://localhost:8010")
+    base = FakeContentClient.config
+
+    def no_address(self):
+        cfg = dict(base(self))
+        cfg.pop("public_api_url", None)
+        return cfg
+
+    def refuse(self):
+        raise APIError(401, {"detail": "Authentication required."})
+
+    monkeypatch.setattr(FakeContentClient, "config", no_address, raising=False)
+    monkeypatch.setattr(FakeContentClient, "whoami", refuse, raising=False)
+    at = run_app("studio")
+    assert not at.exception, at.exception
+    buttons = [b.proto.url for b in at.get("link_button")]
+    assert buttons and all(u.startswith("http://localhost:8010/") for u in buttons)

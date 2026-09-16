@@ -158,6 +158,9 @@ class FakeContentClient:
                 "vo_first": True,
                 "primary_include_subtitles": False,
             },
+            # Where a browser reaches the engine: every link a surface draws
+            # for the visitor is built on this, never on its own setting.
+            "public_api_url": "https://api.public.test",
             # What the engine declares about its siblings (ADR 0038), in the
             # canonical order it publishes them.
             "surfaces": [

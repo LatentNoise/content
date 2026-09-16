@@ -52,11 +52,51 @@ from typing import Any
 
 from content_sdk.compat import is_unauthenticated, sign_in_url, sign_out_url
 
-__all__ = ["Visitor", "render_identity", "render_sidebar"]
+__all__ = ["Visitor", "public_api_url", "render_identity", "render_sidebar"]
 
 # The icon each surface carries in its own sidebar heading, so a chip pointing
 # at it looks like the place it leads to.
 _ICONS = {"studio": "🧩", "console": "🛠️", "hometube": "🎬"}
+
+
+def _engine_facts(client: Any) -> dict[str, Any]:
+    """What the engine says about the deployment, read once per browser session.
+
+    The deployment does not change while somebody is looking at it, and a
+    Streamlit script runs on every click; asking on each run would be a request
+    per click for an answer that cannot differ.
+    """
+    import streamlit as st
+
+    key = "_content_engine_facts"
+    if key not in st.session_state:
+        try:
+            config = client.config() or {}
+        except Exception:  # noqa: BLE001 — an engine that says nothing is fine
+            config = {}
+        st.session_state[key] = {
+            "surfaces": list(config.get("surfaces") or []),
+            "public_api_url": str(config.get("public_api_url") or "").rstrip("/"),
+        }
+    return st.session_state[key]
+
+
+def public_api_url(client: Any, *, fallback: str) -> str:
+    """Where a BROWSER reaches the engine — the engine's answer first.
+
+    Every link a surface draws for the visitor to follow — sign in, sign out,
+    the API documentation, an artifact download — points at this address.
+    It used to come from the surface's own `CONTENT_PUBLIC_API_URL`, which
+    nothing compared with the address the engine writes into its emails, and
+    the public HomeTube duly sent its visitors to a LAN name nobody outside the
+    house could reach.
+
+    So the engine is asked. It declares `public_api_url` in `/config`, and on
+    an instance where people sign in it refuses to start without a coherent
+    one. The surface's own setting remains the fallback for an engine that
+    declares none — a self-hosted install, where nobody follows an email.
+    """
+    return _engine_facts(client)["public_api_url"] or fallback.rstrip("/")
 
 
 @dataclass(frozen=True)
@@ -147,17 +187,9 @@ def _elsewhere(client: Any, surface: str) -> None:
     declares none, or only this one."""
     import streamlit as st
 
-    key = "_content_surfaces"
-    if key not in st.session_state:
-        # Once per browser session: the deployment does not change while
-        # somebody is looking at it, and this runs on every click otherwise.
-        try:
-            st.session_state[key] = list(client.config().get("surfaces") or [])
-        except Exception:  # noqa: BLE001 — no siblings is a fine answer
-            st.session_state[key] = []
     others = [
         s
-        for s in st.session_state[key]
+        for s in _engine_facts(client)["surfaces"]
         if isinstance(s, dict) and s.get("kind") != surface and s.get("url")
     ]
     if not others:

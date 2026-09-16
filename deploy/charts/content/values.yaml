@@ -208,8 +208,15 @@ nodeSelector: {}
 tolerations: []
 affinity: {}
 
-# The API URL as seen by the BROWSER, used by every UI for artifact download
-# links.
+# The API URL as seen by the BROWSER — the FALLBACK for every link a UI draws
+# for a visitor to follow: sign in, sign out, the API docs, artifact downloads.
+#
+# ⚠️ When the engine declares CONTENT_PUBLIC_BASE_URL, the UIs use THAT instead
+# (read from /config). One address, decided by the engine: this setting once
+# named a LAN host while the engine's emails named the public one, and a public
+# surface sent its visitors to a name nobody outside the house could reach.
+# With CONTENT_AUTH_MODE=token the engine refuses to start unless its public
+# address, its surfaces and its session cookie domain agree.
 publicApiUrl: http://api.content.example.com
 
 # The three UIs. They are identical as far as deployment is concerned

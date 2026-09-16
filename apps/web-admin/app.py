@@ -21,7 +21,7 @@ from content_sdk.compat import (
     ContentClient,
     streamlit_visitor_headers,
 )
-from content_sdk.signin import render_identity, render_sidebar
+from content_sdk.signin import public_api_url, render_identity, render_sidebar
 from content_sdk.status import ago as _ago
 from content_sdk.status import capability_display, display
 
@@ -196,6 +196,9 @@ def get_client(base_url: str) -> ContentClient:
 
 
 client = get_client(API_URL)
+# Every link the visitor follows is built on this, so the engine decides it:
+# the surface's own setting once pointed public visitors at a LAN name.
+PUBLIC_API_URL = public_api_url(client, fallback=PUBLIC_API_URL)
 
 # Who is visiting, asked before anything is drawn (ADR 0033/0034). It asks the
 # engine rather than waiting for some later call to refuse: the boot calls are

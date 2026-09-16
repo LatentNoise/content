@@ -19,6 +19,15 @@ from content.storage.roots import (
     validate_layout,
 )
 
+
+def _a_signed_in_instance(monkeypatch) -> None:
+    """The least a `token` instance needs to start: a public address and a
+    cookie domain it sits under. Signing in refuses to start without them."""
+    monkeypatch.setenv("CONTENT_AUTH_MODE", "token")
+    monkeypatch.setenv("CONTENT_PUBLIC_BASE_URL", "https://api.example.test")
+    monkeypatch.setenv("CONTENT_SESSION_COOKIE_DOMAIN", ".example.test")
+
+
 # --- flat: the self-hosted majority ---------------------------------------------
 
 
@@ -141,7 +150,7 @@ def test_the_default_layout_follows_the_mode(monkeypatch):
     monkeypatch.delenv("CONTENT_STORAGE_LAYOUT", raising=False)
     monkeypatch.setenv("CONTENT_AUTH_MODE", "none")
     assert settings_from_env().storage_layout == "flat"
-    monkeypatch.setenv("CONTENT_AUTH_MODE", "token")
+    _a_signed_in_instance(monkeypatch)
     assert settings_from_env().storage_layout == "per_user"
 
 

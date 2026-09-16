@@ -67,6 +67,39 @@ sanitiser leaves without a target — and the browser navigates in place. Two
 chips at most, under the surface's own heading, styled to inherit whatever
 theme the visitor chose.
 
+### And where the engine itself is (added 2026-09-16)
+
+The same mistake existed one level down, and it reached production. Each
+surface built its sign-in, sign-out, documentation and download links from its
+own `CONTENT_PUBLIC_API_URL`, while the engine wrote `CONTENT_PUBLIC_BASE_URL`
+into its emails. Nothing compared them. The production surfaces had
+`http://api.content.k3s.lab` — a LAN name — so the public HomeTube's Sign in
+button sent visitors to an address nobody outside the house could reach.
+
+So the engine declares that address too, as `public_api_url` in `/config`, and
+the surfaces build every link a visitor follows on it. Their own setting stays
+as the fallback for an engine that declares none: a self-hosted install, where
+nobody follows an email.
+
+### Addresses that cannot sign anyone in are refused at startup
+
+In `token` mode the engine now checks its addresses against each other before
+it serves anything: a public address must exist; every surface and the public
+address must sit under the session cookie's domain, or share one host when the
+cookie has none; and a `Secure` cookie needs `https` everywhere. Each of those,
+wrong, is a sign-in that completes and carries no session — a failure nobody
+sees until a visitor reports it. Refusing where configuration is read puts the
+message in front of the person who typed the value.
+
+`none` mode is never checked: nobody signs in, and a self-hosted install must
+not be refused for addresses it does not use.
+
+The redirect allowlist is the other lesson of the same day. It was removed from
+the production values in anticipation of the derivation above, deployed on an
+engine that did not derive it yet, and every sign-in quietly returned to Studio
+instead of where it began. A value that depends on a code change ships with
+that change, not before it.
+
 ## Consequences
 
 - `/config` grows a `surfaces` field; a client that does not know it ignores

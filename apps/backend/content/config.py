@@ -84,6 +84,58 @@ def surface_at(settings, url: str) -> dict[str, str] | None:
     return None
 
 
+def sign_in_can_work(settings) -> list[str]:
+    """Why signing in cannot work with these addresses — empty when it can.
+
+    Every one of these was, or would have been, a silent failure: the link in
+    the email, the button on a surface and the cookie the callback sets each
+    take an address from a different place, and nothing compared them. The
+    public HomeTube once sent its visitors to a LAN name nobody outside the
+    house could reach, and a sign-in completed on one hostname carried no
+    session to the next. So the addresses are checked against each other,
+    where they are read, before anyone is sent anywhere.
+
+    Only in `token` mode: nobody signs in otherwise, and a self-hosted install
+    must never be refused for addresses it does not use.
+    """
+    if getattr(settings, "auth_mode", "none") != "token":
+        return []
+    problems: list[str] = []
+    api = urlparse(settings.public_base_url or "")
+    if not api.scheme or not api.netloc:
+        return [
+            "CONTENT_PUBLIC_BASE_URL is required with CONTENT_AUTH_MODE=token: it "
+            "is the address in every sign-in email, and without a scheme and host "
+            "the link cannot be followed."
+        ]
+    places = [("CONTENT_PUBLIC_BASE_URL", settings.public_base_url)] + [
+        (f"CONTENT_SURFACES ({kind})", url) for kind, url in settings.surfaces
+    ]
+    domain = (settings.session_cookie_domain or "").strip().lstrip(".").lower()
+    for label, url in places:
+        parsed = urlparse(url)
+        host = (parsed.hostname or "").lower()
+        if settings.session_cookie_secure and parsed.scheme != "https":
+            problems.append(
+                f"{label} is {url}, but the session cookie is Secure: a browser "
+                "never sends it over http, so a sign-in there would not stick. "
+                "Use https, or CONTENT_SESSION_COOKIE_SECURE=false on a LAN."
+            )
+        if domain:
+            if host != domain and not host.endswith("." + domain):
+                problems.append(
+                    f"{label} is {url}, outside the session cookie's domain "
+                    f".{domain}: the browser would never send it the session."
+                )
+        elif host != (api.hostname or "").lower():
+            problems.append(
+                f"{label} is {url}, but with no CONTENT_SESSION_COOKIE_DOMAIN the "
+                f"cookie belongs to {api.hostname} alone and would never reach it. "
+                "Set a parent domain shared by every surface."
+            )
+    return problems
+
+
 @dataclass(frozen=True)
 class ContentSettings:
     data_dir: Path
@@ -974,7 +1026,7 @@ def settings_from_env() -> ContentSettings:
         # is how one of them ends up missing from the allowlist and a sign-in
         # lands on the default target instead of where the person was.
         redirect_origins = tuple(url for _, url in surfaces)
-    return ContentSettings(
+    settings = ContentSettings(
         data_dir=data_dir,
         db_path=db_path,
         delivery_dir=delivery_dir,
@@ -1104,3 +1156,10 @@ def settings_from_env() -> ContentSettings:
         ),
         ytdlp_max_age_days=_to_int(os.getenv("CONTENT_YTDLP_MAX_AGE_DAYS"), 0),
     )
+    problems = sign_in_can_work(settings)
+    if problems:
+        raise ValueError(
+            "Signing in cannot work with these addresses:\n  - "
+            + "\n  - ".join(problems)
+        )
+    return settings

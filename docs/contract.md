@@ -281,7 +281,7 @@ Prefix `/api/v1`. Initial slice:
 
 | Method | Path | Role |
 | --- | --- | --- |
-| `GET` | `/config` | Client configuration: the ids of available credentials (never the paths/secrets), `surfaces` — the deployed UIs as `{kind, title, url}`, so a client can offer the others — `retention.days` (0 = kept until deleted) and `quota_wall`, what a refused visitor may be offered (empty unless configured) |
+| `GET` | `/config` | Client configuration: the ids of available credentials (never the paths/secrets), `surfaces` — the deployed UIs as `{kind, title, url}`, so a client can offer the others — `public_api_url`, where a browser reaches the engine and which every link a surface draws is built on, `retention.days` (0 = kept until deleted) and `quota_wall`, what a refused visitor may be offered (empty unless configured) |
 | `POST` | `/analyses` | Analyze sources → `ResourceAnalysis` (TTL cache); the `analysis_id` returned is **addressable** (ADR 0014) |
 | `GET` | `/analyses/{id}` | Fetch an analysis by id — a **safe** read, it **never** re-runs the analysis; `404 analysis_not_found`, `410 analysis_expired` |
 | `POST` | `/jobs` | Submit a `GenerationRequest` (validates, plans, enqueues) |

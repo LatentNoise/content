@@ -16,7 +16,12 @@ import pytest
 from fastapi.testclient import TestClient
 
 from content.api.app import create_app
-from content.config import _parse_surfaces, settings_from_env, surface_at
+from content.config import (
+    _parse_surfaces,
+    settings_from_env,
+    sign_in_can_work,
+    surface_at,
+)
 
 STUDIO = "https://studio.example.test"
 CONSOLE = "https://console.example.test"
@@ -148,3 +153,82 @@ def test_the_email_names_the_surface_too(hosted):
     # And the link still carries the person back where they were.
     query = parse_qs(urlparse(mailer.sent[-1]["link"]).query)
     assert query["next"] == [STUDIO]
+
+
+# --- the addresses are checked against each other -----------------------------------
+#
+# The public HomeTube once sent visitors to http://api.content.k3s.lab: the
+# surface built its sign-in link from an address of its own, the engine wrote
+# a different one into its emails, and nothing compared them. These pin the
+# comparison, with the configuration that shipped the bug among the cases.
+
+
+HOSTED = dict(
+    auth_mode="token",
+    public_base_url="https://api.example.test",
+    session_cookie_domain=".example.test",
+    session_cookie_secure=True,
+    surfaces=(("studio", STUDIO), ("console", CONSOLE)),
+)
+
+
+def test_a_coherent_hosted_configuration_passes(settings):
+    assert sign_in_can_work(replace(settings, **HOSTED)) == []
+
+
+def test_a_self_hosted_instance_is_never_checked(settings):
+    """Nobody signs in there, and it must never be refused for addresses it
+    does not use."""
+    assert (
+        sign_in_can_work(replace(settings, auth_mode="none", public_base_url="")) == []
+    )
+
+
+def test_signing_in_needs_a_public_address(settings):
+    problems = sign_in_can_work(replace(settings, **{**HOSTED, "public_base_url": ""}))
+    assert problems and "CONTENT_PUBLIC_BASE_URL is required" in problems[0]
+
+
+def test_a_lan_name_beside_a_public_domain_is_refused(settings):
+    """The shape of the original bug: one surface on a name the session cookie
+    can never reach."""
+    leaking = replace(
+        settings,
+        **{**HOSTED, "surfaces": (("studio", "http://studio.content.k3s.lab"),)},
+    )
+    problems = sign_in_can_work(leaking)
+    assert any("outside the session cookie's domain" in p for p in problems)
+    assert any("Secure" in p for p in problems)
+
+
+def test_a_host_only_cookie_needs_every_surface_on_the_same_host(settings):
+    """localhost works — cookies ignore the port — and nothing else does."""
+    local = replace(
+        settings,
+        auth_mode="token",
+        public_base_url="http://localhost:8000",
+        session_cookie_domain="",
+        session_cookie_secure=False,
+        surfaces=(("studio", "http://localhost:8502"),),
+    )
+    assert sign_in_can_work(local) == []
+    split = replace(local, surfaces=(("studio", "http://studio.example.test"),))
+    assert any("belongs to localhost alone" in p for p in sign_in_can_work(split))
+
+
+def test_the_engine_refuses_to_start_on_incoherent_addresses(monkeypatch):
+    monkeypatch.setenv("CONTENT_AUTH_MODE", "token")
+    monkeypatch.setenv("CONTENT_PUBLIC_BASE_URL", "https://api.example.test")
+    monkeypatch.setenv("CONTENT_SESSION_COOKIE_DOMAIN", ".example.test")
+    monkeypatch.setenv("CONTENT_SURFACES", "studio=http://studio.lan.test")
+    with pytest.raises(ValueError, match="Signing in cannot work"):
+        settings_from_env()
+
+
+def test_config_publishes_the_public_api_address(known, store, providers):
+    public = replace(known, public_base_url="https://api.example.test")
+    app = create_app(public, store=store, providers=providers, start_worker=False)
+    with TestClient(app) as client:
+        assert client.get("/api/v1/config").json()["public_api_url"] == (
+            "https://api.example.test"
+        )
