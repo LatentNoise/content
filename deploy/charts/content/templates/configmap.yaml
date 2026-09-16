@@ -4,40 +4,11 @@ metadata:
   name: {{ include "content.fullname" . }}-config
   labels: {{- include "content.labels" . | nindent 4 }}
 data:
-  {{- range $k, $v := .Values.config }}
+  {{- /* .Values.config plus everything derived from `domain`, the bundled
+         Ollama and the bundled speech service — see content.effectiveConfig. Empty keys are omitted,
+         so an empty value in config means "derive it", never "set it empty". */}}
+  {{- range $k, $v := (include "content.effectiveConfig" . | fromYaml) }}
   {{- if ne (toString $v) "" }}
   {{ $k }}: {{ toString $v | quote }}
-  {{- end }}
-  {{- end }}
-  {{- /* The Ollama the engine should call (see content.ollamaUrl): an explicit
-         config value wins, otherwise the bundled one when the chart deploys
-         it. Emitted here only when config.CONTENT_OLLAMA_URL is empty — a
-         non-empty one is already in the range above. */}}
-  {{- if and (not .Values.config.CONTENT_OLLAMA_URL) .Values.ollama.enabled }}
-  CONTENT_OLLAMA_URL: {{ include "content.ollamaUrl" . | quote }}
-  {{- if and (not .Values.config.CONTENT_OLLAMA_MODEL) .Values.ollama.models }}
-  CONTENT_OLLAMA_MODEL: {{ first .Values.ollama.models | quote }}
-  {{- end }}
-  {{- end }}
-  {{- /* The speech service, same rule as Ollama: an explicit config value
-         wins, otherwise the bundled one when the chart deploys it. */}}
-  {{- if and (not .Values.config.CONTENT_SPEECH_URL) .Values.speech.enabled }}
-  CONTENT_SPEECH_URL: {{ include "content.speechUrl" . | quote }}
-  {{- if and (not .Values.config.CONTENT_SPEECH_STT_MODEL) .Values.speech.sttModel }}
-  CONTENT_SPEECH_STT_MODEL: {{ .Values.speech.sttModel | quote }}
-  {{- end }}
-  {{- end }}
-  {{- /* The surfaces this deployment serves, declared once here for the
-         engine to publish (ADR 0038). Built from each enabled surface's
-         publicUrl; an explicit config.CONTENT_SURFACES wins, untouched. */}}
-  {{- if not (hasKey .Values.config "CONTENT_SURFACES") }}
-  {{- $surfaces := list }}
-  {{- range $kind, $ui := .Values.uis }}
-  {{- if and $ui.enabled ($ui.publicUrl | default "") }}
-  {{- $surfaces = append $surfaces (printf "%s=%s" $kind $ui.publicUrl) }}
-  {{- end }}
-  {{- end }}
-  {{- if $surfaces }}
-  CONTENT_SURFACES: {{ join "," $surfaces | quote }}
   {{- end }}
   {{- end }}

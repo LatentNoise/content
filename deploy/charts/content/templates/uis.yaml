@@ -41,7 +41,7 @@ spec:
               value: "http://{{ include "content.fullname" $ }}:{{ $.Values.service.port }}"
             # L'API vue par le NAVIGATEUR de l'utilisateur.
             - name: CONTENT_PUBLIC_API_URL
-              value: {{ $.Values.publicApiUrl | quote }}
+              value: {{ include "content.publicApiUrl" $ | quote }}
             {{- with $ui.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
@@ -84,7 +84,7 @@ metadata:
 spec:
   ingressClassName: {{ $ui.ingress.className | default $.Values.ingress.className }}
   rules:
-    {{- range prepend ($ui.ingress.extraHosts | default list) $ui.ingress.host }}
+    {{- range prepend ($ui.ingress.extraHosts | default list) (include "content.uiHost" (dict "root" $ "key" $key "ui" $ui)) }}
     - host: {{ . | quote }}
       http:
         paths:

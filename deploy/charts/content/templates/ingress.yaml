@@ -11,7 +11,7 @@ spec:
   ingressClassName: {{ .Values.ingress.className }}
   {{- if .Values.ingress.tls.enabled }}
   tls:
-    - hosts: [{{ .Values.ingress.host | quote }}]
+    - hosts: [{{ include "content.apiHost" . | quote }}]
       secretName: {{ .Values.ingress.tls.secretName }}
   {{- end }}
   rules:
@@ -19,7 +19,7 @@ spec:
            public one, or a name being migrated. Rewriting the Host in a proxy
            instead would make the application generate links for a hostname
            the visitor never typed. */}}
-    {{- range prepend ((.Values.ingress).extraHosts | default list) .Values.ingress.host }}
+    {{- range prepend ((.Values.ingress).extraHosts | default list) (include "content.apiHost" .) }}
     - host: {{ . | quote }}
       http:
         paths:

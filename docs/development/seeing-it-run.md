@@ -72,8 +72,11 @@ make k8s-test-down            # remove the release and its volumes
 | Console  | <http://console.content-test.k3s.lab>          |
 | HomeTube | <http://hometube.content-test.k3s.lab>         |
 
-Those names need one line in `/etc/hosts` pointing at the cluster node; the
-values file says which.
+Every one of those names comes from a single line of the test values,
+`domain: content-test.k3s.lab` with `https: false` — the chart derives the
+hosts, the public URLs, the cookie and the redirect allowlist from it, exactly
+as production derives them from its own domain. They need one line in
+`/etc/hosts` pointing at the cluster node.
 
 ### How an image gets there without a registry
 

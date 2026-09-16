@@ -5,6 +5,35 @@
 # placeholders — a public chart ships defaults, an operator ships their own
 # file.
 
+# 🔑 The address this deployment is built on.
+#
+# Every name a browser reaches is derived from it:
+#
+#   api.<domain>       the engine          (ingress.subdomain)
+#   studio.<domain>    Content Studio      (uis.studio.subdomain)
+#   console.<domain>   Content Admin       (uis.console.subdomain)
+#   hometube.<domain>  HomeTube            (uis.hometube.subdomain)
+#
+# …and so are the public URLs the UIs draw their links with, the engine's
+# CONTENT_PUBLIC_BASE_URL (the address in every sign-in email), the session
+# cookie's domain `.<domain>` — the parent that lets one sign-in cover all four
+# surfaces (ADR 0033) — the redirect allowlist, and where a sign-in lands.
+#
+# They used to be seven separate settings, and two of them disagreeing is how a
+# public Sign in button once pointed at a LAN name. One fact cannot disagree
+# with itself.
+#
+# Anything derived can still be stated explicitly — a surface's ingress.host or
+# publicUrl, a config key — and the explicit value wins. With
+# CONTENT_AUTH_MODE=token the engine also refuses to start on addresses that
+# cannot sign anyone in, so an override that breaks the set is caught at once.
+domain: content.example.com
+
+# How browsers reach those names. `true` also makes the session cookie Secure,
+# which a browser only ever sends over https — so `false` is for a LAN without
+# certificates, and nothing that faces the internet.
+https: true
+
 image:
   repository: ghcr.io/latentnoise/content
   # ⚠️ Always an explicit version tag, never `latest`: a mutable tag turns a
@@ -54,7 +83,9 @@ service:
 ingress:
   enabled: true
   className: traefik
-  host: api.content.example.com
+  # Empty = <subdomain>.<domain>. Set it only for a name outside the domain.
+  host: ""
+  subdomain: api
   # Extra names the same surface also answers on: a LAN name beside a public
   # one, or a name being migrated. Rewriting the Host in a proxy instead would
   # make the application generate links for a hostname nobody typed.
@@ -105,13 +136,14 @@ config:
   # contract. "token" = the hosted door; do NOT switch it on before a mailer
   # is reachable, or nobody can sign in.
   CONTENT_AUTH_MODE: "none"
+  # The five below are DERIVED from `domain` and `https` when left empty:
+  # the engine's public URL, the cookie's parent domain `.<domain>`, Secure
+  # from `https`, every surface's origin as the redirect allowlist, and Studio
+  # as where a sign-in lands. Set one only to depart from the domain on purpose.
   CONTENT_PUBLIC_BASE_URL: ""
-  # The PARENT domain, so one session is recognised by all four surfaces.
   CONTENT_SESSION_COOKIE_DOMAIN: ""
-  CONTENT_SESSION_COOKIE_SECURE: "true"
+  CONTENT_SESSION_COOKIE_SECURE: ""
   CONTENT_ALLOWED_REDIRECT_ORIGINS: ""
-  # Where a sign-in lands when the link named no destination. Empty drops the
-  # visitor on the engine, which serves API documentation.
   CONTENT_SIGN_IN_DEFAULT_TARGET: ""
   # Who may read facts about the machine (ADR 0035). Granted at sign-in;
   # unlisting never revokes it.
@@ -261,16 +293,10 @@ nodeSelector: {}
 tolerations: []
 affinity: {}
 
-# The API URL as seen by the BROWSER — the FALLBACK for every link a UI draws
-# for a visitor to follow: sign in, sign out, the API docs, artifact downloads.
-#
-# ⚠️ When the engine declares CONTENT_PUBLIC_BASE_URL, the UIs use THAT instead
-# (read from /config). One address, decided by the engine: this setting once
-# named a LAN host while the engine's emails named the public one, and a public
-# surface sent its visitors to a name nobody outside the house could reach.
-# With CONTENT_AUTH_MODE=token the engine refuses to start unless its public
-# address, its surfaces and its session cookie domain agree.
-publicApiUrl: http://api.content.example.com
+# Where a BROWSER reaches the engine. Empty = <scheme>://api.<domain>.
+# The UIs build sign-in, sign-out, documentation and download links on the
+# engine's declared address first (/config), and on this one only as a fallback.
+publicApiUrl: ""
 
 # The three UIs. They are identical as far as deployment is concerned
 # (Streamlit, port 8501): adding a surface is one entry here and nothing else.
@@ -279,17 +305,17 @@ publicApiUrl: http://api.content.example.com
 # as CONTENT_STUDIO_URL / CONTENT_CONSOLE_URL / CONTENT_HOMETUBE_URL.
 # ⚠️ These variables are NOT read by the applications yet: the deployment is
 # ready, the code is not.
-# Each surface's `publicUrl` is the address a BROWSER reaches it at — the
-# public name when there is one, the ingress host otherwise. The chart folds
-# them into CONTENT_SURFACES on the engine (ADR 0038), which is how every
-# surface learns where the others are and how the sign-in page names where it
-# sends someone back. Empty = the surface is not offered to the others.
+# Each surface answers on <subdomain>.<domain>. `publicUrl` and `ingress.host`
+# are empty on purpose: they are derived. Set them only for a surface that
+# lives outside the domain — and a surface outside the cookie's domain can
+# never carry a session, which the engine refuses at startup in token mode.
 uis:
   studio:
     enabled: true
     image: {repository: ghcr.io/latentnoise/content-studio, tag: ""}
-    publicUrl: http://studio.content.example.com
-    ingress: {enabled: true, className: "", host: studio.content.example.com, extraHosts: []}
+    subdomain: studio
+    publicUrl: ""
+    ingress: {enabled: true, className: "", host: "", extraHosts: []}
     resources:
       requests: {cpu: 50m, memory: 128Mi}
       limits: {cpu: 500m, memory: 512Mi}
@@ -297,8 +323,9 @@ uis:
   console:
     enabled: true
     image: {repository: ghcr.io/latentnoise/content-console, tag: ""}
-    publicUrl: http://console.content.example.com
-    ingress: {enabled: true, className: "", host: console.content.example.com, extraHosts: []}
+    subdomain: console
+    publicUrl: ""
+    ingress: {enabled: true, className: "", host: "", extraHosts: []}
     resources:
       requests: {cpu: 50m, memory: 128Mi}
       limits: {cpu: 500m, memory: 512Mi}
@@ -306,8 +333,9 @@ uis:
   hometube:
     enabled: true
     image: {repository: ghcr.io/latentnoise/content-hometube, tag: ""}
-    publicUrl: http://hometube.content.example.com
-    ingress: {enabled: true, className: "", host: hometube.content.example.com, extraHosts: []}
+    subdomain: hometube
+    publicUrl: ""
+    ingress: {enabled: true, className: "", host: "", extraHosts: []}
     resources:
       requests: {cpu: 50m, memory: 128Mi}
       limits: {cpu: 500m, memory: 512Mi}

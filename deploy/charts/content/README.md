@@ -10,9 +10,16 @@ helm upgrade --install content ./deploy/charts/content \
   -f my-values.yaml
 ```
 
-The chart ships `example.com` hostnames on purpose. **A deployment brings its
-own values file**, which belongs to its operator's infrastructure repository
-and not to this public chart.
+**A deployment brings its own values file**, which belongs to its operator's
+infrastructure repository and not to this public chart. Most of what it needs to
+say is one line:
+
+```yaml
+domain: example.com   # api., studio., console., hometube.example.com
+https: true
+```
+
+Every address follows from those two values — see *One domain* below.
 
 Check it: `kubectl -n content get pods,svc,ingress,pvc` ·
 `kubectl -n content logs deploy/content -f`
@@ -74,21 +81,42 @@ reachable directly, four Ingresses, one hostname per surface.
 treats them generically, since they are all Streamlit on 8501 with the
 `/_stcore/health` probe.
 
-### One parent domain, on purpose
+### One domain, and every address derived from it
 
 The four hostnames share a parent because a session cookie set on that parent
 is sent by the browser to all of its subdomains. That is what makes one
 sign-in work across the four surfaces without merging them or serving them
 under paths (ADR 0033).
 
-### Sister-surface URLs, injected automatically
+So the parent *is* the configuration. From `domain` and `https` the chart
+derives:
 
-Each UI receives `CONTENT_<OTHER_SURFACE>_URL` for **the surfaces that are
-actually enabled and exposed** — never a hard-coded link, because a
-self-hosting operator will have neither the same surfaces nor the same URLs.
+| Derived | From `domain: example.com`, `https: true` |
+|---|---|
+| Ingress hosts | `api.`, `studio.`, `console.`, `hometube.example.com` |
+| `CONTENT_PUBLIC_API_URL` on each UI | `https://api.example.com` |
+| `CONTENT_PUBLIC_BASE_URL` — the address in every sign-in email | `https://api.example.com` |
+| `CONTENT_SESSION_COOKIE_DOMAIN` | `.example.com` |
+| `CONTENT_SESSION_COOKIE_SECURE` | `true` — a browser never sends a Secure cookie over http |
+| `CONTENT_SURFACES` — how the UIs find each other (ADR 0038) | each enabled surface's URL |
+| `CONTENT_ALLOWED_REDIRECT_ORIGINS` | the same URLs |
+| `CONTENT_SIGN_IN_DEFAULT_TARGET` | Studio |
 
-⚠️ **These variables are not read by the applications yet.** The deployment is
-ready, the code is not.
+These were seven separate settings, and in one production deployment two of
+them disagreed: the UIs drew their Sign in button on a LAN name while the
+engine's emails used the public one. One fact cannot disagree with itself.
+
+**Anything derived can still be stated.** A surface's `subdomain`, its
+`ingress.host` or `publicUrl`, a `config` key — the explicit value wins. A
+common case: `uis.hometube.subdomain: hometube-app`, when `hometube.<domain>`
+already serves something else.
+
+**And a broken override is caught.** With `CONTENT_AUTH_MODE=token`, the engine
+refuses to start on addresses that cannot sign anyone in — a surface outside
+the cookie's domain, an http address beside a Secure cookie — and says which.
+
+What stays outside the chart, and must agree by hand: the names your DNS,
+tunnel or reverse proxy send to the cluster.
 
 ## Separating the API from the worker (`worker.enabled`)
 
