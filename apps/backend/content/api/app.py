@@ -902,6 +902,41 @@ def create_app(
             job_id=result.job_id, status=result.status, warnings=result.warnings
         )
 
+    @app.get("/api/v1/last-request", tags=["jobs"])
+    def last_request(source_ref: str, owner_id: str = owner) -> dict:
+        """What this person last asked for this source (ADR 0039).
+
+        `source_ref` comes from an analysis. The answer is the normalized request
+        they submitted — outputs, options, delivery folder and name — with when,
+        and the state of that job if it still exists. Another owner's request is
+        not found rather than forbidden, like every owner-scoped read.
+        """
+        entry = store.last_request(owner_id, source_ref)
+        if entry is None:
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "code": "last_request_not_found",
+                    "message": "Nothing was asked for this source yet.",
+                },
+            )
+        job = store.get_job(owner_id, entry["job_id"])
+        return {
+            "source_ref": entry["source_ref"],
+            "title": entry["title"],
+            "requested_at": entry["requested_at"],
+            "request": entry["request"],
+            "job": (
+                {
+                    "job_id": job["id"],
+                    "status": job["status"],
+                    "finished_at": job.get("finished_at"),
+                }
+                if job
+                else None
+            ),
+        }
+
     @app.get("/api/v1/jobs", tags=["jobs"])
     def list_jobs(
         status: str | None = Query(None),

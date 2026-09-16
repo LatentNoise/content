@@ -592,3 +592,112 @@ def test_an_engine_that_declares_no_address_keeps_the_surfaces_own(
     assert not at.exception, at.exception
     buttons = [b.proto.url for b in at.get("link_button")]
     assert buttons and all(u.startswith("http://localhost:8010/") for u in buttons)
+
+
+# --- the last request for a source (ADR 0039) ------------------------------------
+
+
+def _remembered_video_request(folder: str) -> dict:
+    """What the engine returns for a source asked for before: the normalized
+    request as it was submitted, plus when and that job's state."""
+    return {
+        "source_ref": "x:item:video",
+        "title": "Fake video",
+        "requested_at": "2026-09-12T10:00:00+00:00",
+        "job": {"job_id": "job_1", "status": "succeeded", "finished_at": None},
+        "request": {
+            "sources": [
+                {
+                    "id": "main",
+                    "type": "url",
+                    "uri": "https://x/video",
+                    "auth": None,
+                    "provider_args": [],
+                }
+            ],
+            "outputs": [
+                {
+                    "id": "video_main",
+                    "type": "video",
+                    "delivery": {"mode": "inherit", "folder": folder, "filename": None},
+                    "options": {
+                        "selection": {
+                            "max_height": 720,
+                            "video_codec": {"mode": "prefer", "value": "vp9"},
+                            "audio_languages": ["en"],
+                        },
+                        "container": "mp4",
+                        "processing": {
+                            "embed_metadata": True,
+                            "embed_thumbnail": True,
+                            "embed_chapters": False,
+                            "embed_subtitles": ["fr"],
+                        },
+                        "sponsorblock": {
+                            "remove": [],
+                            "mark": [],
+                            "cut_mode": "keyframes",
+                        },
+                        "cut": None,
+                    },
+                }
+            ],
+        },
+    }
+
+
+def test_pasting_a_source_again_finds_last_times_choices(run_app, monkeypatch):
+    """Yann, 2026-09-16: the form should come back filled in with what was
+    chosen last time — above all the folder, since keeping it is what lets
+    Content see what is already there instead of downloading it again."""
+    from conftest import FakeContentClient
+
+    monkeypatch.setattr(
+        FakeContentClient,
+        "_remembered",
+        {"x:item:video": _remembered_video_request("Talks")},
+    )
+    at = run_app("hometube", "https://x/video")
+    assert not at.exception, at.exception
+
+    notices = " ".join(el.value for el in at.info)
+    assert "You asked for this on 2026-09-12" in notices
+    assert "`Talks`" in notices and "succeeded" in notices
+
+    sent = _generation_request(at)
+    video = next(o for o in sent["outputs"] if o["type"] == "video")
+    assert video["delivery"]["folder"] == "Talks"
+    assert video["options"]["selection"]["max_height"] == 720
+    assert video["options"]["selection"]["video_codec"]["value"] == "vp9"
+    assert video["options"]["selection"]["audio_languages"] == ["en"]
+    assert video["options"]["container"] == "mp4"
+    assert video["options"]["processing"]["embed_thumbnail"] is True
+    assert video["options"]["processing"]["embed_chapters"] is False
+    assert video["options"]["processing"]["embed_subtitles"] == ["fr"]
+    assert "sponsorblock" not in video["options"]  # "disabled" was the choice
+
+
+def test_a_folder_that_is_gone_is_proposed_rather_than_dropped(run_app, monkeypatch):
+    """The folder of last time is not in the library any more — renamed, or on
+    a mount that is not there. Silently landing in the root would hide the
+    mistake; proposing it as a new folder shows it."""
+    from conftest import FakeContentClient
+
+    monkeypatch.setattr(
+        FakeContentClient,
+        "_remembered",
+        {"x:item:video": _remembered_video_request("Archive/2025")},
+    )
+    at = run_app("hometube", "https://x/video")
+    assert not at.exception, at.exception
+    new_folder = at.text_input(key="newfolder-https://x/video")
+    assert new_folder.value == "Archive/2025"
+
+
+def test_a_source_never_asked_for_gets_the_usual_defaults(run_app):
+    at = run_app("hometube", "https://x/video")
+    assert not at.exception, at.exception
+    assert not [el for el in at.info if "You asked for this" in el.value]
+    sent = _generation_request(at)
+    video = next(o for o in sent["outputs"] if o["type"] == "video")
+    assert "folder" not in (video.get("delivery") or {})

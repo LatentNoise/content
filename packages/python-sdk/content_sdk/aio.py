@@ -19,6 +19,7 @@ from ._transport import (
     resolve_base_url,
 )
 from .client import _source_body, _sources_list
+from .errors import NotFound
 from .models import (
     SCHEMA_VERSION,
     AnalysisData,
@@ -178,6 +179,13 @@ class AsyncContentClient:
         return await self._t.post("/cache/purge")
 
     # --- who you are, and the keys a program holds -------------------------------
+
+    async def last_request(self, source_ref: str) -> dict[str, Any] | None:
+        """What this person last asked for this source (ADR 0039), or None."""
+        try:
+            return await self._t.get("/last-request", params={"source_ref": source_ref})
+        except NotFound:
+            return None
 
     async def whoami(self) -> dict[str, Any]:
         return await self._t.get("/auth/me")

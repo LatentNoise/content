@@ -190,7 +190,14 @@ class FakeContentClient:
         return dict(USAGE)
 
     def folders(self):
-        return [""]
+        return ["", "Music", "Talks"]
+
+    # What each source was last asked for (ADR 0039). Empty by default: a test
+    # that needs a memory puts one here, keyed by `source_ref`.
+    _remembered: ClassVar[dict[str, dict]] = {}
+
+    def last_request(self, source_ref):
+        return self._remembered.get(source_ref)
 
     def list_jobs(self, limit=30):
         return []
@@ -201,6 +208,7 @@ class FakeContentClient:
     def analyze(self, sources):
         kind = self._one(sources)
         sid = sources[0]["id"]
+        uri = sources[0].get("uri", "")
         if kind == "playlist":
             return {
                 "sources": [
@@ -239,6 +247,8 @@ class FakeContentClient:
             "sources": [
                 {
                     "source_id": sid,
+                    # The stable name a client remembers a request by (ADR 0039).
+                    "source_ref": f"x:item:{uri.rsplit('/', 1)[-1]}",
                     "resource": {
                         "resource_type": "video",
                         "title": "Fake video",

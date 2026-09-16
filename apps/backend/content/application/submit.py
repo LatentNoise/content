@@ -142,6 +142,12 @@ def submit_generation(
     # Recorded on the job so the next check reads a fact rather than a
     # re-analysis, and so an operator can see where a month went.
     store.record_media_seconds(owner_id, job_id, media_seconds)
+    # Remembered at submission, not at success: where someone wanted a playlist
+    # is their intent whether or not this attempt finished (ADR 0039).
+    for source in analysis.sources:
+        store.remember_request(
+            owner_id, source.source_ref, job_id, source.resource.title, canonical
+        )
     events = EventPublisher(store)
     events.publish(job_id, "job.created", {"retry_of": retry_of} if retry_of else {})
 

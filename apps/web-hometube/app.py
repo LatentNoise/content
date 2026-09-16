@@ -417,6 +417,74 @@ def source_dict(
     return src
 
 
+class Remembered:
+    """The request this person last submitted for a source, read back for the form.
+
+    The engine keeps it per person and per source (ADR 0039) — where they wanted
+    it and how. Every getter falls back to the form's own default, so a field the
+    old request did not carry, or a choice this source no longer offers, is simply
+    the usual default: memory proposes, the source still decides what is possible.
+    """
+
+    def __init__(self, entry: dict | None):
+        self.entry = entry or {}
+        request = self.entry.get("request") or {}
+        self.outputs = {
+            o.get("type"): o
+            for o in request.get("outputs") or []
+            if isinstance(o, dict)
+        }
+        sources = request.get("sources") or []
+        self.source = sources[0] if sources and isinstance(sources[0], dict) else {}
+
+    def __bool__(self) -> bool:
+        return bool(self.entry)
+
+    def types(self) -> set[str]:
+        return {t for t in self.outputs if t}
+
+    def delivery(self) -> dict:
+        for output in self.outputs.values():
+            delivery = output.get("delivery") or {}
+            if delivery.get("folder") or delivery.get("filename"):
+                return delivery
+        return {}
+
+    def option(self, output_type: str, *path: str, default=None):
+        node = (self.outputs.get(output_type) or {}).get("options") or {}
+        for key in path:
+            if not isinstance(node, dict):
+                return default
+            node = node.get(key)
+        return default if node in (None, "", []) else node
+
+    def languages(self, *candidates: tuple[str, ...], among: list[str]) -> list[str]:
+        """The first remembered language list that exists, kept to what is offered."""
+        for candidate in candidates:
+            chosen = self.option(*candidate)
+            if chosen:
+                return [lang for lang in chosen if lang in among]
+        return []
+
+
+def remembered_request(analysis: dict | None) -> Remembered:
+    """What this person asked last time for the analysed source, once per URL."""
+    if not analysis or not analysis.get("sources"):
+        return Remembered(None)
+    ref = analysis["sources"][0].get("source_ref") or ""
+    cache_key = f"remembered::{ref}"
+    if ref and cache_key not in st.session_state:
+        try:
+            st.session_state[cache_key] = client.last_request(ref)
+        except Exception:  # noqa: BLE001 — no memory is a fine answer
+            st.session_state[cache_key] = None
+    return Remembered(st.session_state.get(cache_key) if ref else None)
+
+
+def _index_of(options: list, value, fallback: int = 0) -> int:
+    return options.index(value) if value in options else fallback
+
+
 # --- URL (Enter = analyze) -----------------------------------------------------
 
 
@@ -475,6 +543,8 @@ if analysis:
     video_codecs_avail = list(media.get("video_codecs", []) or [])
     # widget keys bound to the analyzed URL so defaults refresh on a new analysis
 wk = st.session_state.analyzed_url or "-"
+# What this person asked for this source last time (ADR 0039), or nothing.
+remembered = remembered_request(analysis)
 
 # --- resolved capabilities → what the UI may offer (ADR 0013) ------------------
 cap_status: dict[str, str] = {}  # output_type -> best resolved status
@@ -551,6 +621,24 @@ elif resource:
         st.caption("　·　".join(tech))
 
 
+# --- what was asked last time -------------------------------------------------
+
+if remembered:
+    _when = (remembered.entry.get("requested_at") or "")[:10]
+    _where = remembered.delivery().get("folder") or "the root folder"
+    _what = ", ".join(
+        OUTPUT_META[t][1] for t in OUTPUT_ORDER if t in remembered.types()
+    )
+    _job = remembered.entry.get("job") or {}
+    _state = f" — last run {_job['status']}" if _job.get("status") else ""
+    st.info(
+        f"🕘 **You asked for this on {_when}**: {_what or 'a download'} into "
+        f"`{_where}`{_state}. The form below is filled in with those choices. "
+        "Keeping the same folder is what lets Content see what is already there "
+        "instead of downloading it again."
+    )
+
+
 # --- name + destination folder -------------------------------------------------
 
 if is_collection:
@@ -577,7 +665,7 @@ suggested_filename = (
 )
 filename = st.text_input(
     name_label,
-    value=suggested_filename,
+    value=remembered.delivery().get("filename") or suggested_filename,
     placeholder="named by the server",
     key=f"name-{wk}",
     help=name_help,
@@ -589,14 +677,27 @@ if backend_ok:
         folders = [f for f in client.folders() if f]
     except Exception:  # noqa: BLE001
         folders = []
+folder_options = ["📁 Root folder (/)", *folders, "➕ New folder…"]
+remembered_folder = remembered.delivery().get("folder", "") if remembered else ""
+if remembered_folder and remembered_folder not in folders:
+    # The folder it went to last time is not in the library any more (renamed,
+    # removed, or on a mount that is not there): propose it rather than drop it,
+    # so a mistake is visible instead of silently landing somewhere else.
+    folder_index = len(folder_options) - 1
+else:
+    folder_index = _index_of(folder_options, remembered_folder, 0)
 folder_choice = st.selectbox(
     "Destination folder",
-    ["📁 Root folder (/)", *folders, "➕ New folder…"],
+    folder_options,
+    index=folder_index,
+    key=f"folder-{wk}",
     help="Where the file lands under the server delivery library.",
 )
 if folder_choice == "➕ New folder…":
     folder = st.text_input(
-        "New folder path (relative)", value="", key=f"newfolder-{wk}"
+        "New folder path (relative)",
+        value=remembered_folder if remembered_folder not in folders else "",
+        key=f"newfolder-{wk}",
     )
 elif folder_choice.startswith("📁 Root"):
     folder = ""
@@ -613,6 +714,7 @@ if is_collection:
     coll_label = st.radio(
         "Content",
         ["🎬 Video", "🎵 Audio only"],
+        index=1 if remembered.types() == {"audio"} else 0,
         horizontal=True,
         key=f"coll-{wk}",
         label_visibility="collapsed",
@@ -632,7 +734,11 @@ elif caps_payload:
         cols = st.columns(4)
         for i, out in enumerate(offer[start : start + 4]):
             icon, label = OUTPUT_META[out]
-            default = out == "video" or (out == "audio" and "video" not in producible)
+            default = (
+                out in remembered.types()
+                if remembered
+                else out == "video" or (out == "audio" and "video" not in producible)
+            )
             status = cap_status.get(out, "")
             help_text = (
                 "Derived from the source (transcript/summary)."
@@ -688,7 +794,12 @@ if (video_on or audio_on) and audio_langs_avail:
     audio_languages = st.multiselect(
         "Audio languages",
         preferred_order(audio_langs_avail, audio_original) or sorted(audio_langs_avail),
-        default=audio_default,
+        default=remembered.languages(
+            ("video", "selection", "audio_languages"),
+            ("audio", "languages"),
+            among=audio_langs_avail,
+        )
+        or audio_default,
         key=f"audio-{wk}",
         help="Audio tracks to include (VO first, then your server language "
         "preferences). Several = multi-audio embedded into the video.",
@@ -708,7 +819,12 @@ elif (video_on or audio_on) and is_collection:
         audio_languages = st.multiselect(
             "Audio languages",
             choices,
-            default=choices,
+            default=remembered.languages(
+                ("video", "selection", "audio_languages"),
+                ("audio", "languages"),
+                among=choices,
+            )
+            or choices,
             format_func=language_label,
             key=f"audio-coll-{wk}",
             help="Applied to every video in the playlist. Items are not "
@@ -746,7 +862,12 @@ if subs_wanted and sub_options:
     subs_langs = st.multiselect(
         "Subtitles",
         sub_options,
-        default=subs_default,
+        default=remembered.languages(
+            ("video", "processing", "embed_subtitles"),
+            ("subtitles", "languages"),
+            among=sub_options,
+        )
+        or subs_default,
         key=f"subs-{wk}",
         help="Subtitle languages (embedded into the video, or delivered as "
         "files for the subtitles-only preset).",
@@ -763,7 +884,12 @@ elif subs_wanted and is_collection:
         subs_langs = st.multiselect(
             "Subtitles",
             sub_choices,
-            default=sub_choices,
+            default=remembered.languages(
+                ("video", "processing", "embed_subtitles"),
+                ("subtitles", "languages"),
+                among=sub_choices,
+            )
+            or sub_choices,
             key=f"subs-coll-{wk}",
             help="Embedded into every video of the playlist when it has them "
             "— a video without a requested language simply keeps none.",
@@ -781,10 +907,32 @@ sb_preset = "default"
 sb_cut_mode = "keyframes"
 if video_on or audio_on:
     with st.expander("📊 Advertising and Sponsors"):
+        sb_names = list(SB_PRESETS)
+        sb_index = 1  # "default" — sponsors removed out of the box
+        if remembered:
+            sb_before = remembered.option("video", "sponsorblock") or remembered.option(
+                "audio", "sponsorblock"
+            )
+            for i, name in enumerate(sb_names):
+                preset = SB_PRESETS[name]
+                if (
+                    preset is None
+                    and not (sb_before or {}).get("remove")
+                    and not (sb_before or {}).get("mark")
+                ) or (
+                    preset
+                    and sb_before
+                    and sorted(preset.get("remove", []))
+                    == sorted(sb_before.get("remove", []))
+                    and sorted(preset.get("mark", []))
+                    == sorted(sb_before.get("mark", []))
+                ):
+                    sb_index = i
+                    break
         sb_preset = st.selectbox(
             "SponsorBlock",
-            list(SB_PRESETS),
-            index=1,  # "default" — sponsors removed out of the box
+            sb_names,
+            index=sb_index,
             help="Remove or mark sponsored segments (SponsorBlock community data).",
         )
         # The same trade-off the Cutting section names, for the cuts
@@ -823,13 +971,25 @@ cut: dict | None = None
 # to each member.
 if video_on:
     with st.expander("✂️ Cutting"):
-        cut_on = st.checkbox("Keep only a segment", value=False, key=f"cut-{wk}")
+        cut_before = remembered.option("video", "cut") or {}
+        cut_on = st.checkbox(
+            "Keep only a segment", value=bool(cut_before), key=f"cut-{wk}"
+        )
         cc1, cc2 = st.columns(2)
-        cut_start = cc1.text_input("Start (HH:MM:SS)", value="0", disabled=not cut_on)
-        cut_end = cc2.text_input("End (HH:MM:SS)", value="", disabled=not cut_on)
+        cut_start = cc1.text_input(
+            "Start (HH:MM:SS)",
+            value=str(cut_before.get("start") or "0"),
+            disabled=not cut_on,
+        )
+        cut_end = cc2.text_input(
+            "End (HH:MM:SS)",
+            value=str(cut_before.get("end") or ""),
+            disabled=not cut_on,
+        )
         cut_mode = st.radio(
             "Cut mode",
             ["keyframes", "precise"],
+            index=_index_of(["keyframes", "precise"], cut_before.get("mode"), 0),
             horizontal=True,
             disabled=not cut_on,
             key=f"cutmode-{wk}",
@@ -863,14 +1023,30 @@ if video_on:
         max_height = q1.selectbox(
             "Max resolution",
             res_options,
-            index=0,
+            index=_index_of(
+                res_options, remembered.option("video", "selection", "max_height"), 0
+            ),
             help="Detected on this source." if video_heights else None,
         )
         codec_options = ["auto"] + [
             c for c in ("av1", "vp9", "h264") if c in video_codecs_avail
         ]
-        video_codec = q2.selectbox("Preferred codec", codec_options)
-        container = q3.selectbox("Container", ["mkv", "mp4"])
+        video_codec = q2.selectbox(
+            "Preferred codec",
+            codec_options,
+            index=_index_of(
+                codec_options,
+                (remembered.option("video", "selection", "video_codec") or {}).get(
+                    "value"
+                ),
+                0,
+            ),
+        )
+        container = q3.selectbox(
+            "Container",
+            ["mkv", "mp4"],
+            index=_index_of(["mkv", "mp4"], remembered.option("video", "container"), 0),
+        )
 
 
 # --- 📦 Video Embedding (video only) -------------------------------------------
@@ -878,9 +1054,20 @@ if video_on:
 embed_metadata, embed_thumbnail, embed_chapters, embed_subs = True, False, True, True
 if video_on:
     with st.expander("📦 Video Embedding"):
-        embed_metadata = st.checkbox("Embed metadata", value=True)
-        embed_thumbnail = st.checkbox("Embed thumbnail", value=False)
-        embed_chapters = st.checkbox("Embed chapters", value=True)
+        processing_before = remembered.option("video", "processing") or {}
+
+        def _embedded(key: str, usual: bool) -> bool:
+            return bool(processing_before.get(key, usual)) if remembered else usual
+
+        embed_metadata = st.checkbox(
+            "Embed metadata", value=_embedded("embed_metadata", True)
+        )
+        embed_thumbnail = st.checkbox(
+            "Embed thumbnail", value=_embedded("embed_thumbnail", False)
+        )
+        embed_chapters = st.checkbox(
+            "Embed chapters", value=_embedded("embed_chapters", True)
+        )
         if subs_langs:
             embed_subs = st.checkbox(
                 f"Embed subtitles into the video ({', '.join(subs_langs)})",
@@ -896,6 +1083,11 @@ if audio_on:
         audio_format = st.selectbox(
             "Audio format",
             ["source", "opus", "mp3", "m4a"],
+            index=_index_of(
+                ["source", "opus", "mp3", "m4a"],
+                remembered.option("audio", "format"),
+                0,
+            ),
             help="'source' keeps the native stream; others transcode.",
         )
 
@@ -908,6 +1100,9 @@ if "transcript" in want:
         transcript_format = st.selectbox(
             "Transcript format",
             ["json", "text"],
+            index=_index_of(
+                ["json", "text"], remembered.option("transcript", "format"), 0
+            ),
             help="JSON is the canonical form and carries the timings. `text` "
             "is the readable derivation — the better file to keep beside a "
             "video in your library. Asking for `text` while also asking for a "
@@ -919,7 +1114,11 @@ summary_len = "medium"
 if "summary" in want:
     with st.expander("🧠 Summary"):
         summary_len = st.selectbox(
-            "Summary length", ["short", "medium", "long"], index=1
+            "Summary length",
+            ["short", "medium", "long"],
+            index=_index_of(
+                ["short", "medium", "long"], remembered.option("summary", "length"), 1
+            ),
         )
 
 
@@ -940,6 +1139,11 @@ with st.expander(f"🍪 Cookie Management{_cookie_flag}"):
     credential = st.selectbox(
         "Authentication",
         ["none", *credentials],
+        index=_index_of(
+            ["none", *credentials],
+            (remembered.source.get("auth") or {}).get("credential_id"),
+            0,
+        ),
         help="Server-side cookie credentials (CONTENT_CREDENTIALS). "
         "Needed for age-restricted or private videos.",
     )
@@ -975,7 +1179,7 @@ with st.expander(f"🍪 Cookie Management{_cookie_flag}"):
 with st.expander("⚙️ Advanced"):
     extra_args_raw = st.text_input(
         "Extra yt-dlp arguments",
-        value="",
+        value=shlex.join(remembered.source.get("provider_args") or []),
         key=f"extra-{wk}",
         help="Power users only — forwarded to yt-dlp, e.g. "
         "--limit-rate 2M --proxy http://host:8080. Only network, geo, "
