@@ -162,7 +162,7 @@ def build_auth_router(settings, store, mailer) -> APIRouter:
             path="/",
         )
 
-    def _issue_link(email: str, next_target: str) -> None:
+    def _issue_link(email: str, next_target: str, reference: str) -> None:
         """Create a token, hand the mail over. Never tells the caller anything."""
         token = credentials.new_token()
         store.create_auth_token(
@@ -182,6 +182,7 @@ def build_auth_router(settings, store, mailer) -> APIRouter:
                 "link": link,
                 "product": _product_for(next_target),
                 "minutes": f"{settings.magic_link_ttl_minutes:g}",
+                "reference": reference,
             },
         )
 
@@ -202,15 +203,23 @@ def build_auth_router(settings, store, mailer) -> APIRouter:
                 detail="That redirect target is not allowed.",
             )
         email = credentials.normalize_email(payload.email)
+        # A short code in the email's subject and on the confirmation page.
+        # Each link used to share one subject, so mail clients folded every
+        # new link into the conversation of the first — delivered, and
+        # impossible to find. The code makes each message its own, and lets
+        # someone holding several tell which one they just asked for. It is
+        # made whatever happens next, so the answer still says nothing about
+        # the address.
+        reference = credentials.new_link_reference()
         recent = store.count_recent_auth_tokens(email, _iso_ago(hours=1))
         if recent >= settings.magic_link_max_per_hour:
             log.warning("magic-link rate limit reached for one address")
         else:
             try:
-                await asyncio.to_thread(_issue_link, email, payload.next)
+                await asyncio.to_thread(_issue_link, email, payload.next, reference)
             except Exception:  # noqa: BLE001 — the caller learns nothing either way
                 log.exception("could not issue a sign-in link")
-        return {"status": "sent"}
+        return {"status": "sent", "reference": reference}
 
     @router.get("/api/v1/auth/callback")
     async def follow_link(token: str = "", next: str = "") -> Response:
@@ -300,9 +309,10 @@ def build_auth_router(settings, store, mailer) -> APIRouter:
         target = (
             next if redirect_is_allowed(next, settings.allowed_redirect_origins) else ""
         )
-        await request_link(LinkRequest(email=email, next=target))
+        sent = await request_link(LinkRequest(email=email, next=target))
         return RedirectResponse(
-            f"/auth/check-your-mail?email={quote(email)}",
+            f"/auth/check-your-mail?email={quote(email)}"
+            f"&ref={quote(sent['reference'])}",
             status_code=status.HTTP_303_SEE_OTHER,
         )
 
@@ -338,14 +348,23 @@ def build_auth_router(settings, store, mailer) -> APIRouter:
         return response
 
     @router.get("/auth/check-your-mail", include_in_schema=False)
-    async def check_your_mail(email: str = "") -> HTMLResponse:
+    async def check_your_mail(email: str = "", ref: str = "") -> HTMLResponse:
         where = f" for <strong>{html.escape(email)}</strong>" if email else ""
+        # Only a code of the shape we make is repeated back: the page must not
+        # print whatever a crafted link puts in its query string.
+        code = ref if credentials.is_link_reference(ref) else ""
+        subject = (
+            f'<p>Its subject ends in <strong class="ref">{code}</strong> — '
+            "if you asked more than once, that is the newest.</p>"
+            if code
+            else ""
+        )
         return _page(
             "Check your mail",
             f"<h1>Check your mail</h1><p>If an account exists{where}, a sign-in "
-            "link is on its way.</p>"
+            f"link is on its way.</p>{subject}"
             '<p class="note">Nothing yet? Look in spam, then '
-            '<a href="/auth/sign-in">ask again</a>.</p>',
+            '<a href="/auth/sign-in">ask again</a> — as often as you need.</p>',
         )
 
     return router

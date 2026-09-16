@@ -303,7 +303,13 @@ class ContentSettings:
     # that minute, where a tick cannot.
     retention_days: float = 0.0
     magic_link_ttl_minutes: float = 15.0
-    magic_link_max_per_hour: int = 5
+    # How many UNUSED sign-in links one address may hold from the last hour.
+    # A link someone opened is a person signing in, not a flood — a new
+    # browser, a lost session, a second device — and it never counts. What the
+    # limit guards against is somebody else filling a stranger's inbox, and
+    # those links are never opened. 15, because a person who could not get in
+    # must be able to keep asking without meeting a silence.
+    magic_link_max_per_hour: int = 15
     # The surfaces this installation serves, as (kind, public URL) pairs: what
     # the engine tells every client so each surface can offer the others, and
     # the sign-in page can say where it is sending someone back. Declared once,
@@ -1132,7 +1138,7 @@ def settings_from_env() -> ContentSettings:
             os.getenv("CONTENT_MAGIC_LINK_TTL_MINUTES"), 15.0
         ),
         magic_link_max_per_hour=max(
-            1, _to_int(os.getenv("CONTENT_MAGIC_LINK_MAX_PER_HOUR"), 5)
+            1, _to_int(os.getenv("CONTENT_MAGIC_LINK_MAX_PER_HOUR"), 15)
         ),
         surfaces=surfaces,
         allowed_redirect_origins=redirect_origins,

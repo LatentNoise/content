@@ -149,7 +149,56 @@ def test_a_known_and_an_unknown_address_get_identical_answers(client, mailer, st
     known = client.post("/api/v1/auth/link", json={"email": "known@example.com"})
     unknown = client.post("/api/v1/auth/link", json={"email": "nobody@example.com"})
     assert known.status_code == unknown.status_code == 202
-    assert known.json() == unknown.json()
+    # Each answer carries a fresh reference, which differs between ANY two
+    # requests alike — so it says nothing about the address. Everything else
+    # is byte for byte the same.
+    known_body, unknown_body = known.json(), unknown.json()
+    assert credentials.is_link_reference(known_body.pop("reference"))
+    assert credentials.is_link_reference(unknown_body.pop("reference"))
+    assert known_body == unknown_body
+
+
+def test_the_same_address_can_ask_again_and_again(client, mailer):
+    """A second browser, a lost session, a link that never seemed to come:
+    asking again must always work. Fifteen in a row, each one mailed."""
+    for attempt in range(15):
+        _sign_in(client, mailer, "someone@example.com")
+        assert len(mailer.sent) == attempt + 1
+
+
+def test_an_opened_link_never_counts_against_the_next(client, mailer, hosted):
+    """Signing in is not a flood. Only links nobody opened are counted, so a
+    person who uses every link can sign in as often as they need."""
+    for _ in range(hosted.magic_link_max_per_hour * 3):
+        _sign_in(client, mailer, "someone@example.com")
+    assert len(mailer.sent) == hosted.magic_link_max_per_hour * 3
+
+
+def test_every_link_is_its_own_email(client, mailer):
+    """The bug: every link shared one subject, so mail clients folded each new
+    one into the conversation of the first — delivered, and impossible to
+    find. Each request now carries a reference, in the mail and on the page."""
+    first = client.post("/api/v1/auth/link", json={"email": "someone@example.com"})
+    second = client.post("/api/v1/auth/link", json={"email": "someone@example.com"})
+    one, two = first.json()["reference"], second.json()["reference"]
+    assert one != two
+    assert [m["variables"]["reference"] for m in mailer.sent[-2:]] == [one, two]
+
+
+def test_the_confirmation_page_names_the_newest_email(client):
+    response = client.post(
+        "/auth/sign-in", data={"email": "someone@example.com"}, follow_redirects=False
+    )
+    page = client.get(response.headers["location"]).text
+    reference = response.headers["location"].rsplit("ref=", 1)[1]
+    assert f'<strong class="ref">{reference}</strong>' in page
+
+
+def test_the_confirmation_page_repeats_nothing_it_did_not_make(client):
+    page = client.get(
+        "/auth/check-your-mail", params={"ref": "<script>x</script>"}
+    ).text
+    assert "<script>" not in page and "ends in" not in page
 
 
 def test_the_rate_limit_never_shows_itself(client, hosted, mailer):

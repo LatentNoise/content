@@ -310,7 +310,7 @@ them, because every request already belongs to the single implicit user.
 
 | Method | Path | Role |
 | --- | --- | --- |
-| `POST` | `/auth/link` | Ask for a sign-in link. **Always 202 with the same body** — a different answer for a known address would be an account-enumeration oracle |
+| `POST` | `/auth/link` | Ask for a sign-in link. **Always 202 with the same body** — a different answer for a known address would be an account-enumeration oracle — carrying a fresh `reference`, the four-character code that ends the email's subject, so a person holding several links can tell the newest |
 | `GET` | `/auth/callback` | Follow the link: the token is burnt, a session cookie is set, the browser is redirected to a `next` that must be on the allowlist |
 | `GET` | `/auth/sign-out` | The way out for a browser: revokes the session, clears the cookie, redirects to `next` (allowlisted). No identity required |
 | `GET` | `/auth/me` | The current owner, and the address behind it when there is an account |

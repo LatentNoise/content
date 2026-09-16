@@ -88,3 +88,23 @@ def normalize_email(raw: str) -> str:
     addresses their owner considers distinct.
     """
     return raw.strip().lower()
+
+
+# Letters and digits a person reads aloud without hesitating: no 0/O, no 1/I/L.
+# The mail service uses the same alphabet for the codes it makes itself.
+_REFERENCE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
+
+
+def new_link_reference() -> str:
+    """A short code that tells one sign-in email from the one before it.
+
+    Not a secret and not a credential: it is printed in the subject and on the
+    confirmation page, and grants nothing. It exists because identical subjects
+    made mail clients fold every new link into the first one's conversation.
+    """
+    return "".join(secrets.choice(_REFERENCE_ALPHABET) for _ in range(4))
+
+
+def is_link_reference(value: str) -> bool:
+    """Is this shaped like a code `new_link_reference` makes — and nothing else?"""
+    return len(value) == 4 and all(c in _REFERENCE_ALPHABET for c in value)
