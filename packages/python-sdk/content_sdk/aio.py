@@ -160,6 +160,9 @@ class AsyncContentClient:
     async def storage(self) -> dict[str, Any]:
         return await self._t.get("/storage")
 
+    async def usage(self) -> dict[str, Any]:
+        return await self._t.get("/usage")
+
     async def cache(self) -> dict[str, Any]:
         return await self._t.get("/cache")
 

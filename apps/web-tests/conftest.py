@@ -92,6 +92,25 @@ from content_sdk import __version__ as ENGINE_VERSION
 
 UPLOADED: list[dict] = []
 
+# Where this fake owner stands against the fake instance's limits, and what
+# that instance offers someone it refuses. A test that wants the unconfigured
+# case — every self-hosted instance — empties QUOTA_WALL and gets the engine's
+# plain sentence back.
+USAGE: dict = {
+    "owner_id": "usr_fake",
+    "window_days": 30,
+    "exempt": False,
+    "media_minutes": {"used": 41.0, "allowed": 60.0},
+    "storage_bytes": {"used": 120_000_000, "allowed": 300_000_000},
+    "active_jobs": {"used": 0, "allowed": 1},
+}
+QUOTA_WALL: dict = {
+    "self_host_command": "docker run -p 8501:8501 ghcr.io/example/hometube:latest",
+    "docs_url": "https://example.test/#installation",
+    "cta_label": "Email me when it's ready",
+    "cta_url": "https://example.test/waiting-list",
+}
+
 
 class FakeContentClient:
     """Canned, contract-shaped answers keyed by the source URI."""
@@ -158,7 +177,14 @@ class FakeContentClient:
                     "url": "http://hometube.test",
                 },
             ],
+            # A hosted instance that has something to offer a refused visitor.
+            # Empty on every self-hosted one — see `content_sdk.quota`.
+            "quota_wall": dict(QUOTA_WALL),
+            "retention": {"days": 15.0},
         }
+
+    def usage(self):
+        return dict(USAGE)
 
     def folders(self):
         return [""]

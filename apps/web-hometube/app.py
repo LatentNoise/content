@@ -16,7 +16,7 @@ import os
 import shlex
 
 import streamlit as st
-from content_sdk import ORIGINAL, legal, notifications
+from content_sdk import ORIGINAL, legal, notifications, quota
 from content_sdk.compat import (
     ApiError,
     ContentClient,
@@ -225,6 +225,7 @@ version = "?"
 credentials: list[str] = []
 credential_files: dict[str, dict] = {}
 lang_prefs: dict = {}
+config: dict = {}
 try:
     health = client.health()
     backend_ok = health.get("status") == "ok"
@@ -344,6 +345,11 @@ with st.sidebar:
         st.caption(f"[API · /docs]({PUBLIC_API_URL}/docs)")
     # AGPL §13: the source offer, from the instance (never hard-coded).
     legal.render_streamlit_footer(client)
+    if backend_ok:
+        # Before the refusal, not only after it: a limit someone cannot watch
+        # themselves approach is a trap rather than a rule (ADR 0036).
+        st.divider()
+        quota.render_streamlit_usage(client)
     st.divider()
     st.caption("Recent jobs")
     try:
@@ -1098,7 +1104,10 @@ if st.button(
             st.warning(f"{w['code']}: {w['message']}")
         st.rerun()
     except ApiError as exc:
-        st.error(f"Request refused: {exc.message}")
+        # A quota refusal is the one place this surface has more to say than
+        # the engine does; everything else is the engine's own sentence.
+        if not quota.render_streamlit_wall(exc, config):
+            st.error(f"Request refused: {exc.message}")
     except Exception as exc:  # noqa: BLE001
         st.error(f"Submit failed: {exc}")
 

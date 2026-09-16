@@ -56,6 +56,7 @@ from content.capabilities.resolver import CapabilityResolver
 from content.config import (
     ContentSettings,
     describe_environment,
+    quota_wall_of,
     settings_from_env,
     surfaces_of,
 )
@@ -653,6 +654,15 @@ def create_app(
             # default, so a client can show the effective destination before
             # submitting instead of guessing.
             "delivery": {"by_default": settings.delivery_default},
+            # What a refused person may be offered. Empty throughout unless the
+            # operator configured something, and a surface reading empties
+            # shows the engine's plain refusal — the engine's own messages stay
+            # neutral, and the offer is never one of them.
+            "quota_wall": quota_wall_of(settings),
+            # ADR 0023. The same argument as `uploads` below: how long the
+            # bytes survive is not something a caller on somebody else's
+            # machine should have to take on trust. 0 = kept until deleted.
+            "retention": {"days": settings.retention_days},
             # ADR 0020. A client that uploads bytes is entitled to know what
             # happens to them: how long they are kept and how much it may send.
             # Without this the policy exists only in the operator's .env, and a

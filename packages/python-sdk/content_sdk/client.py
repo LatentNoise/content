@@ -103,6 +103,16 @@ class ContentClient:
         """What the CURRENT owner occupies. Bytes, not paths."""
         return self._t.get("/storage")
 
+    def usage(self) -> dict[str, Any]:
+        """Where the current owner stands against this installation's limits.
+
+        The counterpart of being refusable: a limit someone cannot watch
+        themselves approach is a trap rather than a rule, so a surface that can
+        show a quota wall can also show the approach to it. `allowed: null`
+        means the limit is not set here.
+        """
+        return self._t.get("/usage")
+
     def operator_storage(self) -> dict[str, Any]:
         """Disk usage across the whole installation. Operator-only, and it
         reports the server's own paths — which is why it is."""

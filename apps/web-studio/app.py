@@ -14,7 +14,7 @@ both speak the same GenerationRequest contract.
 import os
 
 import streamlit as st
-from content_sdk import legal, notifications
+from content_sdk import legal, notifications, quota
 from content_sdk.compat import (
     ApiError,
     ContentClient,
@@ -163,11 +163,13 @@ st.session_state.setdefault("job_id", None)
 backend_ok = False
 version = "?"
 credentials: list[str] = []
+config: dict = {}
 try:
     health = client.health()
     backend_ok = health.get("status") == "ok"
     version = health.get("version", "?")
-    credentials = client.config().get("credentials", [])
+    config = client.config()
+    credentials = config.get("credentials", [])
 except Exception as exc:  # noqa: BLE001
     # Not a refusal: the gate above already settled identity, and these two
     # routes carry no owner. Anything failing here is the engine itself.
@@ -181,6 +183,10 @@ with st.sidebar:
     legal.render_streamlit_footer(client)
     if backend_ok:
         st.caption(f"[API · /docs]({PUBLIC_API_URL}/docs)")
+        # Before the refusal, not only after it: a limit someone cannot watch
+        # themselves approach is a trap rather than a rule (ADR 0036).
+        st.divider()
+        quota.render_streamlit_usage(client)
     st.divider()
     st.caption("Recent jobs")
     try:
@@ -318,7 +324,8 @@ if backend_ok and valid_sources and st.button("🔍 Analyze sources", type="seco
         except ApiError as exc:
             st.session_state.analysis = None
             st.session_state.capabilities = None
-            st.error(f"Analysis refused: {exc.message}")
+            if not quota.render_streamlit_wall(exc, config):
+                st.error(f"Analysis refused: {exc.message}")
         except Exception as exc:  # noqa: BLE001
             st.session_state.analysis = None
             st.session_state.capabilities = None
@@ -563,7 +570,8 @@ if st.button(
             st.warning(f"{w['code']}: {w['message']}")
         st.rerun()
     except ApiError as exc:
-        st.error(f"Request refused: {exc.message}")
+        if not quota.render_streamlit_wall(exc, config):
+            st.error(f"Request refused: {exc.message}")
     except Exception as exc:  # noqa: BLE001
         st.error(f"Submit failed: {exc}")
 

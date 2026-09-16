@@ -149,6 +149,11 @@ class ContentClient:
         """What the CURRENT owner occupies. Bytes, not paths."""
         return self._t.get("/storage")
 
+    def usage(self) -> dict:
+        """Where the current owner stands against this installation's limits —
+        what the sidebar shows before a refusal ever happens."""
+        return self._t.get("/usage")
+
     def operator_storage(self) -> dict:
         """Disk usage across the whole installation. Operator-only, and it
         reports the server's own paths — which is why it is."""

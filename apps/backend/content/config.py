@@ -56,6 +56,21 @@ def surfaces_of(settings) -> list[dict[str, str]]:
     ]
 
 
+def quota_wall_of(settings) -> dict[str, str]:
+    """What a refused person may be offered, as a client sees it.
+
+    Every value is empty on an installation that configured nothing, and a
+    surface reading empties must fall back to the engine's plain sentence: a
+    self-hosted instance has no offer to make and must not pretend otherwise.
+    """
+    return {
+        "self_host_command": settings.quota_wall_self_host_command,
+        "docs_url": settings.quota_wall_docs_url,
+        "cta_label": settings.quota_wall_cta_label,
+        "cta_url": settings.quota_wall_cta_url,
+    }
+
+
 def surface_at(settings, url: str) -> dict[str, str] | None:
     """Which surface, if any, this URL belongs to — by origin, the same unit
     the redirect allowlist uses, so a `next` that is allowed is also named."""
@@ -197,6 +212,22 @@ class ContentSettings:
     # very reuse that makes the engine cheaper to run.
     quota_storage_bytes: int = 0
     quota_concurrent_jobs: int = 0
+    # --- what a refused person is offered ------------------------------------
+    # Empty by default, and empty on the overwhelming majority of installations
+    # — which is the point. The engine's own refusal stays neutral ("this
+    # installation allows 60"), because where the person reading is the person
+    # running it, "the free tier", "upgrade" and "our server" are nonsense. A
+    # deployment that *does* have something to offer a refused visitor says so
+    # here, and the surfaces dress the refusal with it.
+    #
+    # It lives on the engine rather than in each UI's environment for the
+    # reason ADR 0015/0034/0038 give: a surface is configured about the engine
+    # and nothing else. The alternative is the same offer repeated in three
+    # deployments, drifting apart the first time one of them is edited.
+    quota_wall_self_host_command: str = ""
+    quota_wall_docs_url: str = ""
+    quota_wall_cta_label: str = ""
+    quota_wall_cta_url: str = ""
     # --- retention (ADR 0023, finally implemented) ---------------------------
     # How many days a finished job keeps its BYTES before an unattended sweep
     # expires them. 0 = never, which is the historical behaviour and stays the
@@ -551,6 +582,40 @@ def describe_environment(
             False,
             str(settings.quota_concurrent_jobs),
             "Unfinished jobs one owner may have at once. 0 = unlimited.",
+        ),
+        (
+            "CONTENT_QUOTA_WALL_SELF_HOST_COMMAND",
+            "security",
+            False,
+            settings.quota_wall_self_host_command,
+            "Shown to a refused visitor as the way to run this themselves, "
+            "above any other offer. Unset = the surfaces show the engine's "
+            "plain refusal and nothing more.",
+        ),
+        (
+            "CONTENT_QUOTA_WALL_DOCS_URL",
+            "security",
+            False,
+            settings.quota_wall_docs_url,
+            "Installation instructions the refusal links to, next to the "
+            "self-host command.",
+        ),
+        (
+            "CONTENT_QUOTA_WALL_CTA_LABEL",
+            "security",
+            False,
+            settings.quota_wall_cta_label,
+            "Label of the second exit offered to a refused visitor. Needs "
+            "CONTENT_QUOTA_WALL_CTA_URL to appear.",
+        ),
+        (
+            "CONTENT_QUOTA_WALL_CTA_URL",
+            "security",
+            False,
+            settings.quota_wall_cta_url,
+            "Where that second exit leads. Always shown *below* the self-host "
+            "command: a wall that hides the free alternative is detected in "
+            "three seconds by this audience.",
         ),
         (
             "CONTENT_OPERATOR_EMAILS",
@@ -964,6 +1029,15 @@ def settings_from_env() -> ContentSettings:
         quota_concurrent_jobs=max(
             0, _to_int(os.getenv("CONTENT_QUOTA_CONCURRENT_JOBS"), 0)
         ),
+        # Not stripped of inner whitespace: the self-host command is a shell
+        # snippet a visitor copies, and its line breaks and indentation are
+        # what make it readable.
+        quota_wall_self_host_command=(
+            os.getenv("CONTENT_QUOTA_WALL_SELF_HOST_COMMAND") or ""
+        ).strip(),
+        quota_wall_docs_url=(os.getenv("CONTENT_QUOTA_WALL_DOCS_URL") or "").strip(),
+        quota_wall_cta_label=(os.getenv("CONTENT_QUOTA_WALL_CTA_LABEL") or "").strip(),
+        quota_wall_cta_url=(os.getenv("CONTENT_QUOTA_WALL_CTA_URL") or "").strip(),
         operator_emails=tuple(
             address.strip().lower()
             for address in (os.getenv("CONTENT_OPERATOR_EMAILS") or "").split(",")

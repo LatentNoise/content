@@ -281,7 +281,7 @@ Prefix `/api/v1`. Initial slice:
 
 | Method | Path | Role |
 | --- | --- | --- |
-| `GET` | `/config` | Client configuration: the ids of available credentials (never the paths/secrets), and `surfaces` — the deployed UIs as `{kind, title, url}`, so a client can offer the others |
+| `GET` | `/config` | Client configuration: the ids of available credentials (never the paths/secrets), `surfaces` — the deployed UIs as `{kind, title, url}`, so a client can offer the others — `retention.days` (0 = kept until deleted) and `quota_wall`, what a refused visitor may be offered (empty unless configured) |
 | `POST` | `/analyses` | Analyze sources → `ResourceAnalysis` (TTL cache); the `analysis_id` returned is **addressable** (ADR 0014) |
 | `GET` | `/analyses/{id}` | Fetch an analysis by id — a **safe** read, it **never** re-runs the analysis; `404 analysis_not_found`, `410 analysis_expired` |
 | `POST` | `/jobs` | Submit a `GenerationRequest` (validates, plans, enqueues) |
@@ -335,6 +335,15 @@ limit is something a person can watch themselves approach rather than a trap.
 Media is counted in **seconds of source**, not processing time: a duration is
 known at analysis, before any work happens, so the refusal precedes the
 expense. A playlist counts every member; an unreadable duration counts as zero.
+
+**The engine's refusal stays neutral, and the offer is configuration.** The
+message says *"this installation allows 60"* because most installations are
+one person's homelab, where "the free tier" and "our server" mean nothing. An
+installation run for other people declares what it offers a refused visitor in
+`CONTENT_QUOTA_WALL_*`; `GET /config` reports it as `quota_wall`
+(`self_host_command`, `docs_url`, `cta_label`, `cta_url`), empty when unset, and
+the surfaces render the plain sentence in that case. Whatever a client draws,
+**the self-host command comes before any other exit**.
 
 **Operating the installation is a privilege, not a bigger share of the data**
 (ADR 0035). An operator owns their rows like anyone else and may additionally
