@@ -9,8 +9,17 @@ and skip templates entirely.
 from __future__ import annotations
 
 import html
+import secrets
 from collections.abc import Callable
 from dataclasses import dataclass
+
+# Letters and digits a person reads aloud without hesitating: no 0/O, no 1/I/L.
+_REFERENCE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
+
+
+def new_reference() -> str:
+    """A short code that makes one message unlike the last one sent."""
+    return "".join(secrets.choice(_REFERENCE_ALPHABET) for _ in range(4))
 
 
 class TemplateError(ValueError):
@@ -32,14 +41,30 @@ def _need(variables: dict[str, str], *names: str) -> list[str]:
 
 
 def _magic_link(variables: dict[str, str]) -> Rendered:
+    """A sign-in link, and a subject no earlier link shares.
+
+    Every link used to go out as "Your Content sign-in link". Gmail groups mail
+    by sender and subject, so the second link asked for landed *inside the
+    conversation of the first* — under a message already read, often already
+    archived — and a person asking again, from another browser or after losing
+    a session, reasonably concluded that nothing had been sent. The messages
+    were delivered every time; they were just impossible to find.
+
+    So the subject carries a short reference, different each time. It is the
+    caller's when given — the engine shows the same code on its "check your
+    mail" page, so someone with several links can tell which is which — and a
+    fresh one otherwise.
+    """
     link, product, minutes = _need(variables, "link", "product", "minutes")
-    subject = f"Your {product} sign-in link"
+    reference = str(variables.get("reference") or "").strip() or new_reference()
+    subject = f"Your {product} sign-in link · {reference}"
     text = (
         f"Here is your sign-in link for {product}.\n\n"
         f"{link}\n\n"
         f"It works once and expires in {minutes} minutes.\n"
         "If you did not ask to sign in, ignore this message: nothing happens until "
-        "the link is opened.\n"
+        "the link is opened.\n\n"
+        f"Reference {reference}\n"
     )
     safe_link = html.escape(link, quote=True)
     body = (
@@ -51,6 +76,7 @@ def _magic_link(variables: dict[str, str]) -> Rendered:
         f'<p style="color:#666">It works once and expires in {html.escape(minutes)} minutes. '
         "If you did not ask to sign in, ignore this message.</p>"
         f'<p style="color:#999;font-size:12px;word-break:break-all">{safe_link}</p>'
+        f'<p style="color:#999;font-size:12px">Reference {html.escape(reference)}</p>'
         "</div>"
     )
     return Rendered(subject=subject, text=text, html=body)

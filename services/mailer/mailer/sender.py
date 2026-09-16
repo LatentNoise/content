@@ -32,6 +32,11 @@ def build_email(message: Message, *, message_id_domain: str) -> EmailMessage:
     mail["Subject"] = message.subject
     mail["Date"] = formatdate(localtime=True)
     mail["Message-ID"] = make_msgid(domain=message_id_domain)
+    # Gmail threads messages by sender and subject, and a transactional mail
+    # that joins an old conversation is a mail nobody sees. A unique entity
+    # reference is the header Gmail reads to keep each one on its own — the
+    # subject reference in the templates does the same for every other client.
+    mail["X-Entity-Ref-ID"] = message.id
     if message.reply_to:
         mail["Reply-To"] = message.reply_to
     mail.set_content(message.text_body)
