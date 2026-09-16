@@ -517,8 +517,12 @@ compatible runner is available:
 - **Summaries, translations, and derived chapters:** connect a local
   [Ollama](https://ollama.com) instance, or explicitly configure an Anthropic
   or OpenAI API key. Cloud runners can be excluded per request.
-- **Transcription from audio:** set `CONTENT_INSTALL_STT=true` and rebuild to
-  install the local Whisper runner. Transcripts from existing subtitles do not
+- **Transcription from audio:** run a speech service next to the engine —
+  `docker compose --profile speech up -d` and `CONTENT_SPEECH_URL=http://speech:8000`,
+  or `speech.enabled: true` in the Helm chart. It is
+  [speaches](https://github.com/speaches-ai/speaches), behind the OpenAI audio
+  API, and the same container also does text-to-speech. Audio is only ever sent
+  to a service on a private network. Transcripts from existing subtitles do not
   need it.
 
 Unavailable optional runners do not make Content unhealthy. The affected

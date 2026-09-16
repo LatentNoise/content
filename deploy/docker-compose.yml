@@ -51,9 +51,15 @@ services:
       - CONTENT_OLLAMA_URL=${CONTENT_OLLAMA_URL:-http://host.docker.internal:11434}
       - CONTENT_OLLAMA_MODEL=${CONTENT_OLLAMA_MODEL:-}
       - CONTENT_OLLAMA_MAX_CONTEXT=${CONTENT_OLLAMA_MAX_CONTEXT:-32768}
-      # Speech-to-text model (only used when the image was built with
-      # INSTALL_STT=true; see build args above).
+      # Speech-to-text model for an in-process faster-whisper. ⚠️ The published
+      # image cannot carry it (Alpine: no musl wheels for ctranslate2/av), so on
+      # a container install this does nothing — use the speech service below.
       - CONTENT_WHISPER_MODEL=${CONTENT_WHISPER_MODEL:-small}
+      # Speech service (transcription from audio): empty = not used. With the
+      # `speech` profile, set it to http://speech:8000. Private network only.
+      - CONTENT_SPEECH_URL=${CONTENT_SPEECH_URL:-}
+      - CONTENT_SPEECH_STT_MODEL=${CONTENT_SPEECH_STT_MODEL:-Systran/faster-whisper-small}
+      - CONTENT_SPEECH_API_KEY=${CONTENT_SPEECH_API_KEY:-}
       # Language preferences (HomeTube parity): order audio tracks (VO first,
       # then primary, then secondaries) and seed default subtitles.
       - CONTENT_LANGUAGE_PRIMARY=${CONTENT_LANGUAGE_PRIMARY:-}
@@ -182,6 +188,56 @@ services:
       start_period: 20s
     restart: unless-stopped
 
+  # Speech — transcription and text-to-speech in one container, only if you
+  # want them and have nowhere else to get them.
+  #
+  #   docker compose --profile speech up -d
+  #
+  # Transcribing audio needs a speech service: the engine image cannot carry
+  # faster-whisper (it is Alpine, and ctranslate2/av have no musl wheels). Two
+  # situations:
+  #
+  #   1. You do not want transcription from audio. Change nothing; it is
+  #      reported as unavailable up front, never discovered half-way through.
+  #   2. You want it: run the command above, and set
+  #      CONTENT_SPEECH_URL=http://speech:8000 in .env so the engine calls it.
+  #      Any other server that speaks the OpenAI audio API works too — as long
+  #      as it is on a private network: the engine never sends audio elsewhere.
+  #
+  # The same server speaks text-to-speech (Kokoro). The engine does not use
+  # that half yet; the model is downloaded so the service is ready when it does.
+  #
+  # ⚠️ Not started by default: ~1 GB of image and models. Idle it holds ~420 MiB;
+  # a loaded Whisper adds ~1 GiB, released after SPEECH_MODEL_TTL seconds.
+  speech:
+    image: ghcr.io/speaches-ai/speaches:${SPEECH_VERSION:-0.9.0-rc.3-cpu}
+    container_name: content-speech
+    profiles: ["speech"]
+    environment:
+      - PRELOAD_MODELS=["Systran/faster-whisper-small","speaches-ai/Kokoro-82M-v1.0-ONNX"]
+      - STT_MODEL_TTL=${SPEECH_MODEL_TTL:-300}
+      - TTS_MODEL_TTL=${SPEECH_MODEL_TTL:-300}
+      - WHISPER__COMPUTE_TYPE=int8
+      - ENABLE_UI=false
+      - LOG_LEVEL=info
+    volumes:
+      # A named volume, not ./data/speech: the image runs as uid 1000, and a
+      # bind-mounted directory Docker creates is root's — the first model
+      # download would fail with a PermissionError.
+      - speech-models:/home/ubuntu/.cache/huggingface/hub
+    ports:
+      # Loopback only: the engine reaches it as http://speech:8000 on the
+      # compose network. The port is published for a local check, never the LAN.
+      - "127.0.0.1:${SPEECH_PORT:-18000}:8000"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8000/health >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      # A first start downloads the models before the server listens.
+      start_period: 600s
+    restart: unless-stopped
+
   # Content Console — observe & pilot the backend. Always on, whichever
   # download UI is chosen: it is how an operator sees jobs, configuration,
   # storage and logs. It creates no downloads.
@@ -198,3 +254,6 @@ services:
       content:
         condition: service_healthy
     restart: unless-stopped
+
+volumes:
+  speech-models:

@@ -158,7 +158,10 @@ is in [HomeTube's README](../../apps/web-hometube/README.md#language-preferences
 | `CONTENT_YTDLP_EXTRA_ARGS` | — | The operator's yt-dlp args (trusted), added to every call |
 | `CONTENT_OLLAMA_URL` / `_MODEL` | host / auto | The **local** LLM for `summary`, `translation` and derived `chapters`. Empty model = the first installed one, resolved deterministically and recorded in provenance |
 | `CONTENT_OLLAMA_MAX_CONTEXT` | `32768` | Ceiling on the context window the engine asks Ollama for. The window is sized per request from the prompt; this bounds it, because the memory is the daemon's. Ollama does not degrade gracefully past its window — it keeps **half** of it, so a prompt 2% too long loses 50% of the source. Raising this extends how long a recording can be summarised whole, at the cost of RAM where Ollama runs. `0` hands the choice back to the daemon |
-| `CONTENT_WHISPER_MODEL` | `small` | The speech-to-text model (requires the `[stt]` extra / an image built with `INSTALL_STT=true`) — activates transcript/summary **from audio** |
+| `CONTENT_SPEECH_URL` | — | The **speech service** for transcription from audio: an OpenAI-audio-API server (the bundled `speech` profile / `speech.enabled`, speaches). Activates transcript/summary **from audio**. Served only on a **private network** — a public host is reported unavailable, never sent audio |
+| `CONTENT_SPEECH_STT_MODEL` | `Systran/faster-whisper-small` | The transcription model the speech service must have installed; until it is, transcription reads as unavailable, not broken |
+| `CONTENT_SPEECH_API_KEY` | — | Sent as a bearer token, if the speech service requires one |
+| `CONTENT_WHISPER_MODEL` | `small` | In-process faster-whisper model, for a **non-container** install with the `[stt]` extra. The published image cannot carry it (Alpine) — use `CONTENT_SPEECH_URL` there |
 | `CONTENT_ANTHROPIC_API_KEY` / `_MODEL` | — / `claude-sonnet-5` | The Anthropic **cloud** LLM for `summary`, `translation` and `chapters` (a key = active; excluded if `privacy.allow_cloud_providers:false`) |
 | `CONTENT_OPENAI_API_KEY` / `_MODEL` | — / `gpt-4o-mini` | The OpenAI **cloud** LLM, same three operations |
 | **📕 PDF rendering** | | |
@@ -282,13 +285,32 @@ stale yt-dlp shows up as `analysis_failed` / `No video formats found`.
 
 ## Speech-to-text (optional)
 
-The Whisper runner (`faster-whisper`) implements `audio.transcribe`: once
-installed, it **automatically** activates the `transcript.from_audio` /
-`summary.from_audio` variants (sources without subtitles, podcasts) — the catalog
-does not change, only the inventory of implementations does (ADR 0013 R2/R7).
-Opt-in, because the wheels are heavy: `CONTENT_INSTALL_STT=true` in `.env` then
-`docker compose build content` (or `pip install -e ".[stt]"` locally). The model
-is set through `CONTENT_WHISPER_MODEL` (default `small`).
+Two runners implement `audio.transcribe`. Once either is available it
+**automatically** activates the `transcript.from_audio` / `summary.from_audio`
+variants (sources without subtitles, podcasts) — the catalog does not change, only
+the inventory of implementations does (ADR 0013 R2/R7).
+
+**The speech service — the one to use with containers.** A server beside the
+engine that speaks the OpenAI audio API: [speaches](https://github.com/speaches-ai/speaches),
+which does speech-to-text *and* text-to-speech in one container.
+
+- Docker Compose: `docker compose --profile speech up -d`, then
+  `CONTENT_SPEECH_URL=http://speech:8000` in `.env`.
+- Helm: `speech.enabled: true` — the chart deploys it, downloads the models on
+  first start, and wires `CONTENT_SPEECH_URL` by itself.
+- Anything else that speaks the OpenAI audio API works, **on a private network**:
+  audio is personal data, and the engine reports a public endpoint as unavailable
+  rather than send recordings off the installation.
+
+Measured on 2026-09-16: ~420 MiB idle with no model loaded; a loaded Whisper
+`small` (int8) adds ~1 GiB and transcribes ~5× faster than real time on 2 CPU
+cores. Models unload after a quiet spell (`SPEECH_MODEL_TTL`, 300 s).
+
+**In-process faster-whisper — non-container installs only.** `pip install -e
+".[stt]"` and `CONTENT_WHISPER_MODEL`. ⚠️ **`CONTENT_INSTALL_STT=true` does not
+work with the published image**: it is Alpine, `ctranslate2` and `av` publish no
+musl wheels, and the build ends in `ResolutionImpossible`. When both runners are
+available, the speech service wins.
 
 ## Licence & source visibility (AGPL §13)
 
