@@ -1186,11 +1186,17 @@ class Store:
         return dict(row)
 
     def count_recent_auth_tokens(self, email: str, since: str) -> int:
-        """How many links this address asked for lately — the rate limit."""
+        """How many links this address holds unopened lately — the rate limit.
+
+        A link that was opened is a person signing in, and signing in again —
+        a second browser, a lost session — must never be throttled. The flood
+        the limit exists for is somebody else asking for links to a stranger's
+        inbox, and those are never opened, so they are what is counted.
+        """
         with self._conn() as conn:
             row = conn.execute(
                 "SELECT COUNT(*) AS n FROM auth_tokens "
-                "WHERE email = ? AND created_at > ?",
+                "WHERE email = ? AND created_at > ? AND used_at = ''",
                 (email, since),
             ).fetchone()
         return int(row["n"])
