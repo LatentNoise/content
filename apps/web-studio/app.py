@@ -318,7 +318,7 @@ if backend_ok and valid_sources and st.button("🔍 Analyze sources", type="seco
         except ApiError as exc:
             st.session_state.analysis = None
             st.session_state.capabilities = None
-            st.error(f"Analysis refused: {exc.body}")
+            st.error(f"Analysis refused: {exc.message}")
         except Exception as exc:  # noqa: BLE001
             st.session_state.analysis = None
             st.session_state.capabilities = None

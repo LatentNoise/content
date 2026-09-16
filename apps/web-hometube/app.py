@@ -1098,7 +1098,7 @@ if st.button(
             st.warning(f"{w['code']}: {w['message']}")
         st.rerun()
     except ApiError as exc:
-        st.error(f"Request refused: {exc.body}")
+        st.error(f"Request refused: {exc.message}")
     except Exception as exc:  # noqa: BLE001
         st.error(f"Submit failed: {exc}")
 

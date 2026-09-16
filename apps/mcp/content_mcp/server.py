@@ -102,10 +102,10 @@ def _actionable(exc: ContentError, base_url: str) -> str:
         return (
             "The engine refused this request"
             + (f" ({codes})" if codes else "")
-            + f". {exc.body}"
+            + f". {exc.message}"
         )
     if isinstance(exc, APIError):
-        return f"The engine answered HTTP {exc.status}. {exc.body}"
+        return f"The engine answered HTTP {exc.status}. {exc.message}"
     return str(exc)
 
 

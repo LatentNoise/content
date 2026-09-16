@@ -569,7 +569,7 @@ with tab_caps:
                     unsafe_allow_html=True,
                 )
         except ApiError as exc:
-            st.error(f"resolve failed: {exc.body}")
+            st.error(f"resolve failed: {exc.message}")
         except Exception as exc:  # noqa: BLE001
             st.error(f"resolve failed: {exc}")
 
