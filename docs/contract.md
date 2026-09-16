@@ -286,6 +286,7 @@ Prefix `/api/v1`. Initial slice:
 | `GET` | `/analyses/{id}` | Fetch an analysis by id — a **safe** read, it **never** re-runs the analysis; `404 analysis_not_found`, `410 analysis_expired` |
 | `POST` | `/jobs` | Submit a `GenerationRequest` (validates, plans, enqueues) |
 | `GET` | `/jobs` / `/jobs/{id}` | List / inspect (status, steps, warnings) |
+| `GET` | `/last-request?source_ref=…` | What **you** last asked for this source (ADR 0039): the normalized request, its title, when, and that job's state if it still exists. `404 last_request_not_found` when nothing was asked |
 | `POST` | `/jobs/{id}/cancel` | Cooperative cancellation |
 | `GET` | `/jobs/{id}/events` | Ordered events (`?after_sequence=` to resume) |
 | `GET` | `/jobs/{id}/events/stream` | SSE over the same journal (resume through `Last-Event-ID`, heartbeat, an explicit `stream.end` at the end of the job) |
@@ -396,6 +397,11 @@ parts a client may build on and which parts may move under it.
   contract, not an implementation detail.
 - **The four core concepts** and their separation (request, plan, job,
   artifact). A v2 would be a different decomposition, not a renamed field.
+
+- **`source_ref`** (ADR 0039), the stable name of an analysed source:
+  `<site>:<item|collection>:<id>`, `url:<address>`, or empty for an upload. Unlike
+  `resource_key`, it does not move with the provider or its version — it is what a
+  client may persist and compare, to remember what someone asked.
 
 ### May change in a minor release
 

@@ -18,6 +18,7 @@ from ._transport import (
     resolve_api_key,
     resolve_base_url,
 )
+from .errors import NotFound
 from .models import (
     SCHEMA_VERSION,
     AnalysisData,
@@ -157,6 +158,15 @@ class ContentClient:
         """End this session on the engine. A key is revoked, not signed out:
         this is the browser's verb."""
         self._t.post("/auth/logout")
+
+    def last_request(self, source_ref: str) -> dict[str, Any] | None:
+        """What this person last asked for this source (ADR 0039): the request
+        they submitted, when, and that job's state if it still exists. None when
+        nothing was asked yet. ``source_ref`` comes from an analysis."""
+        try:
+            return self._t.get("/last-request", params={"source_ref": source_ref})
+        except NotFound:
+            return None
 
     def whoami(self) -> dict[str, Any]:
         """Who this client is to the engine. On a self-hosted instance that is

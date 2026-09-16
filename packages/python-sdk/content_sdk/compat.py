@@ -179,6 +179,15 @@ class ContentClient:
     # unreachable" and drew nothing. A test guards the pair now: whatever a
     # surface calls on its client has to exist on this class.
 
+    def last_request(self, source_ref: str) -> dict | None:
+        """What this person last asked for this source (ADR 0039), or None."""
+        try:
+            return self._t.get("/last-request", params={"source_ref": source_ref})
+        except ApiError as exc:
+            if getattr(exc, "status", None) == 404:
+                return None
+            raise
+
     def whoami(self) -> dict:
         """Who this client is to the engine. On a self-hosted instance that is
         the single implicit user, with no account behind it."""

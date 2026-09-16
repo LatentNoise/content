@@ -188,6 +188,21 @@ CREATE TABLE IF NOT EXISTS api_keys (
 );
 CREATE INDEX IF NOT EXISTS idx_api_keys_owner
     ON api_keys(owner_id, created_at);
+
+-- A person's last request for a source (ADR 0039): where they wanted it and how,
+-- so the next time they paste it a client can say so and prefill it. One row per
+-- owner and source; the newest request replaces the previous one. Independent of
+-- the jobs table on purpose: deleting a job to free space must not make Content
+-- forget which folder a playlist lives in.
+CREATE TABLE IF NOT EXISTS last_requests (
+    owner_id      TEXT NOT NULL,
+    source_ref    TEXT NOT NULL,
+    job_id        TEXT NOT NULL,
+    title         TEXT NOT NULL DEFAULT '',
+    request       TEXT NOT NULL,
+    requested_at  TEXT NOT NULL,
+    PRIMARY KEY (owner_id, source_ref)
+);
 """
 
 
@@ -356,6 +371,17 @@ _MIGRATIONS: list[list[str]] = [
     # the window.
     [
         "CREATE INDEX IF NOT EXISTS idx_jobs_finished ON jobs(finished_at)",
+    ],
+    # 13: a person's last request for a source (ADR 0039).
+    [
+        "CREATE TABLE IF NOT EXISTS last_requests ("
+        "  owner_id TEXT NOT NULL,"
+        "  source_ref TEXT NOT NULL,"
+        "  job_id TEXT NOT NULL,"
+        "  title TEXT NOT NULL DEFAULT '',"
+        "  request TEXT NOT NULL,"
+        "  requested_at TEXT NOT NULL,"
+        "  PRIMARY KEY (owner_id, source_ref))",
     ],
 ]
 
@@ -1184,6 +1210,39 @@ class Store:
             )
             conn.execute("COMMIT")
         return dict(row)
+
+    # --- a person's last request for a source (ADR 0039) ------------------------
+
+    def remember_request(
+        self, owner_id: str, source_ref: str, job_id: str, title: str, request: dict
+    ) -> None:
+        """Keep what this person just asked for this source; the newest wins."""
+        if not source_ref:
+            return
+        with self._conn() as conn:
+            conn.execute(
+                "INSERT INTO last_requests "
+                "(owner_id, source_ref, job_id, title, request, requested_at) "
+                "VALUES (?, ?, ?, ?, ?, ?) "
+                "ON CONFLICT(owner_id, source_ref) DO UPDATE SET "
+                "job_id = excluded.job_id, title = excluded.title, "
+                "request = excluded.request, requested_at = excluded.requested_at",
+                (owner_id, source_ref, job_id, title, json.dumps(request), utcnow()),
+            )
+
+    def last_request(self, owner_id: str, source_ref: str) -> dict | None:
+        """What this person last asked for this source, or None. Never another
+        owner's: the key is the pair."""
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT * FROM last_requests WHERE owner_id = ? AND source_ref = ?",
+                (owner_id, source_ref),
+            ).fetchone()
+        if row is None:
+            return None
+        entry = dict(row)
+        entry["request"] = json.loads(entry["request"])
+        return entry
 
     def count_recent_auth_tokens(self, email: str, since: str) -> int:
         """How many links this address holds unopened lately — the rate limit.
