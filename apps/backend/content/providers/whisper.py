@@ -33,6 +33,37 @@ AUDIO_SUFFIXES = (".m4a", ".mp3", ".opus", ".ogg", ".webm", ".wav", ".aac", ".fl
 DEFAULT_MODEL = "small"
 
 
+def write_transcript(
+    step: PlanStep,
+    ctx: ExecutionContext,
+    segments: list[dict],
+    language: str,
+    model: str,
+) -> list[ProducedFile]:
+    """The transcript file every audio.transcribe runner produces.
+
+    Shared, not copied: `speech.py` is the other implementation of the same
+    operation, and two runners writing "the same" artifact in two places is how
+    one of them drifts and a surface starts reading a field that only exists
+    half the time."""
+    attributes = {"language": language, "derived_from": "audio", "model": model}
+    if step.params.get("format") == "text":
+        path = ctx.workdir / f"transcript-{step.id}.txt"
+        path.write_text("\n".join(s["text"] for s in segments))
+        return [ProducedFile(path=path, media_type="text/plain", attributes=attributes)]
+    transcript = {
+        "language": language,
+        "duration_seconds": segments[-1]["end"] if segments else 0.0,
+        "segment_count": len(segments),
+        "segments": segments,
+    }
+    path = ctx.workdir / f"transcript-{step.id}.json"
+    path.write_text(json.dumps(transcript, indent=2, ensure_ascii=False))
+    return [
+        ProducedFile(path=path, media_type="application/json", attributes=attributes)
+    ]
+
+
 class WhisperProcessor:
     name = "whisper"
     location = "local"
@@ -84,30 +115,7 @@ class WhisperProcessor:
                 "no_output", f"No speech recognized in '{material.path.name}'."
             )
 
-        transcript = {
-            "language": language,
-            "duration_seconds": segments[-1]["end"] if segments else 0.0,
-            "segment_count": len(segments),
-            "segments": segments,
-        }
-        attributes = {
-            "language": language,
-            "derived_from": "audio",
-            "model": self.model,
-        }
-        if step.params.get("format") == "text":
-            path = ctx.workdir / f"transcript-{step.id}.txt"
-            path.write_text("\n".join(s["text"] for s in segments))
-            return [
-                ProducedFile(path=path, media_type="text/plain", attributes=attributes)
-            ]
-        path = ctx.workdir / f"transcript-{step.id}.json"
-        path.write_text(json.dumps(transcript, indent=2, ensure_ascii=False))
-        return [
-            ProducedFile(
-                path=path, media_type="application/json", attributes=attributes
-            )
-        ]
+        return write_transcript(step, ctx, segments, language, self.model)
 
     def _transcribe(
         self, material: Material, language: str | None

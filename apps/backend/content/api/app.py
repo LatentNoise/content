@@ -82,6 +82,7 @@ from content.providers.cloud_llm import CloudSummarizer
 from content.providers.documents import DocumentProvider
 from content.providers.ffmpeg import FfmpegProvider
 from content.providers.ollama import OllamaProvider
+from content.providers.speech import SpeechProcessor
 from content.providers.webpage import WebPageProvider
 from content.providers.whisper import WhisperProcessor
 from content.providers.ytdlp import YtDlpProvider
@@ -332,6 +333,13 @@ def create_app(
                 TranscriptProcessor(),
                 ChaptersProcessor(),
                 WhisperProcessor(settings.whisper_model),
+                # The other audio.transcribe: a speech service next to the
+                # engine. It wins when configured ("speech" < "whisper").
+                SpeechProcessor(
+                    settings.speech_url,
+                    settings.speech_stt_model,
+                    settings.speech_api_key,
+                ),
                 # Both implementations of document.render_pdf are registered;
                 # the planner picks one per job and records it in the plan.
                 TypstPdfProcessor(

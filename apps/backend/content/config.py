@@ -335,7 +335,16 @@ class ContentSettings:
     ollama_max_context: int = 32768
     # Speech-to-text (audio.transcribe) model, used when the optional [stt]
     # extra (faster-whisper) is installed. Absent extra = variants unavailable.
+    # ⚠️ The published image cannot carry that extra (Alpine has no musl wheels
+    # for ctranslate2/av): on a container install, use the speech service below.
     whisper_model: str = "small"
+    # The speech service (providers/speech.py): an OpenAI-compatible server —
+    # speaches, bundled by the chart and the `speech` compose profile — that
+    # transcribes audio next to the engine. Empty = not used. It serves only a
+    # host on a private network: audio is personal data.
+    speech_url: str = ""
+    speech_api_key: str = ""
+    speech_stt_model: str = "Systran/faster-whisper-small"
     # --- PDF rendering (document.render_pdf) ---------------------------------
     # Which implementation renders PDFs. "auto" prefers Typst when its binary is
     # healthy and falls back to ReportLab, so a deployment without the binary
@@ -775,6 +784,27 @@ def describe_environment(
             "Speech-to-text model (needs the optional [stt] extra).",
         ),
         (
+            "CONTENT_SPEECH_URL",
+            "providers",
+            False,
+            settings.speech_url or "—",
+            "Speech service (OpenAI audio API) for transcription; private only.",
+        ),
+        (
+            "CONTENT_SPEECH_STT_MODEL",
+            "providers",
+            False,
+            settings.speech_stt_model,
+            "Transcription model the speech service must have installed.",
+        ),
+        (
+            "CONTENT_SPEECH_API_KEY",
+            "providers",
+            True,
+            _mask_secret(settings.speech_api_key),
+            "Key the speech service requires, if it requires one.",
+        ),
+        (
             "CONTENT_PDF_RENDERER",
             "providers",
             False,
@@ -1120,6 +1150,11 @@ def settings_from_env() -> ContentSettings:
         ollama_model=os.getenv("CONTENT_OLLAMA_MODEL", ""),
         ollama_max_context=_to_int(os.getenv("CONTENT_OLLAMA_MAX_CONTEXT"), 32768),
         whisper_model=os.getenv("CONTENT_WHISPER_MODEL", "small"),
+        speech_url=os.getenv("CONTENT_SPEECH_URL", "").strip(),
+        speech_api_key=os.getenv("CONTENT_SPEECH_API_KEY", "").strip(),
+        speech_stt_model=(
+            os.getenv("CONTENT_SPEECH_STT_MODEL") or "Systran/faster-whisper-small"
+        ).strip(),
         pdf_renderer=os.getenv("CONTENT_PDF_RENDERER", "auto").strip().lower(),
         typst_binary=os.getenv("CONTENT_TYPST_BINARY", "typst"),
         pdf_template=os.getenv("CONTENT_PDF_TEMPLATE", "default"),
