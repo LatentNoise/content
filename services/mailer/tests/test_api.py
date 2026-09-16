@@ -43,7 +43,7 @@ def test_a_template_supplies_subject_and_bodies(client, store):
     )
     assert response.status_code == 202
     message = store.get(response.json()["id"])
-    assert message.subject == "Your Content sign-in link"
+    assert message.subject.startswith("Your Content sign-in link · ")
     assert "https://x.test/t" in message.text_body
     assert message.html_body and "https://x.test/t" in message.html_body
 
