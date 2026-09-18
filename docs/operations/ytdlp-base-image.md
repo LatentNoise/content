@@ -51,11 +51,12 @@ says which of the two happened.
 
 ## How the pin is written
 
-In [`apps/backend/Dockerfile`](../../apps/backend/Dockerfile):
+In [`apps/backend/Dockerfile`](../../apps/backend/Dockerfile) — the shape, not
+the current values, which that file alone is authoritative for:
 
 ```dockerfile
-ARG YTDLP_BASE_VERSION=2026.07.04
-ARG YTDLP_BASE_DIGEST=sha256:daef12c6ed97b6b2984d81142ddb0c56ee2f81e2d7372aba0ecd4fa7b5709889
+ARG YTDLP_BASE_VERSION=2026.08.19
+ARG YTDLP_BASE_DIGEST=sha256:e8bf3e410176ed66ae7719b279147d502bf521200431b7bf299aa19c29fcbe27
 FROM jauderho/yt-dlp:${YTDLP_BASE_VERSION}@${YTDLP_BASE_DIGEST}
 ```
 
