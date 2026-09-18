@@ -244,8 +244,16 @@ def normalize_policy(value: str) -> str:
 
 
 def choose_replacement(coverages: list[FontCoverage]) -> str:
+    """The mark that stands in for what no font can draw.
+
+    Drawability is judged exactly as `missing_characters` judges it: the
+    renderer falls back between fonts, so *one* font carrying the glyph is
+    enough. Requiring every font to carry it rejected U+FFFD as soon as a single
+    narrow font was installed — an icon or CJK-only face has no replacement
+    character — and silently degraded a perfectly drawable mark to '?'.
+    """
     for candidate in (REPLACEMENT, REPLACEMENT_FALLBACK):
-        if all(coverage.covers(ord(candidate)) for coverage in coverages):
+        if any(coverage.covers(ord(candidate)) for coverage in coverages):
             return candidate
     return REPLACEMENT_FALLBACK
 

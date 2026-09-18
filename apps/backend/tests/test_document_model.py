@@ -10,7 +10,9 @@ import pathlib
 import pytest
 
 from content.documents.fonts import (
+    REPLACEMENT,
     FontCoverage,
+    choose_replacement,
     describe_missing,
     load_coverage,
     missing_characters,
@@ -186,6 +188,18 @@ def test_coverage_is_the_union_across_available_fonts():
     cjk = FontCoverage(name="cjk", codepoints={ord("日")})
     assert missing_characters("a日", [latin]) == ["日"]
     assert missing_characters("a日", [latin, cjk]) == []
+
+
+def test_the_placeholder_is_chosen_by_the_same_union_rule():
+    """The replacement is judged drawable the way everything else is — one font
+    in the stack is enough. Asking every font to carry U+FFFD meant a single
+    narrow face (an icon or CJK-only one, which is what a full font path always
+    contains) demoted the mark to '?' for no reason."""
+    narrow = FontCoverage(name="icons", codepoints={0xE000})
+    latin = FontCoverage(name="latin", ranges=[(32, 0xFFFD)])
+    assert choose_replacement([latin, narrow]) == REPLACEMENT
+    # Nothing draws U+FFFD: '?' is the floor, and it is drawable here.
+    assert choose_replacement([FontCoverage(name="ascii", ranges=[(32, 126)])]) == "?"
 
 
 def test_whitespace_and_control_characters_are_not_coverage_failures():

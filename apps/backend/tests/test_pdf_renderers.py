@@ -213,7 +213,9 @@ def test_replace_policy_substitutes_a_drawable_placeholder(renderer, tmp_path):
     assert report["policy"] == "replace"
     assert report["count"] >= 3
     replacement = report["replaced_with"]
-    assert all(c.covers(ord(replacement)) for c in coverages), (
+    # "Drawable" is the engine's own rule — any font in the fallback stack —
+    # not "carried by every font", which no real font path satisfies.
+    assert not missing_characters(replacement, coverages), (
         "the placeholder must itself be drawable"
     )
     rendered = _pdf_text(produced[0].path)
