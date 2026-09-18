@@ -344,13 +344,18 @@ readme-diagram:  ## Regenerate the README's architecture SVGs (light + dark)
 EXT_RUNTIME := manifest.json background icons lib options popup
 EXT_ZIP_DIR ?= $(CURDIR)/dist
 
+# Chained with `&&`, and `zip` is checked for by name: the steps used to be
+# separated by `;`, so a missing `zip` printed "packaged <archive>" and exited 0
+# having produced nothing — a release step that reports success without an
+# asset is worse than one that fails.
 extension-zip:  ## Package the Chromium extension for manual install (dist/)
-	@version=$$(grep -m1 '"version"' $(EXT_DIR)/manifest.json | sed 's/.*"\([0-9][^"]*\)".*/\1/'); \
-	archive="$(EXT_ZIP_DIR)/content-browser-extension-chromium-v$$version.zip"; \
-	mkdir -p "$(EXT_ZIP_DIR)"; rm -f "$$archive"; \
-	cd $(EXT_DIR) && git ls-files -z -- $(EXT_RUNTIME) | xargs -0 zip -q -X "$$archive"; \
-	echo "packaged $$archive"; \
-	shasum -a 256 "$$archive" | sed 's/^/  sha256  /'; \
+	@command -v zip >/dev/null || { echo "extension-zip needs the 'zip' binary" >&2; exit 1; }; \
+	version=$$(grep -m1 '"version"' $(EXT_DIR)/manifest.json | sed 's/.*"\([0-9][^"]*\)".*/\1/') && \
+	archive="$(EXT_ZIP_DIR)/content-browser-extension-chromium-v$$version.zip" && \
+	mkdir -p "$(EXT_ZIP_DIR)" && rm -f "$$archive" && \
+	{ cd $(EXT_DIR) && git ls-files -z -- $(EXT_RUNTIME) | xargs -0 zip -q -X "$$archive"; } && \
+	echo "packaged $$archive" && \
+	shasum -a 256 "$$archive" | sed 's/^/  sha256  /' && \
 	cd $(CURDIR) && unzip -Z1 "$$archive" | sed 's/^/  /'
 
 # --- docker ----------------------------------------------------------------------

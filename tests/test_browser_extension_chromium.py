@@ -457,6 +457,10 @@ def test_the_builder_refuses_subtitles_without_a_language():
 # --- the release zip (what a fresh user actually downloads) ----------------------
 
 
+@pytest.mark.skipif(
+    shutil.which("zip") is None,
+    reason="zip is not installed; `make extension-zip` cannot run here",
+)
 def test_packaged_zip_is_a_complete_unpacked_extension(tmp_path):
     """`make extension-zip`, then act like the user: extract it and check that
     the folder handed to "Load unpacked" is complete and contains nothing else.
