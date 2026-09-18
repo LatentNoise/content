@@ -1,6 +1,8 @@
 """API surface tests: hermetic app with the fake provider, worker disabled
 (jobs are executed synchronously through the injected executor)."""
 
+import os
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -60,13 +62,38 @@ def test_health_fails_when_the_database_is_gone(client):
 
 
 def test_health_fails_when_the_data_directory_is_not_writable(client, settings):
+    """Establish the premise before asserting on it.
+
+    Removing the write bit does not make a directory unwritable for everybody:
+    root bypasses the mode entirely, and so do a few filesystems. In a container
+    that runs as root the check below therefore fails for a reason that is not
+    the engine's — the engine reads `os.access`, and `os.access` is right.
+    Skipping on the fact rather than asserting through it keeps the failure
+    meaningful where it can happen.
+    """
     settings.data_dir.mkdir(parents=True, exist_ok=True)
     settings.data_dir.chmod(0o500)
     try:
+        if os.access(settings.data_dir, os.W_OK):
+            pytest.skip("this user writes regardless of the mode bits (root?)")
         response = client.get("/api/v1/health")
     finally:
         settings.data_dir.chmod(0o700)
     assert response.status_code == 503
+    assert "not writable" in response.json()["checks"]["data_dir"]
+
+
+def test_health_fails_when_the_data_directory_is_gone(client, settings):
+    """The unmounted volume, which is the case the check was written for — and
+    the one the permission test above cannot reach for a user the mode bits do
+    not bind. No directory at all is not a permission question, so this one
+    holds everywhere."""
+    for child in sorted(settings.data_dir.rglob("*"), reverse=True):
+        child.unlink() if child.is_file() or child.is_symlink() else child.rmdir()
+    settings.data_dir.rmdir()
+    response = client.get("/api/v1/health")
+    assert response.status_code == 503
+    assert response.json()["status"] == "degraded"
     assert "not writable" in response.json()["checks"]["data_dir"]
 
 
