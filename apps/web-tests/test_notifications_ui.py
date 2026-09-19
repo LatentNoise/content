@@ -153,17 +153,17 @@ def test_dismissing_one_release_does_not_silence_the_next(run_app):
     assert len(_dismiss_buttons(later)) == 1
 
 
-# --- AGPL §13 source offer -----------------------------------------------------
+# --- The licence and the source link ------------------------------------------
 
 
 @pytest.mark.parametrize("app", APPS)
 def test_every_ui_offers_the_source_code(run_app, app):
-    """AGPL §13: a user interacting with the instance over a network must be
-    able to reach its Corresponding Source."""
+    """Every surface states the licence and links the source of its instance,
+    so anyone using it can go and read what it runs."""
     at = run_app(app)
     assert not at.exception, at.exception
     text = _text(at)
-    assert "AGPL-3.0-or-later" in text
+    assert "FSL-1.1-ALv2" in text
     assert "https://example.invalid/content" in text
 
 
@@ -176,7 +176,7 @@ def test_the_source_link_comes_from_the_instance_not_the_ui(run_app, app, monkey
         "system",
         lambda self: {
             "version": conftest.ENGINE_VERSION,
-            "license": "AGPL-3.0-or-later",
+            "license": "FSL-1.1-ALv2",
             "source_url": "https://forked.invalid/mine",
             "cache_enabled": True,
             "analysis_ttl_hours": 72,

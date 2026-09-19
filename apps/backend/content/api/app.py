@@ -500,8 +500,8 @@ def create_app(
         settings (no secrets), and the installed provider/processor inventory."""
         return {
             "version": __version__,
-            # AGPL §13 offer of Corresponding Source for this deployment.
-            "license": "AGPL-3.0-or-later",
+            # What this deployment runs under, and where its source can be read.
+            "license": "FSL-1.1-ALv2",
             "source_url": settings.source_url,
             "cache_enabled": settings.cache_enabled,
             "analysis_ttl_hours": settings.analysis_ttl_hours,

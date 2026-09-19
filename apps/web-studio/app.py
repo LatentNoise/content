@@ -182,7 +182,7 @@ with st.sidebar:
     st.markdown("### 🧩 Content Studio")
     render_sidebar(visitor, client, surface="studio")
     st.caption(f"🟢 back-end v{version}" if backend_ok else "🔴 back-end offline")
-    # AGPL §13: the source offer, from the instance (never hard-coded).
+    # The licence and source link, from the instance (never hard-coded).
     legal.render_streamlit_footer(client)
     if backend_ok:
         st.caption(f"[API · /docs]({PUBLIC_API_URL}/docs)")

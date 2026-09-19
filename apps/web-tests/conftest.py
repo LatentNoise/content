@@ -380,8 +380,8 @@ class FakeContentClient:
     def system(self):
         return {
             "version": ENGINE_VERSION,
-            # AGPL §13: the source offer the UIs render in their footer.
-            "license": "AGPL-3.0-or-later",
+            # The licence and source link the UIs render in their footer.
+            "license": "FSL-1.1-ALv2",
             "source_url": "https://example.invalid/content",
             "cache_enabled": True,
             "analysis_ttl_hours": 72,
