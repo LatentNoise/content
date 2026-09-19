@@ -3,7 +3,7 @@ name = "content-sdk"
 version = "0.8.4"
 description = "Official Python SDK for the Content engine (the one API client: sync + async)."
 readme = "README.md"
-license = "AGPL-3.0-or-later"
+license = "FSL-1.1-ALv2"
 license-files = ["LICENSE", "NOTICE"]
 authors = [{ name = "Yann Orieult" }]
 requires-python = ">=3.11"
@@ -36,7 +36,7 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["content_sdk"]
 
-# The sdist is the Corresponding Source we convey (AGPL §4/§6), so it carries
-# the licence and the notice — and nothing else from the monorepo.
+# The licence applies to every copy we redistribute, so the sdist carries the
+# licence and the notice — and nothing else from the monorepo.
 [tool.hatch.build.targets.sdist]
 only-include = ["content_sdk", "README.md", "LICENSE", "NOTICE", "pyproject.toml"]

@@ -1,5 +1,5 @@
 # All four images (backend + the three Streamlit UIs) build with the repo root
-# as their context — the backend so LICENSE/NOTICE ship inside it (AGPL §4), the
+# as their context — the backend so LICENSE/NOTICE ship inside it, the
 # UIs so the shared content-sdk package is reachable. Docker reads the context
 # root's .dockerignore, so this file is the *only* one in effect. A
 # .dockerignore sitting in apps/<app>/ is never consulted — Docker would read

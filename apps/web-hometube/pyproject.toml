@@ -2,7 +2,7 @@
 name = "content-frontend"
 version = "0.8.4"
 description = "Content — Streamlit front-end (pure API client of the back-end)"
-license = "AGPL-3.0-or-later"
+license = "FSL-1.1-ALv2"
 authors = [{ name = "Yann Orieult" }]
 requires-python = ">=3.11"
 dependencies = [

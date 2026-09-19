@@ -26,7 +26,7 @@ LABEL org.opencontainers.image.base.name="docker.io/jauderho/yt-dlp:${YTDLP_BASE
     org.opencontainers.image.base.digest="${YTDLP_BASE_DIGEST}" \
     org.opencontainers.image.title="Content API" \
     org.opencontainers.image.description="Declarative resource-to-artifact generation engine" \
-    org.opencontainers.image.licenses="AGPL-3.0-or-later" \
+    org.opencontainers.image.licenses="FSL-1.1-ALv2" \
     org.opencontainers.image.source="https://github.com/LatentNoise/content" \
     org.opencontainers.image.authors="Yann Orieult" \
     org.opencontainers.image.url="https://github.com/LatentNoise/content" \
@@ -170,7 +170,7 @@ rm -rf "/tmp/${ARCHIVE}" "/tmp/typst-${TARGET}"
 typst --version
 SH
 
-# AGPL §4: the licence travels with the program we distribute.
+# The licence travels with the program we distribute.
 COPY LICENSE NOTICE ./
 COPY apps/backend/content/ ./content/
 
