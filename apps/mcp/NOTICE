@@ -1,20 +1,26 @@
 Content — declarative resource-to-artifact generation engine
 Copyright (C) 2026 Yann Orieult
 
-SPDX-License-Identifier: AGPL-3.0-or-later
+SPDX-License-Identifier: FSL-1.1-ALv2
 Source: https://github.com/LatentNoise/content
 
-This program is free software: you can redistribute it and/or modify it under
-the terms of the GNU Affero General Public License as published by the Free
-Software Foundation, either version 3 of the License, or (at your option) any
-later version.
+This program is source-available under the Functional Source License, Version
+1.1, ALv2 Future License (FSL-1.1-ALv2). You may read, audit, modify and run it
+for any Permitted Purpose — which includes your internal use, non-commercial
+education and non-commercial research — but not to offer a competing commercial
+product or service. See LICENSE for the terms that govern, and nothing else.
 
-This program is distributed in the hope that it will be useful, but WITHOUT ANY
-WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
-PARTICULAR PURPOSE. See the GNU Affero General Public License for more details.
+Each version becomes available under the Apache License, Version 2.0 on the
+second anniversary of the date it was made available. That grant is in the
+licence itself and is irrevocable.
 
-You should have received a copy of the GNU Affero General Public License along
-with this program. If not, see <https://www.gnu.org/licenses/>.
+Versions up to and including 0.8.4 were released under AGPL-3.0-or-later and
+remain available under it, permanently. The change of licence applies to the
+versions published after it, and to no earlier one.
+
+This program is distributed WITHOUT ANY WARRANTY; without even the implied
+warranty of MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, TITLE or
+NON-INFRINGEMENT. See LICENSE for the full disclaimer.
 
 ---
 
@@ -61,5 +67,6 @@ Copyright ownership
 Copyright in this project is held by its author alone. The project accepts no
 code contributions (see CONTRIBUTING.md), so no third party holds copyright in
 any part of it. That is deliberate: undivided ownership is what allows Content
-to be offered under separate commercial terms alongside the AGPL — see
+to be relicensed — as it was on 2026-09-18, from AGPL-3.0-or-later to
+FSL-1.1-ALv2 — and to be offered under other terms on request. See
 COMMERCIAL.md.
