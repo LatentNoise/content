@@ -45,14 +45,14 @@ from a clone, which is why it is written down.
 | 8 | **Discussions / Wiki / Projects** | Disabled | Unmoderated surfaces the single maintainer has not undertaken to read |
 | 9 | **Private vulnerability reporting** | Enabled | SECURITY.md directs reporters to email; this gives them a private in-platform route too |
 | 10 | **Forking** | Allowed | GOVERNANCE.md calls forking the intended path — never restrict it |
-| 11 | **Repository visibility** | Public | AGPL §13: the source offer in the running UI must resolve (see below) |
+| 11 | **Repository visibility** | Public | A source-available project whose source link 404s is worse than one with none (see below) |
 | 12 | **Sponsor button / social preview** | Off | No marketing surface is claimed |
 | 13 | **Environments → `pypi` (and `testpypi`)** | Exists, **no required reviewer** | The Trusted Publishing identity on PyPI is bound to the environment *name*, so it must exist and keep that name. A required reviewer, however, asks the maintainer to approve what they just approved: publishing the release is what triggers the upload, so the second prompt only delays it |
 
-## The AGPL §13 chain
+## The source-link chain
 
-The running instances offer their source. That offer must resolve, or the
-licence obligation is not met:
+The running instances link their source. FSL-1.1-ALv2 does not require it — the
+AGPL did — but a link that 404s is worse than no link, so it must resolve:
 
 1. `GET /api/v1/system` returns `license` and `source_url`
    (`CONTENT_SOURCE_URL`, default `https://github.com/LatentNoise/content`).
@@ -79,8 +79,8 @@ project's; the variable exists precisely so they can meet it.
 The home is `https://github.com/LatentNoise/content`, taken from the `origin`
 remote. Nothing depends on that string being right *before* publication — the
 engine, the tests and the images all work with a URL that resolves to nothing.
-Exactly two things break if it is wrong *after*: the AGPL §13 source offer in
-the UIs, and the issue-template contact links.
+Exactly two things break if it is wrong *after*: the source link in the UIs,
+and the issue-template contact links.
 
 A fork that republishes should repoint it. It lives in **9 tracked files, 14
 occurrences**:
@@ -140,7 +140,7 @@ at their defaults when the repository was announced.
 link into search results and social cards). It read `Content generator`, which
 says nothing and reads like a placeholder. Proposed:
 
-> Self-hosted engine that turns URLs, files and text into media, transcripts, summaries and documents. API-first, local-first, AGPL.
+> Self-hosted engine that turns URLs, files and text into media, transcripts, summaries and documents. API-first, local-first, source-available.
 
 Under GitHub's 350-character limit, leads with what it does, and contains the
 words someone would search for.
@@ -150,7 +150,7 @@ projects' pages. Proposed, ordered from most to least defining:
 
 `self-hosted` · `yt-dlp` · `ffmpeg` · `media-automation` · `mcp` ·
 `model-context-protocol` · `fastapi` · `streamlit` · `python` ·
-`docker` · `transcription` · `youtube-dl` · `agpl`
+`docker` · `transcription` · `youtube-dl` · `source-available`
 
 **Social preview** (1280×640). Produced at `media/social-preview.png`, with its
 source beside it as `social-preview.svg` so it can be regenerated:
@@ -192,7 +192,7 @@ jobs:
           sorry: Content does not accept code contributions, for the reasons in
           CONTRIBUTING.md (undivided copyright, and the cost of reviewing
           properly). This is closed unread, not judged. Forking is the intended
-          path and the AGPL grants it explicitly."
+          path and the licence grants it explicitly."
           gh pr close "$PR"
 ```
 

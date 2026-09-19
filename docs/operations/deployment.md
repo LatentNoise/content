@@ -171,7 +171,7 @@ is in [HomeTube's README](../../apps/web-hometube/README.md#language-preferences
 | `CONTENT_PDF_MISSING_GLYPHS` | `replace` | What to do about characters no available font can draw: `replace` (substitute a visible placeholder), `error` (refuse the step), `warn` (render unchanged). Never silent — see [pdf-rendering.md](pdf-rendering.md) |
 | `CONTENT_PDF_FONT` | *(empty)* | A TrueType font file or directory for `pdf` output, consulted when the text needs characters the built-in faces cannot draw. The image ships DejaVu (Latin, Greek, Cyrillic — **not** CJK). Characters no available font covers are handled per `CONTENT_PDF_MISSING_GLYPHS` |
 | **⚖️ Licence & notifications** | | |
-| `CONTENT_SOURCE_URL` | upstream repo | Corresponding Source offered to this deployment's users (AGPL §13) |
+| `CONTENT_SOURCE_URL` | upstream repo | Where this deployment's source can be read, shown to its users |
 | `CONTENT_RELEASE_CHECK_URL` | — | Release API polled for a newer version (empty = the banner is off) |
 | `CONTENT_RELEASE_PAGE_URL` | — | Page the release notification links to |
 | `CONTENT_RELEASE_CHECK_TTL_HOURS` | `6` | How long a release lookup is cached |
@@ -312,27 +312,27 @@ work with the published image**: it is Alpine, `ctranslate2` and `av` publish no
 musl wheels, and the build ends in `ResolutionImpossible`. When both runners are
 available, the speech service wins.
 
-## Licence & source visibility (AGPL §13)
+## Licence & source visibility
 
-Content is AGPL-3.0-or-later. Section 13 adds one obligation beyond the usual
-copyleft: if you **modify** Content and let users interact with your modified
-version **over a network**, those users must be able to obtain its Corresponding
-Source.
+Content is source-available under **FSL-1.1-ALv2**. You may run it, modified or
+not, at home or inside your organisation, and **nothing obliges you to publish
+your changes or to offer anyone the source** — the AGPL §13 obligation that this
+mechanism once discharged no longer applies.
 
-Running Content unmodified — at home or inside a company — triggers nothing.
-
-To make that practical, the instance publishes its own source link:
+The mechanism stays anyway, because a source-available project that hides its
+source is worth less than one that shows it:
 
 - `GET /api/v1/system` returns `license` and `source_url`;
-- each UI shows `AGPL-3.0-or-later · Source code` in its sidebar, using whatever
-  the backend reports.
+- each UI shows `FSL-1.1-ALv2 · Source code` in its sidebar, using whatever the
+  backend reports.
 
 **If you deploy a modified Content, set `CONTENT_SOURCE_URL` to your own
 repository.** It defaults to upstream, which is correct only for an unmodified
-deployment — leaving it unchanged on a fork would point your users at source
-that is not the software they are using, which does not discharge your
-obligation and misinforms them. The UIs never hard-code the link precisely so
-this stays under the operator's control.
+deployment — leaving it unchanged on a fork points your users at source that is
+not the software they are running, and misinforms them. Setting it to empty
+shows no link at all, which is honest; pointing it at someone else's source is
+not. The UIs never hard-code the link precisely so this stays under the
+operator's control.
 
 ## Notifications
 

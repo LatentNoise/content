@@ -10,7 +10,7 @@
 [![Latest release](https://img.shields.io/github/v/release/LatentNoise/content?sort=semver&display_name=tag)](https://github.com/LatentNoise/content/releases/latest)
 [![CI](https://github.com/LatentNoise/content/actions/workflows/ci.yml/badge.svg)](https://github.com/LatentNoise/content/actions/workflows/ci.yml)
 [![Docker](https://img.shields.io/badge/Docker-amd64%20%C2%B7%20arm64-2496ED.svg?logo=docker&logoColor=white)](docs/operations/deployment.md)
-[![License](https://img.shields.io/badge/License-AGPL--3.0--or--later-green.svg)](LICENSE)
+[![License](https://img.shields.io/badge/License-FSL--1.1--ALv2-blue.svg)](LICENSE)
 <!-- The obvious badge URL, api.scorecard.dev/.../badge, renders "invalid repo
      path" for this repository. It redirects to shields.io's ossf-scorecard
      endpoint, which lowercases the path, while the Scorecard API is
@@ -633,14 +633,24 @@ starting points:
 
 ## Licence
 
-Content is free and open-source software licensed under
-**[AGPL-3.0-or-later](LICENSE)**. You may run, study, modify, and redistribute
-it, including commercially, under the terms of the licence.
+Content is **source-available** under the [Functional Source License, Version
+1.1, ALv2 Future License](LICENSE) (`FSL-1.1-ALv2`).
 
-The AGPL contains source-sharing requirements for certain modified,
-network-accessible versions. See [COMMERCIAL.md](COMMERCIAL.md) for the
-project's factual licensing summary; no separate commercial offering is
-currently available.
+In plain words: you may read, audit, modify and run Content — at home, for
+yourself, or inside your organisation. The one thing you may not do is offer it,
+or something substantially similar built from it, as a **competing commercial
+product or service**.
+
+**Every version becomes Apache 2.0 two years after it is published.** That
+promise is in the licence itself and cannot be taken back.
+
+Copyright 2026 Yann Orieult. "Content" and "Latent" are names of the project and
+of its author's work; a fork must not use them for its own product.
+
+**Versions up to and including 0.8.4 were released under
+[AGPL-3.0-or-later](https://www.gnu.org/licenses/agpl-3.0.html) and remain
+available under it, permanently.** See [COMMERCIAL.md](COMMERCIAL.md) for the
+full summary; no separate commercial offering is currently available.
 
 ## Governance
 

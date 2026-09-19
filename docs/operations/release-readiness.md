@@ -23,9 +23,9 @@ tree, so the audit is an audit of the working tree, not of past commits.
 | Pattern sweep | `sk-super-secret` is a placeholder in the test that proves keys get redacted; `10.0.0` is a version string in a notification test; `homelab` is the deployment word in prose; `yann@orieult.com` is the deliberate public contact in SECURITY.md and COMMERCIAL.md |
 | Generated artefacts | `playground/output/pgverify/sum.md` — a summary produced by a local run — was reachable through the `*.md` allowlist. The ignore rules now scope `playground/input/` and `playground/output/` to their two READMEs. |
 | Binary content | Four browser-extension PNG icons. No media, database, archive or build output; no nested `.git`; largest file 85 KB. |
-| Licensing files | `LICENSE` (AGPL-3.0-or-later), `NOTICE` naming Typst / ReportLab / DejaVu, `COMMERCIAL.md`, `SECURITY.md`, `GOVERNANCE.md`, `CONTRIBUTING.md`, `CODEOWNERS`, issue templates — all present |
+| Licensing files | `LICENSE` (FSL-1.1-ALv2), `NOTICE` naming Typst / ReportLab / DejaVu, `COMMERCIAL.md`, `SECURITY.md`, `GOVERNANCE.md`, `CONTRIBUTING.md`, `CODEOWNERS`, issue templates — all present |
 | Licences inside the image | `/app/LICENSE`, `/app/NOTICE`, `/usr/local/share/licenses/typst/LICENSE` |
-| AGPL §13 chain | Mechanically correct end to end: `/api/v1/system` reports `license` + `source_url`, every UI renders it (`content_sdk.legal`). The URL 404s until the repository is public — the last thing to re-check on publication day. |
+| Source-link chain | Mechanically correct end to end: `/api/v1/system` reports `license` + `source_url`, every UI renders it (`content_sdk.legal`). The URL 404s until the repository is public — the last thing to re-check on publication day. |
 | Documentation links | 46 documents, 125 relative links, 0 broken — and none resolving to a git-ignored target, which is the failure a filesystem-based check does not catch |
 | README as a stranger reads it | Answers all five: what it is, who maintains it, how to run it, what it costs, what the licence permits |
 | CI on a first push | `ci.yml` needs no stored secret and pins every action by SHA. A branch push can publish nothing: the image job is gated on a `v*` tag, where publishing to GHCR is the deliberate point |
@@ -69,7 +69,7 @@ target is ignored.
 ## Decisions taken
 
 1. **The repository's home** is `https://github.com/LatentNoise/content`. It is
-   the AGPL §13 source offer, so it must return **200** for an anonymous
+   the source link shown in every UI, so it must return **200** for an anonymous
    visitor once the repository is public — that is the one licence obligation
    that has to resolve. An operator running a *modified* copy repoints
    `CONTENT_SOURCE_URL` at their own source; the exact list of files is in

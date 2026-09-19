@@ -7,10 +7,11 @@
 # worktree, a reset — and a wrong author in a public commit cannot be
 # corrected without rewriting published history.
 #
-# Content is offered under the AGPL with the option of separate commercial
-# terms, which only holds because copyright sits with one identifiable person
-# (COMMERCIAL.md). One identity in the record is part of that argument, not
-# cosmetics.
+# Content is source-available under FSL-1.1-ALv2, with the option of other
+# terms on request — which only holds because copyright sits with one
+# identifiable person (COMMERCIAL.md). It is also what made the move off the
+# AGPL possible at all. One identity in the record is part of that argument,
+# not cosmetics.
 expected="yann@orieult.com"
 actual=$(git config user.email)
 

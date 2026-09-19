@@ -31,25 +31,36 @@ as the project lives — costs more than writing it. Half-reviewing someone else
 code into a project I depend on is worse than not taking it at all.
 
 **Copyright.** The moment outside code is merged, its author holds copyright in
-it. Content is published under the AGPL *and* may be offered under separate
-commercial terms ([COMMERCIAL.md](COMMERCIAL.md)) — and offering those terms
-requires holding all the rights. A single merged pull request would end that
-permanently, unless every contributor could be found again and asked to sign
-their rights away. Keeping the copyright undivided is what keeps that option
-open, which is why there is no CLA either: there is nothing to sign, because
-nothing is accepted.
+it — and only the holder of *all* the rights can change the licence or grant
+terms other than the published ones ([COMMERCIAL.md](COMMERCIAL.md)). That is
+not hypothetical here: Content moved from AGPL-3.0-or-later to FSL-1.1-ALv2 on
+2026-09-18, and it could do so only because every line was its author's. A
+single merged pull request would have ended that permanently, unless every
+contributor could be found again and asked to sign their rights away.
+
+So code contributions are **paused rather than refused on principle** — they
+stay closed until a contributor agreement exists to assign or license those
+rights back. There is none today, which is why there is nothing to sign and
+nothing is accepted. Everything else — issues, bug reports, design feedback,
+discussion — is welcome and always was.
 
 ## What you can do instead
 
-**Fork it.** The AGPL grants you that right explicitly, and it is the intended
-path if you want Content to behave differently. Fork it, change it, run it. You
-need no permission and you do not have to tell anyone.
+**Fork it.** FSL-1.1-ALv2 grants you the right to modify Content and run your
+version, and that is the intended path if you want it to behave differently.
+Fork it, change it, run it — for yourself, or inside your organisation. You need
+no permission, you do not have to tell anyone, and you are not required to
+publish your changes.
 
-Two things to know if you do: if you offer your *modified* version to others
-over a network, the AGPL requires you to make its source available to them (that
-obligation applies to this project too — see `CONTENT_SOURCE_URL` in
-[docs/operations/deployment.md](docs/operations/deployment.md)); and a fork is an
-independent project that must not present itself as official.
+Three things to know if you do. Your fork stays under the same licence, so it
+may not be offered as a competing commercial product or service
+([COMMERCIAL.md](COMMERCIAL.md)). It is an independent project that must not
+present itself as official, or use the project's names for its own product. And
+if you run it for others, please point `CONTENT_SOURCE_URL` at *your* source
+rather than upstream (see
+[docs/operations/deployment.md](docs/operations/deployment.md)) — the licence no
+longer obliges it, but telling your users something untrue is worse than saying
+nothing.
 
 ## Policy vs. enforcement
 

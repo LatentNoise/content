@@ -23,20 +23,23 @@ a community model — it is the model.
 
 ## Forks
 
-Forking is explicitly permitted by the AGPL and is the intended path if you want
-Content to work differently. You need no permission and you do not need to tell
-anyone.
+Modifying Content and running your version is explicitly permitted by the
+licence, and is the intended path if you want it to work differently. You need
+no permission and you do not need to tell anyone.
 
 A fork is an **independent project**. It must not present itself as official,
 endorsed by, or affiliated with Content or its maintainer, and must not use the
 project's name in a way that implies any of those. The licence grants you rights
-over the code; it does not grant endorsement.
+over the code; it grants neither endorsement nor the right to offer the result
+as a competing commercial product or service.
 
 ## Licensing
 
-Content is published under [AGPL-3.0-or-later](LICENSE). The maintainer holds
-sole copyright, which additionally allows the project to be offered under
-separate commercial terms — see [COMMERCIAL.md](COMMERCIAL.md).
+Content is source-available under [FSL-1.1-ALv2](LICENSE); every version becomes
+Apache 2.0 two years after publication. Versions up to and including 0.8.4 were
+released under AGPL-3.0-or-later and remain available under it. The maintainer
+holds sole copyright — which is what made that change possible, and what allows
+other terms to be discussed. See [COMMERCIAL.md](COMMERCIAL.md).
 
 Rights already granted under a published licence are irrevocable: nothing here
 can take away what a previous release gave you.
