@@ -8,7 +8,7 @@ contact_links:
     about: Report privately — never in a public issue.
   - name: 💼 Commercial licence
     url: https://github.com/LatentNoise/content/blob/main/COMMERCIAL.md
-    about: For uses the AGPL does not cover. Enquiries by email.
+    about: For uses the licence does not cover. Enquiries by email.
   - name: 🔀 Want to change the code?
     url: https://github.com/LatentNoise/content/blob/main/CONTRIBUTING.md
     about: Pull requests are closed without review. Forking is the intended path.

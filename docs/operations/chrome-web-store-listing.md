@@ -54,7 +54,7 @@ prepares the material.
 >   analytics, no account, and no telemetry.
 > • It does not read page content. It uses the tab's URL, nothing else.
 >
-> Free and open source, AGPL-3.0-or-later. The whole extension is a handful of
+> Free and source-available, FSL-1.1-ALv2. The whole extension is a handful of
 > unminified files you can read in ten minutes.
 
 ## Single-purpose statement
