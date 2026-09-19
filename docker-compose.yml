@@ -21,7 +21,7 @@ services:
     # Published on each version tag; `docker compose pull` fetches it.
     image: ghcr.io/latentnoise/content:${CONTENT_VERSION:-latest}
     build:
-      # Repo-root context so LICENSE/NOTICE ship inside the image (AGPL §4),
+      # Repo-root context so LICENSE/NOTICE ship inside the image,
       # matching the UI images.
       context: .
       dockerfile: apps/backend/Dockerfile

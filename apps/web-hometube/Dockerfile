@@ -5,7 +5,7 @@ FROM python:3.12-slim
 
 LABEL org.opencontainers.image.title="HomeTube" \
     org.opencontainers.image.description="Specialized YouTube UI for the Content engine" \
-    org.opencontainers.image.licenses="AGPL-3.0-or-later" \
+    org.opencontainers.image.licenses="FSL-1.1-ALv2" \
     org.opencontainers.image.source="https://github.com/LatentNoise/content" \
     org.opencontainers.image.authors="Yann Orieult"
 
@@ -24,7 +24,7 @@ COPY packages/python-sdk/ /tmp/content-sdk/
 RUN pip install --no-cache-dir --no-compile /tmp/content-sdk \
     && rm -rf /tmp/content-sdk
 
-# AGPL §4: the licence travels with the program we distribute.
+# The licence travels with the program we distribute.
 COPY LICENSE NOTICE ./
 COPY apps/web-hometube/app.py ./
 COPY apps/web-hometube/.streamlit/ ./.streamlit/
