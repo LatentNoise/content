@@ -1,16 +1,17 @@
-"""AGPL §13: the offer of Corresponding Source, shown to network users.
+"""The licence and the source link, shown to the people using an instance.
 
-Content is AGPL-3.0-or-later. Section 13 says that if you **modify** it and let
-users interact with your modified version over a network, those users must be
-offered its Corresponding Source. A UI is exactly such an interaction, so each
-one carries a link.
+Content is source-available under FSL-1.1-ALv2. Unlike the AGPL this footer once
+discharged, the licence imposes no duty to offer anyone the source — the link is
+kept because a source-available project that hides its source is worth less than
+one that shows it. Someone who can see what an instance runs can audit it, and
+that is the point of publishing the code at all.
 
 The link is whatever the *backend* reports (`GET /api/v1/system` → `source_url`,
 configured by `CONTENT_SOURCE_URL`), never a constant compiled into the UI. That
 distinction is the whole point: an operator running a fork points the setting at
 their own source, and their users get a link that is actually true. Hard-coding
 upstream here would make every modified deployment tell its users something
-false — and would not discharge the operator's obligation.
+false.
 
 Shared through the SDK for the same reason the notification bar is (D-21): three
 UIs, one implementation.
@@ -22,13 +23,13 @@ from typing import Any
 
 __all__ = ["render_streamlit_footer", "source_offer"]
 
-_LICENSE = "AGPL-3.0-or-later"
+_LICENSE = "FSL-1.1-ALv2"
 
 
 def source_offer(client: Any) -> tuple[str, str]:
     """``(licence, source_url)`` as reported by the instance.
 
-    Falls back to ``(AGPL-3.0-or-later, "")`` when the backend is unreachable or
+    Falls back to ``(FSL-1.1-ALv2, "")`` when the backend is unreachable or
     predates the field: a missing link is a degraded footer, never a broken page.
     """
     try:

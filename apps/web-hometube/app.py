@@ -346,7 +346,7 @@ with st.sidebar:
     )
     if backend_ok:
         st.caption(f"[API · /docs]({PUBLIC_API_URL}/docs)")
-    # AGPL §13: the source offer, from the instance (never hard-coded).
+    # The licence and source link, from the instance (never hard-coded).
     legal.render_streamlit_footer(client)
     if backend_ok:
         # Before the refusal, not only after it: a limit someone cannot watch

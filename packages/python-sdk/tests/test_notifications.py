@@ -86,7 +86,7 @@ def test_corrupt_state_file_is_ignored(tmp_path):
     assert store.is_dismissed("anything") is False
 
 
-# --- AGPL §13 source offer (content_sdk.legal) ---------------------------------
+# --- The licence and the source link (content_sdk.legal) ----------------------
 
 
 class SystemClient:
@@ -102,21 +102,21 @@ class SystemClient:
 
 def test_source_offer_reads_what_the_instance_reports():
     assert legal.source_offer(
-        SystemClient({"license": "AGPL-3.0-or-later", "source_url": "https://x/fork"})
-    ) == ("AGPL-3.0-or-later", "https://x/fork")
+        SystemClient({"license": "FSL-1.1-ALv2", "source_url": "https://x/fork"})
+    ) == ("FSL-1.1-ALv2", "https://x/fork")
 
 
 def test_source_offer_survives_an_unreachable_backend():
     """A missing link degrades the footer; it must not break the page."""
     assert legal.source_offer(SystemClient(error=RuntimeError("down"))) == (
-        "AGPL-3.0-or-later",
+        "FSL-1.1-ALv2",
         "",
     )
 
 
 def test_source_offer_survives_an_older_backend_without_the_field():
     assert legal.source_offer(SystemClient({"version": "0.1.0"})) == (
-        "AGPL-3.0-or-later",
+        "FSL-1.1-ALv2",
         "",
     )
 

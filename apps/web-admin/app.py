@@ -240,7 +240,7 @@ with st.sidebar:
     render_sidebar(visitor, client, surface="console")
     st.caption(f"🟢 back-end v{version}")
     st.caption(f"API base: `{PUBLIC_API_URL}`")
-    # AGPL §13: the source offer, from the instance (never hard-coded).
+    # The licence and source link, from the instance (never hard-coded).
     legal.render_streamlit_footer(client)
     st.caption(
         f"[Swagger /docs]({PUBLIC_API_URL}/docs) · "

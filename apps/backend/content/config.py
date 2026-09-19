@@ -386,12 +386,12 @@ class ContentSettings:
     # Operator-trusted extra yt-dlp CLI args, appended to every invocation
     # (HomeTube's YTDLP_CUSTOM_ARGS). Unrestricted — the operator controls it.
     ytdlp_extra_args: tuple[str, ...] = field(default_factory=tuple)
-    # AGPL §13: users interacting with a *modified* Content over a network must
-    # be able to obtain its Corresponding Source. Operators who deploy a fork
-    # MUST point this at their own source — leaving it on upstream would tell
-    # their users something untrue. Exposed by /api/v1/system and linked in the
-    # UIs. Empty = no offer is made (only correct for an unmodified deployment
-    # whose users can already find upstream).
+    # Where the source of THIS deployment can be read. FSL-1.1-ALv2 does not
+    # require the offer the AGPL once did; the link stays because a
+    # source-available project that hides its source is worth less than one that
+    # shows it. Operators who deploy a fork SHOULD point this at their own
+    # source — leaving it on upstream tells their users something untrue.
+    # Exposed by /api/v1/system and linked in the UIs. Empty = no link shown.
     source_url: str = "https://github.com/LatentNoise/content"
     # Instance notifications (content/notifications.py). The release check is
     # opt-in: empty URL = no outbound call and no banner. The forge is not
@@ -911,13 +911,13 @@ def describe_environment(
             str(settings.primary_include_subtitles),
             "Include the primary language in the default subtitle selection.",
         ),
-        # Legal / compliance
+        # Licence / transparency
         (
             "CONTENT_SOURCE_URL",
             "legal",
             False,
-            settings.source_url or "— (no source offer made)",
-            "Corresponding Source for THIS deployment (AGPL §13) — "
+            settings.source_url or "— (no source link shown)",
+            "Where the source of THIS deployment can be read — "
             "change it if you deployed a modified Content.",
         ),
         # Notifications

@@ -327,14 +327,14 @@ def test_fetch_without_a_url_never_opens_a_connection(monkeypatch):
     assert notif.fetch_latest_release("") == ""
 
 
-# --- AGPL §13: the source offer ------------------------------------------------
+# --- The licence and the source link ------------------------------------------
 
 
 def test_system_publishes_the_licence_and_source_offer(settings):
-    """A network user must be able to find the Corresponding Source (AGPL §13)."""
+    """The instance states its licence and where its source can be read."""
     with _api(settings) as client:
         system = client.get("/api/v1/system").json()
-    assert system["license"] == "AGPL-3.0-or-later"
+    assert system["license"] == "FSL-1.1-ALv2"
     assert system["source_url"].startswith("http")
 
 
