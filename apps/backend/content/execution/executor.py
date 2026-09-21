@@ -222,7 +222,10 @@ class JobExecutor:
         state = _RunState(plan, request, job_row["owner_id"])
 
         # Inter-job reuse is a cache feature: inert unless the cache is enabled
-        # (ADR 0009). reuse_existing=true is accepted but has no effect in V1.
+        # (ADR 0009), which is the *code* default and not what ships — the
+        # chart values and both compose files set CONTENT_CACHE_ENABLED=true,
+        # so this runs in every packaged deployment. `submit` warns when the
+        # request asks for reuse and the installation cannot give it.
         reuse_enabled = (
             self._settings.cache_enabled and request.execution.reuse_existing
         )
