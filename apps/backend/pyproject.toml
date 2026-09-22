@@ -1,6 +1,6 @@
 [project]
 name = "content-backend"
-version = "0.8.4"
+version = "0.8.5"
 description = "Content — declarative resource-to-artifact generation engine"
 license = "FSL-1.1-ALv2"
 authors = [{ name = "Yann Orieult" }]
