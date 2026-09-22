@@ -36,10 +36,10 @@ spec:
           env:
             - name: TZ
               value: {{ $.Values.config.TZ | quote }}
-            # L'API vue par le POD (DNS interne du Service).
+            # The API as seen by the POD (the Service's internal DNS name).
             - name: CONTENT_API_URL
               value: "http://{{ include "content.fullname" $ }}:{{ $.Values.service.port }}"
-            # L'API vue par le NAVIGATEUR de l'utilisateur.
+            # The API as seen by the visitor's BROWSER.
             - name: CONTENT_PUBLIC_API_URL
               value: {{ include "content.publicApiUrl" $ | quote }}
             {{- with $ui.extraEnv }}
