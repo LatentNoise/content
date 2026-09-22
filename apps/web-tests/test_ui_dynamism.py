@@ -694,6 +694,35 @@ def test_a_folder_that_is_gone_is_proposed_rather_than_dropped(run_app, monkeypa
     assert new_folder.value == "Archive/2025"
 
 
+def test_the_memory_and_the_french_interface_hold_together(run_app, monkeypatch):
+    """The prefill (ADR 0039) and the translated interface were built on two
+    branches that both rewrote this form, and merging them was hand work. So
+    the two are asserted together: in French, the banner is French *and* last
+    time's choices still reach the request."""
+    from conftest import FakeContentClient
+
+    monkeypatch.setenv("CONTENT_UI_LANGUAGE", "fr")
+    monkeypatch.setattr(
+        FakeContentClient,
+        "_remembered",
+        {"x:item:video": _remembered_video_request("Talks")},
+    )
+    at = run_app("hometube", "https://x/video")
+    assert not at.exception, at.exception
+
+    notices = " ".join(el.value for el in at.info)
+    assert "Vous avez demandé ceci le 2026-09-12" in notices
+    assert "`Talks`" in notices
+    assert "You asked for this" not in notices
+
+    sent = _generation_request(at)
+    video = next(o for o in sent["outputs"] if o["type"] == "video")
+    assert video["delivery"]["folder"] == "Talks"
+    assert video["options"]["selection"]["max_height"] == 720
+    assert video["options"]["container"] == "mp4"
+    assert video["options"]["processing"]["embed_chapters"] is False
+
+
 def test_a_source_never_asked_for_gets_the_usual_defaults(run_app):
     at = run_app("hometube", "https://x/video")
     assert not at.exception, at.exception
