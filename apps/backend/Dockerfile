@@ -15,7 +15,7 @@
 # docs/operations/ytdlp-base-image.md. A scheduled workflow files an issue when
 # a newer upstream image appears; it never edits this file.
 ARG YTDLP_BASE_VERSION=2026.08.19
-ARG YTDLP_BASE_DIGEST=sha256:e8bf3e410176ed66ae7719b279147d502bf521200431b7bf299aa19c29fcbe27
+ARG YTDLP_BASE_DIGEST=sha256:1b25a526b0e9bce62d3c36fcc260074fbf28135fbc0e03c0dffb36215acb74a1
 FROM jauderho/yt-dlp:${YTDLP_BASE_VERSION}@${YTDLP_BASE_DIGEST}
 
 # Re-declared: an ARG consumed by FROM is out of scope in the build stage.
