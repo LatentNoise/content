@@ -21,6 +21,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from content_sdk.i18n import t
+
 __all__ = ["render_streamlit_footer", "source_offer"]
 
 _LICENSE = "FSL-1.1-ALv2"
@@ -49,7 +51,7 @@ def render_streamlit_footer(client: Any) -> None:
 
     license_id, url = source_offer(client)
     if url:
-        st.caption(f"{license_id} · [Source code]({url})")
+        st.caption(f"{license_id} · [{t('legal.source_code')}]({url})")
     else:
         # No URL configured: still state the licence rather than say nothing.
         st.caption(license_id)

@@ -15,9 +15,11 @@ engine gains appears on its own). It speaks HTTP only through the SDK
 
 ## Configuration
 
-**HomeTube has no settings of its own.** Everything it does is driven by the
-engine's configuration, so all of the following goes in the `.env` beside your
-`docker-compose.yml` — never here. The
+**HomeTube has almost no settings of its own** — the one exception is the
+language of the interface, which is a property of the page and not of the
+engine. Everything else it does is driven by the engine's configuration, so all
+of the following goes in the `.env` beside your `docker-compose.yml` — never
+here. The
 [deployment guide](../../docs/operations/deployment.md#configuration-a-root-env-not-versioned)
 lists every variable Content accepts; this table is the subset that changes
 what HomeTube shows you.
@@ -30,6 +32,7 @@ what HomeTube shows you.
 | `CONTENT_VO_FIRST` | `true` | Put the source's original voice ahead of your own languages |
 | `CONTENT_LANGUAGE_PRIMARY_INCLUDED_IN_SUBTITLES` | `true` — but the shipped `.env.example` sets `false` | Whether your primary language is also pre-checked among subtitles |
 | `CONTENT_CREDENTIALS` | — | `youtube=/config/cookies.txt`. Unlocks age-restricted, private or members-only videos. HomeTube only ever displays the **id**; the cookie file stays on the server and never enters a request |
+| `CONTENT_UI_LANGUAGE` | `en` | The language the **interface** speaks (`en` or `fr`) — the words on the page, not the tracks in the file. Only a default: a picker in the sidebar changes it per person, and `?lang=fr` on the address opens the page in French, so a link can carry it. A region tag (`fr-CH`) works; anything unknown falls back to English rather than refusing to start |
 | `COMPOSE_PROFILES` | `hometube,studio` | Which UIs start. Set to `hometube` to run this one alone |
 | `HOMETUBE_PORT` | `8501` | The host port |
 | `CONTENT_DELIVERY_DEFAULT` | `false` (compose: `true`) | Whether every artifact is copied into the library by default |

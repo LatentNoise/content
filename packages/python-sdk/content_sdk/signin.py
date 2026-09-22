@@ -51,6 +51,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from content_sdk.compat import is_unauthenticated, sign_in_url, sign_out_url
+from content_sdk.i18n import t
 
 __all__ = ["Visitor", "public_api_url", "render_identity", "render_sidebar"]
 
@@ -161,9 +162,12 @@ def render_sidebar(visitor: Visitor, client: Any, *, surface: str) -> None:
         # scrolled away; it is where somebody looks once they have wondered
         # why nothing happens.
         st.link_button(
-            "🔒 Sign in", visitor.sign_in_url, type="primary", use_container_width=True
+            t("signin.sidebar_action"),
+            visitor.sign_in_url,
+            type="primary",
+            use_container_width=True,
         )
-        st.caption("Signed in on another surface? Reload — one session covers all.")
+        st.caption(t("signin.other_surface_hint"))
         return
 
     if not visitor.account:
@@ -173,13 +177,13 @@ def render_sidebar(visitor: Visitor, client: Any, *, surface: str) -> None:
         return
 
     who = visitor.identity.get("email") or visitor.identity.get("owner_id", "")
-    badge = " · operator" if visitor.identity.get("is_operator") else ""
-    st.caption(f"Signed in as **{who}**{badge}")
+    badge = t("signin.operator_badge") if visitor.identity.get("is_operator") else ""
+    st.caption(t("signin.signed_in_as", who=who, badge=badge))
     # A link, not a button that calls the engine from here. Calling from here
     # revokes the session but leaves the cookie in the browser and in this
     # page's captured snapshot; sending the browser to the engine does both
     # and comes back with nothing to present. See `sign_out_url`.
-    st.link_button("Sign out", visitor.sign_out_url, use_container_width=True)
+    st.link_button(t("signin.sign_out"), visitor.sign_out_url, use_container_width=True)
 
 
 def _elsewhere(client: Any, surface: str) -> None:
@@ -212,7 +216,9 @@ def _elsewhere(client: Any, surface: str) -> None:
         "color:inherit;text-decoration:none;opacity:.78}"
         ".content-elsewhere a:hover{opacity:1;border-color:rgba(128,128,128,.7)}"
         "</style>"
-        f'<nav class="content-elsewhere" aria-label="Other surfaces">{chips}</nav>'
+        f'<nav class="content-elsewhere" '
+        f'aria-label="{_html.escape(t("signin.elsewhere_label"), quote=True)}">'
+        f"{chips}</nav>"
     )
 
 
@@ -230,13 +236,12 @@ def _banner(*, app_title: str, url: str) -> None:
     with st.container(border=True):
         message, action = st.columns([3, 1], vertical_alignment="center")
         message.markdown(
-            "#### 🔒 You are not signed in\n"
-            f"{app_title} needs to know who you are before it can do anything. "
-            "Your work, your files and your history are yours, so nothing "
-            "below will run until you sign in. It takes an email address and "
-            "one click — no password."
+            f"#### {t('signin.banner_title')}\n"
+            + t("signin.banner_body", app_title=app_title)
         )
-        action.link_button("Sign in", url, type="primary", use_container_width=True)
+        action.link_button(
+            t("signin.banner_action"), url, type="primary", use_container_width=True
+        )
 
 
 def _current_url() -> str:
