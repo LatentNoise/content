@@ -437,9 +437,15 @@ def test_console_renders_the_dashboard_and_storage_from_real_data(live_app, api)
     assert "Content Admin" in body
     system = api.system()
     assert system["version"] in body, "the console must show the server's version"
-    # Storage is rendered from a shape that has changed under it before.
-    storage = api.storage()
-    assert set(storage) >= {"jobs", "delivery", "tmp", "cache"}
+    # Storage is rendered from a shape that has changed under it before — and
+    # it changed again: `/storage` answers for the owner who asks (their bytes,
+    # never the server's paths), while the installation-wide families moved to
+    # `/operator/storage` when operating an installation became a privilege of
+    # its own. This assertion kept asking the owner route for `cache` and `tmp`,
+    # which is how a release check can be wrong for months: it is the one test
+    # `make validate` never runs.
+    assert set(api.storage()) >= {"jobs", "artifacts", "delivery", "total_bytes"}
+    assert set(api.operator_storage()) >= {"jobs", "delivery", "tmp", "cache"}
     assert not at.exception, at.exception
 
 
