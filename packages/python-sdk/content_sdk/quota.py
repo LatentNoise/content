@@ -37,6 +37,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from content_sdk.i18n import t
+
 __all__ = [
     "QUOTA_EXCEEDED",
     "refusal_of",
@@ -86,24 +88,18 @@ def sentence_for(refusal: dict[str, Any], fallback: str) -> str:
     allowed = refusal.get("allowed")
     used = refusal.get("used")
     if limit == "media_minutes" and allowed is not None:
-        return (
-            f"This would take you past {float(allowed):g} minutes of media in "
-            "the last 30 days. Your oldest minutes free themselves up as they "
-            "age out — or see the two ways forward below."
-        )
+        return t("quota.media_minutes", allowed=f"{float(allowed):g}")
     if limit == "storage_bytes" and allowed is not None and used is not None:
-        return (
-            f"You are holding {_megabytes(float(used))}, and "
-            f"{_megabytes(float(allowed))} is the ceiling here. Delete "
-            "something you no longer need, or see below."
+        return t(
+            "quota.storage_bytes",
+            used=_megabytes(float(used)),
+            allowed=_megabytes(float(allowed)),
         )
     if limit == "active_jobs" and allowed is not None:
         count = int(float(allowed))
-        one = "One job" if count == 1 else f"{count} jobs"
-        return (
-            f"{one} at a time on this instance. Wait for the current one to "
-            "finish — it keeps running, nothing is lost."
-        )
+        if count == 1:
+            return t("quota.active_jobs_one")
+        return t("quota.active_jobs_many", count=count)
     return fallback
 
 
@@ -117,10 +113,7 @@ def _retention_note(config: dict[str, Any]) -> str:
     days = (config.get("retention") or {}).get("days") or 0
     if not days:
         return ""
-    return (
-        f"Whatever you choose: what you produced here stays downloadable from "
-        f"your library for {float(days):g} days."
-    )
+    return t("quota.retention_note", days=f"{float(days):g}")
 
 
 def render_streamlit_usage(client: Any) -> None:
@@ -144,23 +137,35 @@ def render_streamlit_usage(client: Any) -> None:
     minutes = usage.get("media_minutes") or {}
     if minutes.get("allowed"):
         rows.append(
-            f"{float(minutes.get('used') or 0):.0f}"
-            f" / {float(minutes['allowed']):g} min of media"
+            t(
+                "quota.usage_minutes",
+                used=f"{float(minutes.get('used') or 0):.0f}",
+                allowed=f"{float(minutes['allowed']):g}",
+            )
         )
     storage = usage.get("storage_bytes") or {}
     if storage.get("allowed"):
         rows.append(
-            f"{_megabytes(float(storage.get('used') or 0))}"
-            f" / {_megabytes(float(storage['allowed']))} stored"
+            t(
+                "quota.usage_storage",
+                used=_megabytes(float(storage.get("used") or 0)),
+                allowed=_megabytes(float(storage["allowed"])),
+            )
         )
     jobs = usage.get("active_jobs") or {}
     if jobs.get("allowed"):
-        rows.append(f"{int(jobs.get('used') or 0)} / {int(jobs['allowed'])} jobs")
+        rows.append(
+            t(
+                "quota.usage_jobs",
+                used=int(jobs.get("used") or 0),
+                allowed=int(jobs["allowed"]),
+            )
+        )
     if not rows:
         return
 
     window = int(usage.get("window_days") or 30)
-    st.caption(f"**Your usage** (rolling {window} days)")
+    st.caption(t("quota.usage_title", days=window))
     for row in rows:
         st.caption(row)
 
@@ -191,18 +196,15 @@ def render_streamlit_wall(exc: Any, config: dict[str, Any] | None) -> bool:
         # is the right answer on a self-hosted instance.
         return True
 
-    st.markdown("**Two ways forward, and both are fine by us.**")
+    st.markdown(t("quota.ways_forward"))
     # The free one first, always — see the module docstring.
     if command:
-        st.markdown("Run it yourself. Free, no account, no quota.")
+        st.markdown(t("quota.self_host"))
         st.code(command, language="bash")
         if docs_url:
-            st.markdown(f"Full setup: {docs_url}")
+            st.markdown(t("quota.full_setup", url=docs_url))
     if cta_label and cta_url:
-        st.markdown(
-            f"Or stay here and let someone else run the server — "
-            f"[{cta_label}]({cta_url})"
-        )
+        st.markdown(t("quota.hosted_cta", label=cta_label, url=cta_url))
 
     note = _retention_note(config or {})
     if note:

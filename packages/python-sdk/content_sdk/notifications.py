@@ -35,6 +35,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from content_sdk.i18n import t
+
 __all__ = [
     "DismissalStore",
     "fetch",
@@ -252,7 +254,11 @@ def render_streamlit(
                     body = f"{body} [{label}]({url})"
                 st.caption(body)
             with action:
-                if st.button("Dismiss", key=f"dismiss_{nid}", use_container_width=True):
+                if st.button(
+                    t("notifications.dismiss"),
+                    key=f"dismiss_{nid}",
+                    use_container_width=True,
+                ):
                     hidden.add(nid)
                     store.dismiss(nid)
                     st.rerun()

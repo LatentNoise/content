@@ -9,6 +9,10 @@ executes; this page only builds a GenerationRequest and speaks HTTP.
 The layout deliberately mirrors the original HomeTube UI (URL → name →
 destination folder → subtitles → collapsible sections → big Download button →
 live queue) while targeting Content's versatile, declarative contract.
+
+Every sentence the visitor reads comes from `content_sdk.i18n` — legacy ships a
+complete French interface and this one matches it. Nothing in this file is a
+literal the visitor can see; the words live in `content_sdk/locales/`.
 """
 
 import base64
@@ -22,8 +26,9 @@ from content_sdk.compat import (
     ContentClient,
     streamlit_visitor_headers,
 )
+from content_sdk.i18n import language_selector, t
 from content_sdk.signin import public_api_url, render_identity, render_sidebar
-from content_sdk.status import ago, better_status, display, is_producible
+from content_sdk.status import ago, better_status, display, is_producible, job_label
 
 API_URL = os.getenv("CONTENT_API_URL", "http://localhost:8000")
 PUBLIC_API_URL = os.getenv("CONTENT_PUBLIC_API_URL", API_URL).rstrip("/")
@@ -67,12 +72,14 @@ SB_PRESETS: dict[str, dict | None] = {
     },
 }
 
-# Content preset → which Content output types to request.
+# Content preset → which Content output types to request. The keys are labels,
+# so they are rebuilt on every script run: Streamlit re-executes this file top
+# to bottom, which is exactly what makes a per-session language work at all.
 PRESETS: dict[str, list[str] | None] = {
-    "🎬 Video": ["video"],
-    "🎵 Audio only": ["audio"],
-    "💬 Subtitles only": ["subtitles"],
-    "🧩 Custom…": None,
+    t("ht.preset_video"): ["video"],
+    t("ht.preset_audio"): ["audio"],
+    t("ht.preset_subtitles"): ["subtitles"],
+    t("ht.preset_custom"): None,
 }
 CUSTOM_OUTPUTS = [
     "video",
@@ -96,13 +103,13 @@ OUTPUT_ORDER = [
     "metadata",
 ]
 OUTPUT_META = {
-    "video": ("🎬", "Video"),
-    "audio": ("🎵", "Audio"),
-    "subtitles": ("💬", "Subtitles"),
-    "transcript": ("📝", "Transcript"),
-    "summary": ("🧠", "Summary"),
-    "thumbnail": ("🖼️", "Thumbnail"),
-    "metadata": ("🧾", "Metadata"),
+    "video": ("🎬", t("ht.output.video")),
+    "audio": ("🎵", t("ht.output.audio")),
+    "subtitles": ("💬", t("ht.output.subtitles")),
+    "transcript": ("📝", t("ht.output.transcript")),
+    "summary": ("🧠", t("ht.output.summary")),
+    "thumbnail": ("🖼️", t("ht.output.thumbnail")),
+    "metadata": ("🧾", t("ht.output.metadata")),
 }
 CAP_TO_OUTPUT = {
     "video.download": "video",
@@ -120,17 +127,21 @@ CAP_TO_OUTPUT = {
 def _reason_text(reason: dict | None) -> str:
     """A short human explanation of why a capability is unavailable."""
     if not reason:
-        return "not available for this source"
+        return t("ht.reason.unavailable")
     code = reason.get("code", "")
     if code == "missing_material":
-        mats = ", ".join(reason.get("missing_materials", [])) or "a required material"
-        return f"this source has no {mats}"
+        mats = ", ".join(reason.get("missing_materials", [])) or t(
+            "ht.reason.material_fallback"
+        )
+        return t("ht.reason.missing_material", materials=mats)
     if code == "implementation_unavailable":
-        ops = ", ".join(reason.get("missing_operations", [])) or "a runner"
-        return f"needs a server component ({ops})"
+        ops = ", ".join(reason.get("missing_operations", [])) or t(
+            "ht.reason.runner_fallback"
+        )
+        return t("ht.reason.implementation_unavailable", operations=ops)
     if code == "policy_restricted":
-        return "blocked by the server policy"
-    return code or "not available"
+        return t("ht.reason.policy_restricted")
+    return code or t("ht.reason.generic")
 
 
 TERMINAL = {"succeeded", "partially_succeeded", "failed", "cancelled"}
@@ -242,7 +253,7 @@ try:
 except Exception as exc:  # noqa: BLE001
     # Not a refusal: the gate above already settled identity, and these two
     # routes carry no owner. Anything failing here is the engine itself.
-    st.error(f"⚠️ Back-end unreachable at {API_URL} — {exc}")
+    st.error(t("ht.backend_unreachable", url=API_URL, error=exc))
 
 
 def preferred_order(available: list[str], original: str = "") -> list[str]:
@@ -320,7 +331,7 @@ def wanted_langs(
 def language_label(code: str) -> str:
     """`original` is a request the user makes, not a track they can see — say
     so in the widget rather than showing a word that looks like a typo."""
-    return "original — each video's own voice" if code == ORIGINAL else code
+    return t("ht.language_original") if code == ORIGINAL else code
 
 
 def _language_policy_caption() -> str:
@@ -333,19 +344,22 @@ def _language_policy_caption() -> str:
         + ([primary] if primary else [])
         + list(lang_prefs.get("secondaries") or [])
     )
-    return "🌐 Server language preference: " + " › ".join(parts)
+    return t("ht.server_language_preference", chain=" › ".join(parts))
 
 
 with st.sidebar:
     st.markdown("### 🎬 HomeTube")
     render_sidebar(visitor, client, surface="hometube")
+    # The picker sits in the sidebar rather than the form: it changes the whole
+    # page, not one field, and it must stay reachable once the form is long.
+    language_selector()
     st.caption(
-        f"{'🟢' if backend_ok else '🔴'} back-end v{version}"
+        t("ht.backend_online", version=version)
         if backend_ok
-        else "🔴 back-end offline"
+        else t("ht.backend_offline")
     )
     if backend_ok:
-        st.caption(f"[API · /docs]({PUBLIC_API_URL}/docs)")
+        st.caption(f"[{t('ht.api_docs')}]({PUBLIC_API_URL}/docs)")
     # The licence and source link, from the instance (never hard-coded).
     legal.render_streamlit_footer(client)
     if backend_ok:
@@ -354,7 +368,7 @@ with st.sidebar:
         st.divider()
         quota.render_streamlit_usage(client)
     st.divider()
-    st.caption("Recent jobs")
+    st.caption(t("ht.recent_jobs"))
     try:
         for row in client.list_jobs(limit=12):
             icon = display(row["status"])[0]
@@ -489,16 +503,15 @@ def _index_of(options: list, value, fallback: int = 0) -> int:
 
 
 url = st.text_input(
-    "Video or Playlist URL",
-    placeholder="youtube.com/watch?v=…   ·   or a playlist: …/playlist?list=…",
+    t("ht.url_label"),
+    placeholder=t("ht.url_placeholder"),
     key="url",
-    help="Paste a single video or a whole playlist — the form adapts to what "
-    "the URL is.",
+    help=t("ht.url_help"),
 )
 url_clean = url.strip()
 
 if backend_ok and url_clean and url_clean != st.session_state.analyzed_url:
-    with st.spinner("🔍 Analyzing…"):
+    with st.spinner(t("ht.analyzing")):
         src = source_dict(url_clean, "none")
         try:
             st.session_state.analysis = client.analyze([src])
@@ -509,12 +522,12 @@ if backend_ok and url_clean and url_clean != st.session_state.analyzed_url:
             st.session_state.analysis = None
             st.session_state.capabilities = None
             st.session_state.analyzed_url = url_clean
-            st.error(f"⚠️ Couldn't analyze this URL — {exc.message}")
+            st.error(t("ht.analyze_refused", message=exc.message))
         except Exception as exc:  # noqa: BLE001
             st.session_state.analysis = None
             st.session_state.capabilities = None
             st.session_state.analyzed_url = url_clean
-            st.error(f"⚠️ Analysis failed — {exc}")
+            st.error(t("ht.analyze_failed", error=exc))
 
 analysis = st.session_state.analysis if url_clean else None
 resource: dict = {}
@@ -564,17 +577,20 @@ producible = {o for o, s in cap_status.items() if is_producible(s)}
 # --- summary card (dynamic: playlist vs single video) --------------------------
 
 if is_collection:
-    st.markdown(f"### 📃 {resource.get('title') or 'Playlist'}")
+    st.markdown(f"### 📃 {resource.get('title') or t('ht.playlist_untitled')}")
     who = resource.get("channel") or resource.get("author")
-    st.caption(f"{('👤 ' + who + ' · ') if who else ''}📚 {len(entries)} videos")
-    with st.expander(f"Videos in this playlist ({len(entries)})", expanded=False):
+    st.caption(
+        f"{('👤 ' + who + ' · ') if who else ''}"
+        + t("ht.playlist_count", count=len(entries))
+    )
+    with st.expander(t("ht.playlist_entries", count=len(entries)), expanded=False):
         for i, e in enumerate(entries, 1):
             dur = _duration(e.get("duration_seconds"))
             st.markdown(
                 f"{i}. {e.get('title') or e.get('id') or '?'}"
                 + (f"  ·  {dur}" if dur else "")
             )
-    st.caption("Each video is downloaded and delivered under your chosen folder.")
+    st.caption(t("ht.playlist_delivery_note"))
 elif resource:
     # Clean analysis summary: the essentials (title, channel, metrics) plus a
     # concise technical line of the materials detected on the source.
@@ -589,7 +605,7 @@ elif resource:
                 unsafe_allow_html=True,
             )
     with info:
-        st.markdown(f"**{resource.get('title') or 'Untitled'}**")
+        st.markdown(f"**{resource.get('title') or t('ht.untitled')}**")
         meta: list[str] = []
         who = resource.get("channel") or resource.get("author")
         if who:
@@ -610,12 +626,12 @@ elif resource:
     tech: list[str] = []
     if video_heights:
         codecs = f" · {', '.join(video_codecs_avail)}" if video_codecs_avail else ""
-        tech.append(f"🎞️ up to {max(video_heights)}p{codecs}")
+        tech.append(t("ht.tech_up_to", height=max(video_heights), codecs=codecs))
     if audio_langs_avail:
         tech.append(f"🎙️ {', '.join(audio_langs_avail)}")
     sub_all = sorted(set(sub_manual) | set(sub_auto))
     if sub_all:
-        auto = " (+auto)" if sub_auto else ""
+        auto = t("ht.tech_auto_suffix") if sub_auto else ""
         tech.append(f"💬 {', '.join(sub_manual or sub_all)}{auto}")
     if tech:
         st.caption("　·　".join(tech))
@@ -625,37 +641,39 @@ elif resource:
 
 if remembered:
     _when = (remembered.entry.get("requested_at") or "")[:10]
-    _where = remembered.delivery().get("folder") or "the root folder"
+    _where = remembered.delivery().get("folder") or t("ht.remembered_root_folder")
+    # `kind`, not `t`: the loop variable of the original was written before this
+    # file had a translation function of that name to shadow.
     _what = ", ".join(
-        OUTPUT_META[t][1] for t in OUTPUT_ORDER if t in remembered.types()
+        OUTPUT_META[kind][1] for kind in OUTPUT_ORDER if kind in remembered.types()
     )
     _job = remembered.entry.get("job") or {}
-    _state = f" — last run {_job['status']}" if _job.get("status") else ""
+    _state = (
+        t("ht.remembered_last_run", status=_job["status"]) if _job.get("status") else ""
+    )
     st.info(
-        f"🕘 **You asked for this on {_when}**: {_what or 'a download'} into "
-        f"`{_where}`{_state}. The form below is filled in with those choices. "
-        "Keeping the same folder is what lets Content see what is already there "
-        "instead of downloading it again."
+        t(
+            "ht.remembered_banner",
+            when=_when,
+            what=_what or t("ht.remembered_anything"),
+            where=_where,
+            state=_state,
+        )
     )
 
 
 # --- name + destination folder -------------------------------------------------
 
 if is_collection:
-    name_label = "Playlist name"
-    name_help = (
-        "Prefix for every downloaded file — each video keeps its own number "
-        "and title (e.g. “MyName-001-first-video”). The server sanitizes it."
-    )
+    name_label = t("ht.playlist_name_label")
+    name_help = t("ht.playlist_name_help")
 else:
     name_label = (
-        "Audio name" if resource.get("resource_type") == "audio" else "Video name"
+        t("ht.audio_name_label")
+        if resource.get("resource_type") == "audio"
+        else t("ht.video_name_label")
     )
-    name_help = (
-        "The name the engine computed for this source (ADR 0017) — edit it or "
-        "leave it as proposed. Untouched, nothing is sent and the server names "
-        "the files itself, arriving at exactly this name."
-    )
+    name_help = t("ht.name_help")
 # The engine's own proposal (naming engine, ADR 0017), prefilled and editable —
 # the raw title was only ever a *placeholder* here, and it is not what the file
 # would be called: the display profile turns "Artist - Song / Official Video"
@@ -666,7 +684,7 @@ suggested_filename = (
 filename = st.text_input(
     name_label,
     value=remembered.delivery().get("filename") or suggested_filename,
-    placeholder="named by the server",
+    placeholder=t("ht.name_placeholder"),
     key=f"name-{wk}",
     help=name_help,
 )
@@ -677,7 +695,9 @@ if backend_ok:
         folders = [f for f in client.folders() if f]
     except Exception:  # noqa: BLE001
         folders = []
-folder_options = ["📁 Root folder (/)", *folders, "➕ New folder…"]
+root_choice = t("ht.folder_root")
+new_choice = t("ht.folder_new")
+folder_options = [root_choice, *folders, new_choice]
 remembered_folder = remembered.delivery().get("folder", "") if remembered else ""
 if remembered_folder and remembered_folder not in folders:
     # The folder it went to last time is not in the library any more (renamed,
@@ -687,19 +707,19 @@ if remembered_folder and remembered_folder not in folders:
 else:
     folder_index = _index_of(folder_options, remembered_folder, 0)
 folder_choice = st.selectbox(
-    "Destination folder",
+    t("ht.folder_label"),
     folder_options,
     index=folder_index,
     key=f"folder-{wk}",
-    help="Where the file lands under the server delivery library.",
+    help=t("ht.folder_help"),
 )
-if folder_choice == "➕ New folder…":
+if folder_choice == new_choice:
     folder = st.text_input(
-        "New folder path (relative)",
+        t("ht.folder_new_label"),
         value=remembered_folder if remembered_folder not in folders else "",
         key=f"newfolder-{wk}",
     )
-elif folder_choice.startswith("📁 Root"):
+elif folder_choice == root_choice:
     folder = ""
 else:
     folder = folder_choice
@@ -710,26 +730,26 @@ else:
 if is_collection:
     # A collection resolves per item (scope each_item): each entry is its own
     # video, so the producible outputs are Video or Audio, applied to every item.
-    st.markdown("**Content** &nbsp;·&nbsp; each video is downloaded as")
+    st.markdown(t("ht.content_collection_heading"))
     coll_label = st.radio(
-        "Content",
-        ["🎬 Video", "🎵 Audio only"],
+        t("ht.content_label"),
+        [t("ht.preset_video"), t("ht.preset_audio")],
         index=1 if remembered.types() == {"audio"} else 0,
         horizontal=True,
         key=f"coll-{wk}",
         label_visibility="collapsed",
     )
-    active = ["video"] if coll_label.startswith("🎬") else ["audio"]
+    active = ["video"] if coll_label == t("ht.preset_video") else ["audio"]
 elif caps_payload:
     # Dynamic: offer only the outputs the resolver says this source can produce
     # (ADR 0013). Unavailable ones are listed with the reason. An audio-only
     # source therefore never offers Video, a source without subtitles never
     # offers Subtitles, etc.
-    st.markdown("**Content** &nbsp;·&nbsp; what this source can produce")
+    st.markdown(t("ht.content_heading"))
     offer = [o for o in OUTPUT_ORDER if o in producible]
     active = []
     if not offer:
-        st.warning("Nothing can be produced from this source in this installation.")
+        st.warning(t("ht.nothing_producible"))
     for start in range(0, len(offer), 4):
         cols = st.columns(4)
         for i, out in enumerate(offer[start : start + 4]):
@@ -741,13 +761,9 @@ elif caps_payload:
             )
             status = cap_status.get(out, "")
             help_text = (
-                "Derived from the source (transcript/summary)."
+                t("ht.help_derivable")
                 if status == "derivable"
-                else (
-                    "Attempted — feasibility undetermined."
-                    if status == "unknown"
-                    else None
-                )
+                else (t("ht.help_unknown") if status == "unknown" else None)
             )
             if cols[i].checkbox(
                 f"{icon} {label}",
@@ -759,7 +775,7 @@ elif caps_payload:
     blocked = [o for o in OUTPUT_ORDER if o in cap_status and o not in producible]
     if blocked:
         st.caption(
-            "Not available for this source — "
+            t("ht.blocked_prefix")
             + " · ".join(
                 f"{OUTPUT_META[o][1]}: {_reason_text(cap_reason.get(o))}"
                 for o in blocked
@@ -767,14 +783,18 @@ elif caps_payload:
         )
 else:
     # Pre-analysis (no source yet): the classic quick presets.
-    preset_label = st.radio("Content", list(PRESETS), horizontal=True)
+    preset_label = st.radio(t("ht.content_label"), list(PRESETS), horizontal=True)
     active = PRESETS[preset_label]
     if active is None:  # custom
         cols = st.columns(len(CUSTOM_OUTPUTS))
         active = [
             name
             for i, name in enumerate(CUSTOM_OUTPUTS)
-            if cols[i].checkbox(name, value=(name in ("video",)), key=f"c-{name}-{wk}")
+            if cols[i].checkbox(
+                OUTPUT_META[name][1],
+                value=(name in ("video",)),
+                key=f"c-{name}-{wk}",
+            )
         ]
 want = set(active)
 video_on = "video" in want
@@ -792,7 +812,7 @@ if (video_on or audio_on) and audio_langs_avail:
         [audio_original] if audio_original in audio_langs_avail else []
     )
     audio_languages = st.multiselect(
-        "Audio languages",
+        t("ht.audio_languages_label"),
         preferred_order(audio_langs_avail, audio_original) or sorted(audio_langs_avail),
         default=remembered.languages(
             ("video", "selection", "audio_languages"),
@@ -801,14 +821,13 @@ if (video_on or audio_on) and audio_langs_avail:
         )
         or audio_default,
         key=f"audio-{wk}",
-        help="Audio tracks to include (VO first, then your server language "
-        "preferences). Several = multi-audio embedded into the video.",
+        help=t("ht.audio_languages_help"),
     )
     policy = _language_policy_caption()
     if policy:
         st.caption(policy)
     if audio_original:
-        st.caption(f"🗣️ Original voice: {audio_original}")
+        st.caption(t("ht.original_voice", language=audio_original))
 elif (video_on or audio_on) and is_collection:
     # A playlist has no probed track list, so this asks for the server's
     # preferred languages rather than offering the source's. Without it the
@@ -816,8 +835,11 @@ elif (video_on or audio_on) and is_collection:
     # silently got a single default track — the bug this branch fixes.
     choices = wanted_langs(include_vo=True)
     if choices:
+        # Resolved now rather than in the callback, for the reason the cut
+        # quality labels below give.
+        choice_labels = {code: language_label(code) for code in choices}
         audio_languages = st.multiselect(
-            "Audio languages",
+            t("ht.audio_languages_label"),
             choices,
             default=remembered.languages(
                 ("video", "selection", "audio_languages"),
@@ -825,19 +847,15 @@ elif (video_on or audio_on) and is_collection:
                 among=choices,
             )
             or choices,
-            format_func=language_label,
+            format_func=lambda code: choice_labels.get(code, code),
             key=f"audio-coll-{wk}",
-            help="Applied to every video in the playlist. Items are not "
-            "probed beforehand, so this is a preference: a video keeps the "
-            "tracks it has, and falls back to its best audio otherwise.",
+            help=t("ht.audio_languages_collection_help"),
         )
         # VO is expressible here now (ADR 0022). It used to be omitted because
         # "the original language" is a per-video fact and a playlist has no
         # single answer — but the request can carry the *question*, and the
         # engine answers it per member.
-        st.caption(
-            _language_policy_caption() or "🌐 From your server language preference."
-        )
+        st.caption(_language_policy_caption() or t("ht.language_from_server"))
 
 
 # --- subtitles to embed --------------------------------------------------------
@@ -860,7 +878,7 @@ if subs_wanted and sub_options:
         sub_options[:1] if ("subtitles" in want and sub_options) else []
     )
     subs_langs = st.multiselect(
-        "Subtitles",
+        t("ht.subtitles_label"),
         sub_options,
         default=remembered.languages(
             ("video", "processing", "embed_subtitles"),
@@ -869,11 +887,10 @@ if subs_wanted and sub_options:
         )
         or subs_default,
         key=f"subs-{wk}",
-        help="Subtitle languages (embedded into the video, or delivered as "
-        "files for the subtitles-only preset).",
+        help=t("ht.subtitles_help"),
     )
     if sub_auto:
-        st.caption("🤖 Auto-generated captions available: " + ", ".join(sub_auto))
+        st.caption(t("ht.subtitles_auto", languages=", ".join(sub_auto)))
 elif subs_wanted and is_collection:
     # Same reasoning as the audio branch above: intent, not availability. The
     # playlist's items were never probed, so without this the video output
@@ -882,7 +899,7 @@ elif subs_wanted and is_collection:
     sub_choices = wanted_langs(include_primary=include_primary)
     if sub_choices:
         subs_langs = st.multiselect(
-            "Subtitles",
+            t("ht.subtitles_label"),
             sub_choices,
             default=remembered.languages(
                 ("video", "processing", "embed_subtitles"),
@@ -891,11 +908,10 @@ elif subs_wanted and is_collection:
             )
             or sub_choices,
             key=f"subs-coll-{wk}",
-            help="Embedded into every video of the playlist when it has them "
-            "— a video without a requested language simply keeps none.",
+            help=t("ht.subtitles_collection_help"),
         )
 elif subs_wanted and analysis and not sub_options:
-    st.caption("💬 No subtitle tracks detected for this source.")
+    st.caption(t("ht.subtitles_none"))
 
 
 # All option sections below are DYNAMIC: each appears only when it applies to a
@@ -906,7 +922,7 @@ elif subs_wanted and analysis and not sub_options:
 sb_preset = "default"
 sb_cut_mode = "keyframes"
 if video_on or audio_on:
-    with st.expander("📊 Advertising and Sponsors"):
+    with st.expander(t("ht.sponsors_section")):
         sb_names = list(SB_PRESETS)
         sb_index = 1  # "default" — sponsors removed out of the box
         if remembered:
@@ -930,10 +946,10 @@ if video_on or audio_on:
                     sb_index = i
                     break
         sb_preset = st.selectbox(
-            "SponsorBlock",
+            t("ht.sponsorblock_label"),
             sb_names,
             index=sb_index,
-            help="Remove or mark sponsored segments (SponsorBlock community data).",
+            help=t("ht.sponsorblock_help"),
         )
         # The same trade-off the Cutting section names, for the cuts
         # SponsorBlock makes — and the same default, stream copy.
@@ -943,23 +959,20 @@ if video_on or audio_on:
             # that one option cuts the file and the other re-encodes all of
             # it, so the labels lead with that and the help gives the measured
             # price.
+            # The labels are resolved HERE, not inside the format_func: a
+            # callback that looks the language up when it happens to run is a
+            # callback that can run outside a script run (a test inspecting the
+            # widget, a rerun mid-change) and answer in the wrong language.
+            cut_quality_labels = {
+                "keyframes": t("ht.cut_quality_keyframes"),
+                "precise": t("ht.cut_quality_precise"),
+            }
             sb_cut_mode = st.radio(
-                "Cut quality",
+                t("ht.cut_quality_label"),
                 ["keyframes", "precise"],
-                format_func=lambda mode: {
-                    "keyframes": "⚡ Fast cut — keeps the original video (recommended)",
-                    "precise": "🐢 Exact cut — re-encodes it all (minutes per video)",
-                }[mode],
+                format_func=lambda mode: cut_quality_labels.get(mode, mode),
                 key=f"sbcut-{wk}",
-                help="Fast cut removes the segments with a stream copy along "
-                "existing keyframes: it finishes at download speed, keeps the "
-                "codecs you asked for, and the end of the video stays clean. "
-                "A boundary may shift to the nearest keyframe (usually under "
-                "a second). Exact cut asks yt-dlp for frame-exact boundaries "
-                "(--force-keyframes-at-cuts), which re-encodes the whole file "
-                "at ffmpeg's default codecs: on a 2 min 4K clip that measured "
-                "17 s of download against 8 min of CPU, and turned AV1/Opus "
-                "into a larger H.264/Vorbis file.",
+                help=t("ht.cut_quality_help"),
             )
 
 
@@ -970,32 +983,30 @@ cut: dict | None = None
 # playlist member is a video like any other (ADR 0019): the same bounds apply
 # to each member.
 if video_on:
-    with st.expander("✂️ Cutting"):
+    with st.expander(t("ht.cutting_section")):
         cut_before = remembered.option("video", "cut") or {}
         cut_on = st.checkbox(
-            "Keep only a segment", value=bool(cut_before), key=f"cut-{wk}"
+            t("ht.cut_enable"), value=bool(cut_before), key=f"cut-{wk}"
         )
         cc1, cc2 = st.columns(2)
         cut_start = cc1.text_input(
-            "Start (HH:MM:SS)",
+            t("ht.cut_start"),
             value=str(cut_before.get("start") or "0"),
             disabled=not cut_on,
         )
         cut_end = cc2.text_input(
-            "End (HH:MM:SS)",
+            t("ht.cut_end"),
             value=str(cut_before.get("end") or ""),
             disabled=not cut_on,
         )
         cut_mode = st.radio(
-            "Cut mode",
+            t("ht.cut_mode_label"),
             ["keyframes", "precise"],
             index=_index_of(["keyframes", "precise"], cut_before.get("mode"), 0),
             horizontal=True,
             disabled=not cut_on,
             key=f"cutmode-{wk}",
-            help="keyframes: fast, lossless stream copy — bounds snap to the "
-            "nearest keyframes. precise: frame-accurate bounds via a re-encode "
-            "of the segment (slower).",
+            help=t("ht.cut_mode_help"),
         )
         if cut_on and cut_end.strip():
             cut = {
@@ -1009,7 +1020,7 @@ if video_on:
 
 max_height, video_codec, container = 1080, "auto", "mkv"
 if video_on:
-    with st.expander("🎥 Video Quality"):
+    with st.expander(t("ht.quality_section")):
         q1, q2, q3 = st.columns(3)
         # Resolutions/codecs are DRAWN FROM THE SOURCE (R5): offer only what the
         # analysis actually detected, so we never propose a 4K/av1 that isn't
@@ -1021,18 +1032,18 @@ if video_on:
             else [2160, 1440, 1080, 720, 480, 360]
         )
         max_height = q1.selectbox(
-            "Max resolution",
+            t("ht.max_resolution"),
             res_options,
             index=_index_of(
                 res_options, remembered.option("video", "selection", "max_height"), 0
             ),
-            help="Detected on this source." if video_heights else None,
+            help=t("ht.resolution_help") if video_heights else None,
         )
         codec_options = ["auto"] + [
             c for c in ("av1", "vp9", "h264") if c in video_codecs_avail
         ]
         video_codec = q2.selectbox(
-            "Preferred codec",
+            t("ht.preferred_codec"),
             codec_options,
             index=_index_of(
                 codec_options,
@@ -1043,7 +1054,7 @@ if video_on:
             ),
         )
         container = q3.selectbox(
-            "Container",
+            t("ht.container"),
             ["mkv", "mp4"],
             index=_index_of(["mkv", "mp4"], remembered.option("video", "container"), 0),
         )
@@ -1053,24 +1064,24 @@ if video_on:
 
 embed_metadata, embed_thumbnail, embed_chapters, embed_subs = True, False, True, True
 if video_on:
-    with st.expander("📦 Video Embedding"):
+    with st.expander(t("ht.embedding_section")):
         processing_before = remembered.option("video", "processing") or {}
 
         def _embedded(key: str, usual: bool) -> bool:
             return bool(processing_before.get(key, usual)) if remembered else usual
 
         embed_metadata = st.checkbox(
-            "Embed metadata", value=_embedded("embed_metadata", True)
+            t("ht.embed_metadata"), value=_embedded("embed_metadata", True)
         )
         embed_thumbnail = st.checkbox(
-            "Embed thumbnail", value=_embedded("embed_thumbnail", False)
+            t("ht.embed_thumbnail"), value=_embedded("embed_thumbnail", False)
         )
         embed_chapters = st.checkbox(
-            "Embed chapters", value=_embedded("embed_chapters", True)
+            t("ht.embed_chapters"), value=_embedded("embed_chapters", True)
         )
         if subs_langs:
             embed_subs = st.checkbox(
-                f"Embed subtitles into the video ({', '.join(subs_langs)})",
+                t("ht.embed_subtitles", languages=", ".join(subs_langs)),
                 value=True,
             )
 
@@ -1079,16 +1090,16 @@ if video_on:
 
 audio_format = "source"
 if audio_on:
-    with st.expander("🎵 Audio"):
+    with st.expander(t("ht.audio_section")):
         audio_format = st.selectbox(
-            "Audio format",
+            t("ht.audio_format"),
             ["source", "opus", "mp3", "m4a"],
             index=_index_of(
                 ["source", "opus", "mp3", "m4a"],
                 remembered.option("audio", "format"),
                 0,
             ),
-            help="'source' keeps the native stream; others transcode.",
+            help=t("ht.audio_format_help"),
         )
 
 
@@ -1096,25 +1107,21 @@ if audio_on:
 
 transcript_format = "json"
 if "transcript" in want:
-    with st.expander("📝 Transcript"):
+    with st.expander(t("ht.transcript_section")):
         transcript_format = st.selectbox(
-            "Transcript format",
+            t("ht.transcript_format"),
             ["json", "text"],
             index=_index_of(
                 ["json", "text"], remembered.option("transcript", "format"), 0
             ),
-            help="JSON is the canonical form and carries the timings. `text` "
-            "is the readable derivation — the better file to keep beside a "
-            "video in your library. Asking for `text` while also asking for a "
-            "summary makes the engine build its own timed transcript as well, "
-            "which on a source without subtitles means transcribing twice.",
+            help=t("ht.transcript_format_help"),
         )
 
 summary_len = "medium"
 if "summary" in want:
-    with st.expander("🧠 Summary"):
+    with st.expander(t("ht.summary_section")):
         summary_len = st.selectbox(
-            "Summary length",
+            t("ht.summary_length"),
             ["short", "medium", "long"],
             index=_index_of(
                 ["short", "medium", "long"], remembered.option("summary", "length"), 1
@@ -1130,22 +1137,21 @@ if "summary" in want:
 # all but needs cookies, and the flag tells the user the one step left.
 _cookie_metas = [credential_files.get(c) for c in credentials]
 if any(m and m.get("exists") for m in _cookie_metas):
-    _cookie_flag = " · ✅ ready"
+    _cookie_flag = t("ht.cookies_ready")
 elif any(_cookie_metas):
-    _cookie_flag = " · ⚠️ cookies file missing"
+    _cookie_flag = t("ht.cookies_missing")
 else:
     _cookie_flag = ""
-with st.expander(f"🍪 Cookie Management{_cookie_flag}"):
+with st.expander(t("ht.cookies_section", flag=_cookie_flag)):
     credential = st.selectbox(
-        "Authentication",
+        t("ht.auth_label"),
         ["none", *credentials],
         index=_index_of(
             ["none", *credentials],
             (remembered.source.get("auth") or {}).get("credential_id"),
             0,
         ),
-        help="Server-side cookie credentials (CONTENT_CREDENTIALS). "
-        "Needed for age-restricted or private videos.",
+        help=t("ht.auth_help"),
     )
     # Kill the classic doubt — "are my cookies actually in use?" — with the
     # file's own facts: which path, whether it is there, when it was last
@@ -1154,43 +1160,40 @@ with st.expander(f"🍪 Cookie Management{_cookie_flag}"):
         _meta = credential_files.get(_cred_id)
         if _meta and not _meta.get("exists"):
             st.caption(
-                f"⚠️ `{_cred_id}` is declared but its file is not there yet — "
-                f"drop your cookies export at `{_meta['path']}` (host side: "
-                "the `./config` folder), then run `make docker-update`. "
-                "Cookies unlock age-restricted videos and make YouTube "
-                "downloads more reliable — see config/README.md."
+                t(
+                    "ht.cookies_declared_missing",
+                    credential=_cred_id,
+                    path=_meta["path"],
+                )
             )
     if credential != "none":
         meta = credential_files.get(credential)
         if meta and meta.get("exists"):
             st.caption(
-                f"✅ Will be used for this download: `{meta['path']}` · "
-                f"updated {ago(meta.get('updated_at'))}"
+                t(
+                    "ht.cookies_will_be_used",
+                    path=meta["path"],
+                    when=ago(meta.get("updated_at")),
+                )
             )
     if not credentials:
-        st.caption(
-            "No credentials configured on the server — to add YouTube "
-            "cookies, see config/README.md."
-        )
+        st.caption(t("ht.cookies_none"))
 
 
 # --- ⚙️ Advanced (yt-dlp) ------------------------------------------------------
 
-with st.expander("⚙️ Advanced"):
+with st.expander(t("ht.advanced_section")):
     extra_args_raw = st.text_input(
-        "Extra yt-dlp arguments",
+        t("ht.extra_args"),
         value=shlex.join(remembered.source.get("provider_args") or []),
         key=f"extra-{wk}",
-        help="Power users only — forwarded to yt-dlp, e.g. "
-        "--limit-rate 2M --proxy http://host:8080. Only network, geo, "
-        "pacing and user-agent flags are accepted; the server rejects "
-        "everything else.",
+        help=t("ht.extra_args_help"),
     )
 try:
     provider_args = shlex.split(extra_args_raw) if extra_args_raw.strip() else []
 except ValueError:
     provider_args = []
-    st.warning("Could not parse the extra arguments (check your quotes).")
+    st.warning(t("ht.extra_args_unparseable"))
 
 
 # --- build the GenerationRequest -----------------------------------------------
@@ -1294,9 +1297,9 @@ def build_request() -> dict:
 request_body = build_request()
 
 download_label = (
-    f"🎬  Download playlist ({len(entries)} videos)"
+    t("ht.download_playlist_button", count=len(entries))
     if is_collection
-    else "🎬  Download"
+    else t("ht.download_button")
 )
 if st.button(
     download_label,
@@ -1314,11 +1317,11 @@ if st.button(
         # A quota refusal is the one place this surface has more to say than
         # the engine does; everything else is the engine's own sentence.
         if not quota.render_streamlit_wall(exc, config):
-            st.error(f"Request refused: {exc.message}")
+            st.error(t("ht.submit_refused", message=exc.message))
     except Exception as exc:  # noqa: BLE001
-        st.error(f"Submit failed: {exc}")
+        st.error(t("ht.submit_failed", error=exc))
 
-with st.expander("🧾 GenerationRequest (what will be sent)"):
+with st.expander(t("ht.request_preview")):
     st.json(request_body)
 
 
@@ -1333,7 +1336,7 @@ def render_job() -> None:
     try:
         job = client.job(job_id)
     except Exception as exc:  # noqa: BLE001
-        st.error(f"Job not found: {exc}")
+        st.error(t("ht.job_not_found", error=exc))
         return
 
     status = job["status"]
@@ -1358,12 +1361,15 @@ def render_job() -> None:
 
     st.divider()
     st.markdown(
-        f"### {icon} <span style='color:{color}'>{status}</span> "
+        f"### {icon} <span style='color:{color}'>{job_label(status)}</span> "
         f"<span style='color:#5b6472;font-size:.8rem'>· {job_id[:16]}</span>",
         unsafe_allow_html=True,
     )
     if steps:
-        st.progress(done / len(steps), text=f"{done}/{len(steps)} steps")
+        st.progress(
+            done / len(steps),
+            text=t("ht.steps_progress", done=done, total=len(steps)),
+        )
         for s in steps:
             si = display(s["status"])[0]
             # A collection member announces itself as "3/6 · Title" (the API
@@ -1373,9 +1379,12 @@ def render_job() -> None:
                 name = f"{ordinal} · {s['item_title']}"
             else:
                 name = s["step_id"]
-            detail = s["status"]
+            detail = job_label(s["status"])
             if s["status"] == "running" and s["step_id"] in percent:
-                detail = f"downloading · {percent[s['step_id']]:.0f}%"
+                detail = t(
+                    "ht.step_downloading",
+                    percent=f"{percent[s['step_id']]:.0f}",
+                )
             err = f" · {s['error']}" if s["error"] else ""
             st.markdown(
                 f"<div class='step'>{si} {name} "
@@ -1390,7 +1399,7 @@ def render_job() -> None:
     except Exception:  # noqa: BLE001
         artifacts = []
     if artifacts:
-        st.markdown("**Artifacts**")
+        st.markdown(t("ht.artifacts"))
         for a in artifacts:
             reused = a["provenance"]["attributes"].get("reused_from_artifact_id")
             cols = st.columns([3, 2, 2])
@@ -1398,24 +1407,26 @@ def render_job() -> None:
             cols[0].markdown(f"`{shown}`" + (" ♻" if reused else ""))
             detail = f"{a['media_type']} · {a['size_bytes'] / 1024:.1f} KiB"
             if a.get("delivered_path"):
-                detail += f" · in your library: {a['delivered_path']}"
+                detail += t("ht.in_your_library", path=a["delivered_path"])
             cols[1].caption(detail)
             cols[2].link_button(
-                "⬇︎ download",
+                t("ht.download_artifact"),
                 f"{PUBLIC_API_URL}/api/v1/artifacts/{a['id']}/content",
                 use_container_width=True,
             )
     elif status in TERMINAL:
-        st.caption("no artifacts")
+        st.caption(t("ht.no_artifacts"))
 
     a1, a2 = st.columns(2)
-    if a1.button("Cancel", disabled=status in TERMINAL, use_container_width=True):
+    if a1.button(t("ht.cancel"), disabled=status in TERMINAL, use_container_width=True):
         client.cancel(job_id)
-    if a2.button("Retry", disabled=status not in TERMINAL, use_container_width=True):
+    if a2.button(
+        t("ht.retry"), disabled=status not in TERMINAL, use_container_width=True
+    ):
         st.session_state.job_id = client.retry(job_id)["job_id"]
         st.rerun(scope="app")
 
-    with st.expander("Events"):
+    with st.expander(t("ht.events")):
         # step.progress fires every few seconds per step; dumping each one
         # buries the eight events that matter. They are summarized to a count —
         # the live percentage is already on the step lines above.
@@ -1426,16 +1437,16 @@ def render_job() -> None:
             for e in shown
         ]
         if skipped:
-            lines.append(f"    … {skipped} step.progress events (shown live above)")
+            lines.append(t("ht.events_skipped", count=skipped))
         st.code("\n".join(lines) or "—")
 
-    with st.expander("Logs (yt-dlp / ffmpeg output, per step)"):
+    with st.expander(t("ht.logs_section")):
         try:
             logs = client.logs(job_id).get("logs", {})
         except Exception:  # noqa: BLE001
             logs = {}
         if not logs:
-            st.caption("no logs yet")
+            st.caption(t("ht.no_logs"))
         for step_id, streams in logs.items():
             st.markdown(f"**{step_id}**")
             for stream_name in ("stdout", "stderr"):

@@ -20,6 +20,8 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+from content_sdk.i18n import t
+
 #: A capability the source can yield. `unknown` is included on purpose: the
 #: engine could not decide before execution, and the honest answer is to let the
 #: attempt happen rather than hide the option.
@@ -92,6 +94,21 @@ def capability_display(status: str) -> tuple[str, str]:
     return CAPABILITY_STATUS_DISPLAY.get(status, UNKNOWN_STATUS_DISPLAY)
 
 
+def job_label(status: str) -> str:
+    """A job or step status, in the surface's language.
+
+    The status itself stays the contract word — this only decides how it is
+    *read*. A status this build has never heard of falls through to the raw
+    value rather than to a placeholder: showing `restoring` is more use than
+    showing nothing, and docs/contract.md §9 promises new values are additive.
+    """
+    if not status:
+        return ""
+    key = f"status.job.{status}"
+    label = t(key)
+    return status if label == key else label
+
+
 def ago(iso: str | None) -> str:
     """``"2026-08-07T10:00:00+00:00"`` → ``"2.1d ago"``; ``None`` → ``"—"``.
 
@@ -100,7 +117,7 @@ def ago(iso: str | None) -> str:
     status tables: three apps, one definition.
     """
     if not iso:
-        return "—"
+        return t("status.ago_unknown")
     try:
         ts = datetime.fromisoformat(iso.replace("Z", "+00:00"))
         if ts.tzinfo is None:
@@ -109,9 +126,9 @@ def ago(iso: str | None) -> str:
     except ValueError:
         return iso
     if delta < 60:
-        return f"{delta:.0f}s ago"
+        return t("status.ago_seconds", value=f"{delta:.0f}")
     if delta < 3600:
-        return f"{delta / 60:.0f}m ago"
+        return t("status.ago_minutes", value=f"{delta / 60:.0f}")
     if delta < 86400:
-        return f"{delta / 3600:.1f}h ago"
-    return f"{delta / 86400:.1f}d ago"
+        return t("status.ago_hours", value=f"{delta / 3600:.1f}")
+    return t("status.ago_days", value=f"{delta / 86400:.1f}")
