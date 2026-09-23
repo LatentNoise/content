@@ -152,19 +152,6 @@ console are not listed there because they always run.
 | `CONTENT_VO_FIRST` | `true` | Original voice ahead of the primary language in the track order |
 | `CONTENT_LANGUAGE_PRIMARY_INCLUDED_IN_SUBTITLES` | `true` (`.env.example`: `false`) | Whether the primary language is pre-checked among subtitles too. `false` excludes **only** the primary — the secondaries keep pre-filling, because someone fluent in `fr` does not need `fr` subtitles but wants the `en` ones |
 | `CONTENT_UI_LANGUAGE` | `en` | The language the **interface** is written in (`en` or `fr`) — read by the UI containers, never by the engine. See below |
-
-A worked example of the four together — what a given source ends up showing —
-is in [HomeTube's README](../../apps/web-hometube/README.md#language-preferences-by-example).
-
-`CONTENT_UI_LANGUAGE` answers a different question from the four above: not
-which tracks a file carries, but which language the **page** is written in. It
-changes nothing about what gets produced, and it is only a default — a picker in
-the sidebar overrides it per person, and `?lang=fr` on the address sets it for
-that session, so a link can carry the language. A region tag (`fr-CH`) resolves
-to `fr`; a value no build knows falls back to English rather than refusing to
-start. Today it reaches **HomeTube**; Studio and the Console are still
-English-only, and the shipped compose file deliberately does not pass it to
-them — a half-translated page reads worse than an English one.
 | **🧠 Providers & LLM runners** | | |
 | `CONTENT_YTDLP_EXTRA_ARGS` | — | The operator's yt-dlp args (trusted), added to every call |
 | `CONTENT_OLLAMA_URL` / `_MODEL` | host / auto | The **local** LLM for `summary`, `translation` and derived `chapters`. Empty model = the first installed one, resolved deterministically and recorded in provenance |
@@ -188,6 +175,22 @@ them — a half-translated page reads worse than an English one.
 | `CONTENT_RELEASE_CHECK_TTL_HOURS` | `6` | How long a release lookup is cached |
 | `CONTENT_YTDLP_MAX_AGE_DAYS` | `0` (off) | Opt-in: age at which yt-dlp is flagged stale in the UIs |
 | `CONTENT_UI_STATE_DIR` | *(temp dir)* | Where a UI remembers dismissed notifications |
+
+### Language preferences, and the one that is not about the media
+
+A worked example of the four language variables together — what a given source
+ends up showing — is in
+[HomeTube's README](../../apps/web-hometube/README.md#language-preferences-by-example).
+
+`CONTENT_UI_LANGUAGE` answers a different question from those four: not which
+tracks a file carries, but which language the **page** is written in. It changes
+nothing about what gets produced, and it is only a default — a picker in the
+sidebar overrides it per person, and `?lang=fr` on the address sets it for that
+session, so a link can carry the language. A region tag (`fr-CH`) resolves to
+`fr`; a value no build knows falls back to English rather than refusing to
+start. Today it reaches **HomeTube**; Studio and the Console are still
+English-only, and the shipped compose file deliberately does not pass it to
+them — a half-translated page reads worse than an English one.
 
 ## Delivery (the destination folder)
 
