@@ -314,6 +314,11 @@ wheels:  ## Build the SDK + CLI + MCP wheels for a release (dist/)
 # The last step of a release, and the only one that asks the deployment itself
 # rather than the repository. ENGINE is required on purpose: there is no
 # default worth guessing, and pointing this at the wrong box proves nothing.
+#
+# CONTENT_API_KEY is read from the environment by the script itself, never
+# passed as a flag here: make echoes its recipes, so a key on this line would
+# be printed to the terminal and into any CI log. An engine in token mode
+# refuses three of the five checks without it.
 verify-deployment:  ## End-to-end checks against a RUNNING engine (ENGINE=http://host:8010)
 	@test -n "$(ENGINE)" || { \
 	  echo "ENGINE is required, e.g. make verify-deployment ENGINE=http://192.0.2.10:8010"; \

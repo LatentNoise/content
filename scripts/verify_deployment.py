@@ -14,6 +14,16 @@ whether that engine is one you would hand to somebody.
     make verify-deployment ENGINE=http://192.0.2.10:8010
     python3 scripts/verify_deployment.py --engine http://... --expect-version 0.6.8
 
+An engine running `CONTENT_AUTH_MODE=token` answers 401 to an anonymous
+caller, so three of the five checks below need a key — which is to say the
+check written because "green on a laptop said nothing" was blind on the
+deployment that matters most. Give it one, by environment or by flag:
+
+    CONTENT_API_KEY=ck_… make verify-deployment ENGINE=https://api.example.com
+
+The environment is the better door: a key on a command line is read by every
+other process on the box and kept in the shell's history.
+
 Standard library only, so it runs from a laptop, a runner, or the box itself.
 
 Every check is named for the claim it makes, and a failure prints what was
@@ -25,6 +35,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import time
 import urllib.error
@@ -36,6 +47,22 @@ TIMEOUT = 30
 # one and a flaky check is worse than no check.
 JOB_TIMEOUT = 180
 
+# A public name usually sits behind a CDN, and Cloudflare answers HTTP 403
+# (error 1010) to urllib's default `Python-urllib/3.x` while letting curl
+# through — so the release check failed at the edge, having tested nothing.
+# This is not evasion: it is the same claim any browser makes, sent so the
+# request reaches the engine we are here to verify.
+USER_AGENT = (
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36"
+)
+
+# Set once in main() from --api-key or CONTENT_API_KEY. A module-level header
+# map rather than an argument threaded through every check: this is a one-shot
+# CLI, and the alternative is five signatures carrying a value none of them
+# reads.
+_HEADERS: dict[str, str] = {}
+
 
 class Failure(Exception):
     """A check that did not hold. The message is the report."""
@@ -44,10 +71,13 @@ class Failure(Exception):
 def _call(engine: str, path: str, payload: dict | None = None, method: str = ""):
     url = f"{engine.rstrip('/')}{path}"
     data = json.dumps(payload).encode() if payload is not None else None
+    headers = dict(_HEADERS)
+    if data:
+        headers["Content-Type"] = "application/json"
     request = urllib.request.Request(
         url,
         data=data,
-        headers={"Content-Type": "application/json"} if data else {},
+        headers=headers,
         method=method or ("POST" if data else "GET"),
     )
     try:
@@ -55,6 +85,13 @@ def _call(engine: str, path: str, payload: dict | None = None, method: str = "")
             body = response.read()
     except urllib.error.HTTPError as exc:
         detail = exc.read().decode(errors="replace")[:400]
+        if exc.code in (401, 403) and "Authorization" not in _HEADERS:
+            raise Failure(
+                f"{method or 'GET'} {path} answered HTTP {exc.code} and this run "
+                f"carries no credential — an engine in CONTENT_AUTH_MODE=token "
+                f"refuses anonymous callers. Re-run with CONTENT_API_KEY set. "
+                f"({detail})"
+            )
         raise Failure(f"{method or 'GET'} {path} answered HTTP {exc.code}: {detail}")
     except (urllib.error.URLError, OSError, TimeoutError) as exc:
         raise Failure(f"{url} is unreachable: {exc}")
@@ -229,11 +266,29 @@ def main() -> int:
     parser.add_argument(
         "--expect-version", default="", help="fail unless the engine serves this"
     )
+    parser.add_argument(
+        "--api-key",
+        default="",
+        help=(
+            "API key for an engine that requires one. Prefer the CONTENT_API_KEY "
+            "environment variable: a key on the command line is visible to every "
+            "process on the machine."
+        ),
+    )
     args = parser.parse_args()
+
+    _HEADERS["User-Agent"] = USER_AGENT
+    api_key = args.api_key or os.environ.get("CONTENT_API_KEY", "")
+    if api_key:
+        _HEADERS["Authorization"] = f"Bearer {api_key}"
 
     print(f"Verifying {args.engine}")
     if args.expect_version:
         print(f"Expecting version {args.expect_version}")
+    # Said out loud, because the difference decides what these checks prove:
+    # three of the five cannot run against a token-mode engine without a key,
+    # and a run that quietly skipped them would read as a pass.
+    print("Authenticated" if api_key else "Anonymous (no CONTENT_API_KEY set)")
     print()
 
     failures = []
