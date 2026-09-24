@@ -188,9 +188,9 @@ nothing about what gets produced, and it is only a default — a picker in the
 sidebar overrides it per person, and `?lang=fr` on the address sets it for that
 session, so a link can carry the language. A region tag (`fr-CH`) resolves to
 `fr`; a value no build knows falls back to English rather than refusing to
-start. Today it reaches **HomeTube**; Studio and the Console are still
-English-only, and the shipped compose file deliberately does not pass it to
-them — a half-translated page reads worse than an English one.
+start. Today it reaches **HomeTube** and **Studio**; the Console is still
+English-only, and the shipped compose file deliberately does not pass it
+there — a half-translated page reads worse than an English one.
 
 ## Delivery (the destination folder)
 

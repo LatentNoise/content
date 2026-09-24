@@ -61,8 +61,9 @@ def test_french_actually_differs_from_english():
     """A key copied verbatim from English is an untranslated one.
 
     The exceptions are words French does not translate — the product's own
-    names, the em dash placeholder — and they are listed rather than inferred,
-    so adding one is a deliberate act.
+    names, the em dash placeholder, and on Studio the vocabulary of the
+    contract itself — and they are listed rather than inferred, so adding one
+    is a deliberate act.
     """
     same_in_both = {
         "ht.api_docs",
@@ -72,6 +73,13 @@ def test_french_actually_differs_from_english():
         "ht.sponsorblock_label",
         "ht.tech_auto_suffix",
         "status.ago_unknown",
+        "studio.api_docs",
+        "studio.opt.codec",
+        "studio.opt.format",
+        "studio.opt.sponsorblock",
+        "studio.source_type",
+        "studio.sources_section",
+        "studio.url_label",
     }
     copied = {
         key

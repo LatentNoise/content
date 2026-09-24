@@ -327,4 +327,83 @@ TRANSLATIONS: dict[str, str] = {
     ),
     "ht.logs_section": "Logs (sortie yt-dlp / ffmpeg, par étape)",
     "ht.no_logs": "aucun log pour l'instant",
+    # === Content Studio ===
+    # Les *jetons* du contrat — types de source et de sortie, formats, codecs,
+    # conteneurs, statuts de capacité, `optimize_for` — restent tels que le
+    # moteur les écrit, dans toutes les langues. Seules les phrases autour
+    # d'eux sont traduites ici.
+    "studio.tagline": "toutes les sources, toutes les sorties — le contrat complet",
+    # pourquoi une sortie n'est pas proposée
+    "studio.reason.unavailable": "indisponible pour cette source",
+    "studio.reason.missing_material": "cette source n'a pas de {materials}",
+    "studio.reason.material_fallback": "élément nécessaire",
+    "studio.reason.implementation_unavailable": "nécessite un exécuteur ({operations})",
+    "studio.reason.policy_restricted": "bloqué par la politique du serveur",
+    "studio.reason.generic": "indisponible",
+    # le moteur, dans la barre latérale
+    "studio.backend_unreachable": "⚠️ Moteur injoignable à {url} — {error}",
+    "studio.backend_online": "🟢 moteur v{version}",
+    "studio.backend_offline": "🔴 moteur hors ligne",
+    "studio.api_docs": "API · /docs",
+    "studio.recent_jobs": "Tâches récentes",
+    # les sources
+    "studio.sources_section": "1 · Sources",
+    "studio.how_many_sources": "Combien de sources ?",
+    "studio.source_type": "Type",
+    "studio.url_label": "URL",
+    "studio.auth_label": "Authentification",
+    "studio.file_location_label": "Où se trouve-t-il ?",
+    "studio.file_on_device": "Depuis cet appareil",
+    "studio.file_on_server": "Sur le serveur",
+    "studio.path_label": "Chemin (sous une racine d'entrée autorisée)",
+    "studio.choose_files": (
+        "Choisir un ou plusieurs fichiers — {megabytes} Mo maximum chacun"
+    ),
+    "studio.text_content": "Contenu texte",
+    "studio.uploading": "Envoi de {filename} au moteur…",
+    "studio.upload_failed": "Échec de l'envoi : {error}",
+    # leur analyse
+    "studio.analyze_button": "🔍 Analyser les sources",
+    "studio.analyzing": "Analyse en cours…",
+    "studio.analyze_refused": "Analyse refusée : {message}",
+    "studio.analyze_failed": "L'analyse a échoué : {error}",
+    "studio.untitled": "(sans titre)",
+    "studio.tech_up_to": "🎞️ jusqu'à {height}p{codecs}",
+    # les sorties
+    "studio.outputs_section": "2 · Sorties",
+    "studio.outputs_hint": (
+        "Activez les sorties voulues ; chacune est produite à partir d'une source."
+    ),
+    "studio.output_blocked": "⛔️ aucune source ne peut produire ceci — {reasons}",
+    "studio.from_source": "depuis la source",
+    "studio.status_on_source": "↳ {status} sur {source}",
+    # leurs options
+    "studio.opt.max_height": "hauteur max",
+    "studio.opt.codec": "codec",
+    "studio.opt.container": "conteneur",
+    "studio.opt.sponsorblock": "sponsorblock",
+    "studio.opt.format": "format",
+    "studio.opt.languages": "langues (séparées par des virgules)",
+    "studio.opt.language": "langue",
+    "studio.opt.length": "longueur",
+    "studio.opt.target_language": "langue cible",
+    "studio.opt.source_language": "langue source",
+    # préférences et contraintes
+    "studio.preferences_section": "Préférences et contraintes",
+    "studio.allow_cloud": "autoriser les fournisseurs cloud",
+    "studio.reuse_existing": "reuse_existing (réutiliser l'existant)",
+    # le lancement
+    "studio.launch_section": "3 · Lancement",
+    "studio.request_preview": "Aperçu de la GenerationRequest",
+    "studio.submit_button": "🚀 Lancer la tâche",
+    "studio.submit_refused": "Demande refusée : {message}",
+    "studio.submit_failed": "Échec de l'envoi : {error}",
+    # le suivi de la tâche
+    "studio.job_not_found": "Tâche introuvable : {error}",
+    "studio.steps_progress": "{done}/{total} étapes",
+    "studio.artifacts": "**Artefacts**",
+    "studio.download_artifact": "⬇︎ télécharger",
+    "studio.no_artifacts": "aucun artefact",
+    "studio.cancel": "Annuler",
+    "studio.retry": "Relancer",
 }

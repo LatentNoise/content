@@ -210,6 +210,9 @@ services:
       - TZ=${TZ:-Europe/Paris}
       - CONTENT_API_URL=http://content:8000
       - CONTENT_PUBLIC_API_URL=http://localhost:${CONTENT_PORT:-8010}
+      # The language the interface speaks (en|fr); each visitor may
+      # still pick their own in the sidebar.
+      - CONTENT_UI_LANGUAGE=${CONTENT_UI_LANGUAGE:-en}
     ports:
       - "${STUDIO_PORT:-8502}:8501"
     depends_on:

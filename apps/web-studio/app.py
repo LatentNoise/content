@@ -9,6 +9,13 @@ business logic here: the back-end validates, plans and executes.
 
 Its sibling ``frontend/`` (HomeTube) is a specialized skin of the same engine;
 both speak the same GenerationRequest contract.
+
+Every sentence the visitor reads comes from ``content_sdk.i18n``. What stays in
+English here is what is *not* a sentence: the contract's own tokens — source
+types, output types, formats, codecs, containers, capability statuses. Studio
+exists to show the public contract as it is, so translating its vocabulary
+would hide the very thing this surface is for; the words *around* the tokens
+are what a French reader needs.
 """
 
 import os
@@ -20,8 +27,9 @@ from content_sdk.compat import (
     ContentClient,
     streamlit_visitor_headers,
 )
+from content_sdk.i18n import language_selector, t
 from content_sdk.signin import public_api_url, render_identity, render_sidebar
-from content_sdk.status import better_status, display, is_producible
+from content_sdk.status import better_status, display, is_producible, job_label
 from content_sdk.uploads import upload_once
 
 API_URL = os.getenv("CONTENT_API_URL", "http://localhost:8000")
@@ -94,15 +102,24 @@ def _capability_output(capability: dict) -> str:
 
 def _reason_text(reason: dict | None) -> str:
     if not reason:
-        return "not available for this source"
+        return t("studio.reason.unavailable")
     code = reason.get("code", "")
     if code == "missing_material":
-        return f"source has no {', '.join(reason.get('missing_materials', [])) or 'material'}"
+        materials = ", ".join(reason.get("missing_materials", []))
+        return t(
+            "studio.reason.missing_material",
+            materials=materials or t("studio.reason.material_fallback"),
+        )
     if code == "implementation_unavailable":
-        return f"needs a runner ({', '.join(reason.get('missing_operations', []))})"
+        return t(
+            "studio.reason.implementation_unavailable",
+            operations=", ".join(reason.get("missing_operations", [])),
+        )
     if code == "policy_restricted":
-        return "blocked by policy"
-    return code or "not available"
+        return t("studio.reason.policy_restricted")
+    # An error code the engine invented after this build: show it raw rather
+    # than inventing a sentence for it.
+    return code or t("studio.reason.generic")
 
 
 st.set_page_config(page_title="Content Studio", page_icon="🧩", layout="wide")
@@ -176,22 +193,29 @@ try:
 except Exception as exc:  # noqa: BLE001
     # Not a refusal: the gate above already settled identity, and these two
     # routes carry no owner. Anything failing here is the engine itself.
-    st.error(f"⚠️ Back-end unreachable at {API_URL} — {exc}")
+    st.error(t("studio.backend_unreachable", url=API_URL, error=exc))
 
 with st.sidebar:
     st.markdown("### 🧩 Content Studio")
     render_sidebar(visitor, client, surface="studio")
-    st.caption(f"🟢 back-end v{version}" if backend_ok else "🔴 back-end offline")
+    # The picker sits in the sidebar rather than the form: it changes the whole
+    # page, not one field, and it must stay reachable once the form is long.
+    language_selector()
+    st.caption(
+        t("studio.backend_online", version=version)
+        if backend_ok
+        else t("studio.backend_offline")
+    )
     # The licence and source link, from the instance (never hard-coded).
     legal.render_streamlit_footer(client)
     if backend_ok:
-        st.caption(f"[API · /docs]({PUBLIC_API_URL}/docs)")
+        st.caption(f"[{t('studio.api_docs')}]({PUBLIC_API_URL}/docs)")
         # Before the refusal, not only after it: a limit someone cannot watch
         # themselves approach is a trap rather than a rule (ADR 0036).
         st.divider()
         quota.render_streamlit_usage(client)
     st.divider()
-    st.caption("Recent jobs")
+    st.caption(t("studio.recent_jobs"))
     try:
         for row in client.list_jobs(limit=12):
             icon = display(row["status"])[0]
@@ -208,7 +232,7 @@ with st.sidebar:
 
 st.markdown(
     "<div class='cs-brand'><div class='name'>Content Studio</div>"
-    "<div class='sub'>every source, every output — the full contract</div></div>",
+    f"<div class='sub'>{t('studio.tagline')}</div></div>",
     unsafe_allow_html=True,
 )
 
@@ -222,8 +246,8 @@ notifications.render_streamlit(client, app_version=__version__)
 
 # --- sources -------------------------------------------------------------------
 
-st.subheader("1 · Sources")
-n_sources = st.number_input("How many sources?", 1, 8, 1, key="n_sources")
+st.subheader(t("studio.sources_section"))
+n_sources = st.number_input(t("studio.how_many_sources"), 1, 8, 1, key="n_sources")
 
 
 def _upload_once(index, picked) -> str:
@@ -234,7 +258,7 @@ def _upload_once(index, picked) -> str:
     same file would be re-sent each time the user touched any other widget.
     """
     try:
-        with st.spinner(f"Sending {picked.name} to the engine…"):
+        with st.spinner(t("studio.uploading", filename=picked.name)):
             return upload_once(
                 st.session_state.setdefault("uploads", {}),
                 index,
@@ -245,44 +269,60 @@ def _upload_once(index, picked) -> str:
                 ),
             )
     except Exception as exc:  # noqa: BLE001 — surfaced in the UI, not swallowed
-        st.error(f"Upload failed: {exc}")
+        st.error(t("studio.upload_failed", error=exc))
         return ""
 
 
 def source_editor(i: int) -> list[dict]:
     sid = f"s{i + 1}"
     cols = st.columns([1, 3])
-    stype = cols[0].selectbox("Type", SOURCE_TYPES, key=f"stype-{i}")
+    # The options stay the contract's own discriminators (`url`/`file`/`text`):
+    # they are what goes into the request, and Studio is where the contract is
+    # meant to show through.
+    stype = cols[0].selectbox(t("studio.source_type"), SOURCE_TYPES, key=f"stype-{i}")
     src: dict = {"id": sid, "type": stype}
     if stype == "url":
-        uri = cols[1].text_input("URL", key=f"uri-{i}", placeholder="https://…")
+        uri = cols[1].text_input(
+            t("studio.url_label"), key=f"uri-{i}", placeholder="https://…"
+        )
         src["uri"] = uri.strip()
         if credentials:
-            cred = cols[1].selectbox("Auth", ["none", *credentials], key=f"cred-{i}")
+            cred = cols[1].selectbox(
+                t("studio.auth_label"), ["none", *credentials], key=f"cred-{i}"
+            )
             if cred != "none":
                 src["auth"] = {"credential_id": cred}
     elif stype == "file":
-        # Two ways to name a file, one concept. "From this device" uploads the
-        # bytes (ADR 0020) — Studio has no shared filesystem with the engine,
-        # so a path typed here would mean nothing on the other side. The user
-        # never meets the word "upload" in the contract sense.
+        # Two ways to name a file, one concept. `device` uploads the bytes
+        # (ADR 0020) — Studio has no shared filesystem with the engine, so a
+        # path typed here would mean nothing on the other side. The user never
+        # meets the word "upload" in the contract sense.
+        #
+        # The options are stable codes and the labels are resolved HERE, not
+        # inside the `format_func`: a callback that looks the language up when
+        # it happens to fire can fire outside a script run and answer in the
+        # wrong language (found on HomeTube, 22/09). Codes also keep the
+        # branch below from depending on a translated sentence.
+        where_labels = {
+            "device": t("studio.file_on_device"),
+            "server": t("studio.file_on_server"),
+        }
         where = cols[1].radio(
-            "Where is it?",
-            ["From this device", "On the server"],
+            t("studio.file_location_label"),
+            list(where_labels),
+            format_func=lambda code: where_labels.get(code, code),
             key=f"floc-{i}",
             horizontal=True,
         )
-        if where == "On the server":
-            path = cols[1].text_input(
-                "Path (under an allowed input root)", key=f"path-{i}"
-            )
+        if where == "server":
+            path = cols[1].text_input(t("studio.path_label"), key=f"path-{i}")
             src["path"] = path.strip()
         else:
             # Several files at once become several sources — which composes
             # with `each_item` for free rather than needing a multi-file
             # pipeline of its own.
             picked = cols[1].file_uploader(
-                f"Choose file(s) — up to {MAX_UPLOAD_MB} MB each",
+                t("studio.choose_files", megabytes=MAX_UPLOAD_MB),
                 key=f"upl-{i}",
                 label_visibility="collapsed",
                 accept_multiple_files=True,
@@ -301,7 +341,9 @@ def source_editor(i: int) -> list[dict]:
             if uploads:
                 return uploads
     else:  # text
-        content = cols[1].text_area("Text content", key=f"text-{i}", height=100)
+        content = cols[1].text_area(
+            t("studio.text_content"), key=f"text-{i}", height=100
+        )
         src["content"] = content
     return [src]
 
@@ -317,8 +359,12 @@ valid_sources = [
 ]
 source_ids = [s["id"] for s in valid_sources]
 
-if backend_ok and valid_sources and st.button("🔍 Analyze sources", type="secondary"):
-    with st.spinner("Analyzing…"):
+if (
+    backend_ok
+    and valid_sources
+    and st.button(t("studio.analyze_button"), type="secondary")
+):
+    with st.spinner(t("studio.analyzing")):
         try:
             st.session_state.analysis = client.analyze(valid_sources)
             # Resolved capabilities are the server's answer to "what can I do
@@ -328,11 +374,11 @@ if backend_ok and valid_sources and st.button("🔍 Analyze sources", type="seco
             st.session_state.analysis = None
             st.session_state.capabilities = None
             if not quota.render_streamlit_wall(exc, config):
-                st.error(f"Analysis refused: {exc.message}")
+                st.error(t("studio.analyze_refused", message=exc.message))
         except Exception as exc:  # noqa: BLE001
             st.session_state.analysis = None
             st.session_state.capabilities = None
-            st.error(f"Analysis failed: {exc}")
+            st.error(t("studio.analyze_failed", error=exc))
 
 analysis = st.session_state.analysis
 resolved = st.session_state.get("capabilities") or {}
@@ -371,14 +417,18 @@ if analysis:
             if res.get("duration_seconds"):
                 meta.append(f"⏱ {int(res['duration_seconds'])}s")
             st.markdown(
-                f"**{sid}** · {res.get('title') or '(untitled)'} — " + " · ".join(meta)
+                f"**{sid}** · {res.get('title') or t('studio.untitled')} — "
+                + " · ".join(meta)
             )
             tech = []
             if media.get("video_heights"):
                 codecs = ", ".join(media.get("video_codecs", []))
                 tech.append(
-                    f"🎞️ up to {max(media['video_heights'])}p"
-                    + (f" · {codecs}" if codecs else "")
+                    t(
+                        "studio.tech_up_to",
+                        height=max(media["video_heights"]),
+                        codecs=f" · {codecs}" if codecs else "",
+                    )
                 )
             if media.get("audio_languages"):
                 tech.append(f"🎙️ {', '.join(media['audio_languages'])}")
@@ -396,8 +446,8 @@ if analysis:
 
 # --- outputs -------------------------------------------------------------------
 
-st.subheader("2 · Outputs")
-st.caption("Enable the outputs you want; each is produced from a source.")
+st.subheader(t("studio.outputs_section"))
+st.caption(t("studio.outputs_hint"))
 
 
 def output_options(otype: str, idx: int, media: dict | None = None) -> dict:
@@ -417,7 +467,7 @@ def output_options(otype: str, idx: int, media: dict | None = None) -> dict:
         ]
         opts["selection"] = {
             "max_height": c[0].selectbox(
-                "max height", heights, index=0, key=f"vh-{idx}"
+                t("studio.opt.max_height"), heights, index=0, key=f"vh-{idx}"
             )
         }
         avail = media.get("video_codecs") or []
@@ -426,57 +476,72 @@ def output_options(otype: str, idx: int, media: dict | None = None) -> dict:
             if avail
             else ["av1", "vp9", "h264"]
         )
-        codec = c[1].selectbox("codec", codec_opts, key=f"vc-{idx}")
+        codec = c[1].selectbox(t("studio.opt.codec"), codec_opts, key=f"vc-{idx}")
         if codec != "auto":
             opts["selection"]["video_codec"] = {"mode": "prefer", "value": codec}
         opts["container"] = c[2].selectbox(
-            "container", ["source", "mkv", "mp4"], key=f"vct-{idx}"
+            t("studio.opt.container"), ["source", "mkv", "mp4"], key=f"vct-{idx}"
         )
-        sb = c[3].selectbox("sponsorblock", list(SB_PRESETS), key=f"vsb-{idx}")
+        sb = c[3].selectbox(
+            t("studio.opt.sponsorblock"), list(SB_PRESETS), key=f"vsb-{idx}"
+        )
         if SB_PRESETS[sb]:
             opts["sponsorblock"] = SB_PRESETS[sb]
     elif otype == "audio":
         c = st.columns(2)
         fmt = c[0].selectbox(
-            "format", ["source", "opus", "mp3", "m4a"], key=f"af-{idx}"
+            t("studio.opt.format"), ["source", "opus", "mp3", "m4a"], key=f"af-{idx}"
         )
         if fmt != "source":
             opts["format"] = fmt
-        sb = c[1].selectbox("sponsorblock", list(SB_PRESETS), key=f"asb-{idx}")
+        sb = c[1].selectbox(
+            t("studio.opt.sponsorblock"), list(SB_PRESETS), key=f"asb-{idx}"
+        )
         if SB_PRESETS[sb]:
             opts["sponsorblock"] = SB_PRESETS[sb]
     elif otype == "subtitles":
-        langs = st.text_input("languages (comma-sep)", "en", key=f"sl-{idx}")
+        langs = st.text_input(t("studio.opt.languages"), "en", key=f"sl-{idx}")
         opts["languages"] = [x.strip() for x in langs.split(",") if x.strip()] or ["en"]
-        opts["format"] = st.selectbox("format", ["srt", "vtt"], key=f"sf-{idx}")
+        opts["format"] = st.selectbox(
+            t("studio.opt.format"), ["srt", "vtt"], key=f"sf-{idx}"
+        )
     elif otype == "thumbnail":
-        opts["format"] = st.selectbox("format", ["source", "jpeg"], key=f"tf-{idx}")
+        opts["format"] = st.selectbox(
+            t("studio.opt.format"), ["source", "jpeg"], key=f"tf-{idx}"
+        )
     elif otype == "transcript":
         c = st.columns(2)
-        opts["language"] = c[0].text_input("language", "auto", key=f"tl-{idx}")
+        opts["language"] = c[0].text_input(
+            t("studio.opt.language"), "auto", key=f"tl-{idx}"
+        )
         # `json` and `text` are the whole contract (TranscriptOptions). "srt"
         # and "vtt" were offered here and refused by the engine with a 422:
         # a subtitle file is a `subtitles` output, not a transcript format.
-        opts["format"] = c[1].selectbox("format", ["json", "text"], key=f"tfm-{idx}")
+        opts["format"] = c[1].selectbox(
+            t("studio.opt.format"), ["json", "text"], key=f"tfm-{idx}"
+        )
     elif otype == "summary":
         c = st.columns(2)
         opts["length"] = c[0].selectbox(
-            "length", ["short", "medium", "long"], index=1, key=f"sul-{idx}"
+            t("studio.opt.length"),
+            ["short", "medium", "long"],
+            index=1,
+            key=f"sul-{idx}",
         )
         opts["format"] = c[1].selectbox(
-            "format", ["markdown", "text"], key=f"suf-{idx}"
+            t("studio.opt.format"), ["markdown", "text"], key=f"suf-{idx}"
         )
     elif otype == "chapters":
         opts["format"] = st.selectbox(
-            "format", ["json", "ffmetadata"], key=f"chf-{idx}"
+            t("studio.opt.format"), ["json", "ffmetadata"], key=f"chf-{idx}"
         )
     elif otype == "translation":
         c = st.columns(2)
         opts["target_language"] = c[0].text_input(
-            "target language", "fr", key=f"trt-{idx}"
+            t("studio.opt.target_language"), "fr", key=f"trt-{idx}"
         )
         opts["source_language"] = c[1].text_input(
-            "source language", "auto", key=f"trs-{idx}"
+            t("studio.opt.source_language"), "auto", key=f"trs-{idx}"
         )
     return opts
 
@@ -502,7 +567,7 @@ for idx, otype in enumerate(_ordered):
                 _reason_text(out_reason_by_source.get(s, {}).get(otype))
                 for s in source_ids
             }
-            head[1].caption(f"⛔️ no source can produce this — {'; '.join(reasons)}")
+            head[1].caption(t("studio.output_blocked", reasons="; ".join(reasons)))
             continue
         if not enabled:
             continue
@@ -510,11 +575,15 @@ for idx, otype in enumerate(_ordered):
         chosen = pick_from[0] if pick_from else None
         with head[1]:
             if len(pick_from) > 1:
-                chosen = st.selectbox("from source", pick_from, key=f"src-{otype}")
+                chosen = st.selectbox(
+                    t("studio.from_source"), pick_from, key=f"src-{otype}"
+                )
             if analyzed and chosen:
                 stt = out_status_by_source.get(chosen, {}).get(otype)
                 if stt and stt != "available":
-                    st.caption(f"↳ {stt} on {chosen}")
+                    # `stt` is a capability status from the contract, not a
+                    # sentence — it stays as the engine spells it.
+                    st.caption(t("studio.status_on_source", status=stt, source=chosen))
         out: dict = {"id": f"{otype}_1", "type": otype}
         if chosen and len(source_ids) > 1:
             out["from_sources"] = [chosen]
@@ -528,14 +597,18 @@ for idx, otype in enumerate(_ordered):
 
 # --- preferences & constraints -------------------------------------------------
 
-with st.expander("Preferences & constraints"):
+with st.expander(t("studio.preferences_section")):
     c = st.columns(3)
+    # `preferences.language` and `optimize_for` are the contract's own field
+    # names, shown as such on purpose: this expander is where Studio stops
+    # dressing the request up and names it. The sentences beside them are what
+    # gets translated.
     pref_lang = c[0].text_input("preferences.language", "", key="pref-lang")
     optimize = c[1].selectbox(
         "optimize_for", ["balanced", "quality", "speed", "size"], key="pref-opt"
     )
-    allow_cloud = c[2].checkbox("allow cloud providers", value=True, key="con-cloud")
-    reuse = st.checkbox("reuse_existing (cache)", value=True, key="exec-reuse")
+    allow_cloud = c[2].checkbox(t("studio.allow_cloud"), value=True, key="con-cloud")
+    reuse = st.checkbox(t("studio.reuse_existing"), value=True, key="exec-reuse")
 
 preferences: dict = {"optimize_for": optimize}
 if pref_lang.strip():
@@ -556,12 +629,12 @@ def build_request() -> dict:
 
 request_body = build_request()
 
-st.subheader("3 · Launch")
-with st.expander("GenerationRequest preview"):
+st.subheader(t("studio.launch_section"))
+with st.expander(t("studio.request_preview")):
     st.json(request_body)
 
 if st.button(
-    "🚀 Submit job",
+    t("studio.submit_button"),
     type="primary",
     use_container_width=True,
     disabled=not (backend_ok and valid_sources and outputs),
@@ -574,9 +647,9 @@ if st.button(
         st.rerun()
     except ApiError as exc:
         if not quota.render_streamlit_wall(exc, config):
-            st.error(f"Request refused: {exc.message}")
+            st.error(t("studio.submit_refused", message=exc.message))
     except Exception as exc:  # noqa: BLE001
-        st.error(f"Submit failed: {exc}")
+        st.error(t("studio.submit_failed", error=exc))
 
 
 # --- live job monitor ----------------------------------------------------------
@@ -590,7 +663,7 @@ def render_job() -> None:
     try:
         job = client.job(job_id)
     except Exception as exc:  # noqa: BLE001
-        st.error(f"Job not found: {exc}")
+        st.error(t("studio.job_not_found", error=exc))
         return
     status = job["status"]
     icon, color = display(status)
@@ -598,12 +671,15 @@ def render_job() -> None:
     done = sum(1 for s in steps if s["status"] == "succeeded")
     st.divider()
     st.markdown(
-        f"### {icon} <span style='color:{color}'>{status}</span> "
+        f"### {icon} <span style='color:{color}'>{job_label(status)}</span> "
         f"<span style='color:#5b6472;font-size:.8rem'>· {job_id[:16]}</span>",
         unsafe_allow_html=True,
     )
     if steps:
-        st.progress(done / len(steps), text=f"{done}/{len(steps)} steps")
+        st.progress(
+            done / len(steps),
+            text=t("studio.steps_progress", done=done, total=len(steps)),
+        )
         for s in steps:
             si = display(s["status"])[0]
             # Collection members announce themselves as "3/6 · Title" (the
@@ -616,7 +692,8 @@ def render_job() -> None:
             err = f" · {s['error']}" if s["error"] else ""
             st.markdown(
                 f"<div class='step'>{si} {name} "
-                f"<span style='color:#5b6472'>{s['status']}{err}</span></div>",
+                f"<span style='color:#5b6472'>{job_label(s['status'])}{err}</span>"
+                "</div>",
                 unsafe_allow_html=True,
             )
     if job.get("error"):
@@ -626,22 +703,26 @@ def render_job() -> None:
     except Exception:  # noqa: BLE001
         artifacts = []
     if artifacts:
-        st.markdown("**Artifacts**")
+        st.markdown(t("studio.artifacts"))
         for a in artifacts:
             cols = st.columns([3, 2, 2])
             cols[0].markdown(f"`{a['filename']}`")
             cols[1].caption(f"{a['media_type']} · {a['size_bytes'] / 1024:.1f} KiB")
             cols[2].link_button(
-                "⬇︎ download",
+                t("studio.download_artifact"),
                 f"{PUBLIC_API_URL}/api/v1/artifacts/{a['id']}/content",
                 use_container_width=True,
             )
     elif status in TERMINAL:
-        st.caption("no artifacts")
+        st.caption(t("studio.no_artifacts"))
     a1, a2 = st.columns(2)
-    if a1.button("Cancel", disabled=status in TERMINAL, use_container_width=True):
+    if a1.button(
+        t("studio.cancel"), disabled=status in TERMINAL, use_container_width=True
+    ):
         client.cancel(job_id)
-    if a2.button("Retry", disabled=status not in TERMINAL, use_container_width=True):
+    if a2.button(
+        t("studio.retry"), disabled=status not in TERMINAL, use_container_width=True
+    ):
         st.session_state.job_id = client.retry(job_id)["job_id"]
         st.rerun(scope="app")
 

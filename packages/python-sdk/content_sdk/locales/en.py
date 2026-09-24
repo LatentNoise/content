@@ -296,4 +296,81 @@ TRANSLATIONS: dict[str, str] = {
     "ht.events_skipped": "    … {count} step.progress events (shown live above)",
     "ht.logs_section": "Logs (yt-dlp / ffmpeg output, per step)",
     "ht.no_logs": "no logs yet",
+    # === Content Studio ===
+    # Studio shows the public contract as it is, so its *tokens* — source
+    # types, output types, formats, codecs, containers, capability statuses,
+    # `optimize_for`, `preferences.language` — stay as the engine spells them
+    # in every language. Only the sentences around them live here.
+    "studio.tagline": "every source, every output — the full contract",
+    # why an output is not on offer
+    "studio.reason.unavailable": "not available for this source",
+    "studio.reason.missing_material": "source has no {materials}",
+    "studio.reason.material_fallback": "material",
+    "studio.reason.implementation_unavailable": "needs a runner ({operations})",
+    "studio.reason.policy_restricted": "blocked by policy",
+    "studio.reason.generic": "not available",
+    # the engine, in the sidebar
+    "studio.backend_unreachable": "⚠️ Back-end unreachable at {url} — {error}",
+    "studio.backend_online": "🟢 back-end v{version}",
+    "studio.backend_offline": "🔴 back-end offline",
+    "studio.api_docs": "API · /docs",
+    "studio.recent_jobs": "Recent jobs",
+    # the sources
+    "studio.sources_section": "1 · Sources",
+    "studio.how_many_sources": "How many sources?",
+    "studio.source_type": "Type",
+    "studio.url_label": "URL",
+    "studio.auth_label": "Auth",
+    "studio.file_location_label": "Where is it?",
+    "studio.file_on_device": "From this device",
+    "studio.file_on_server": "On the server",
+    "studio.path_label": "Path (under an allowed input root)",
+    "studio.choose_files": "Choose file(s) — up to {megabytes} MB each",
+    "studio.text_content": "Text content",
+    "studio.uploading": "Sending {filename} to the engine…",
+    "studio.upload_failed": "Upload failed: {error}",
+    # analysing them
+    "studio.analyze_button": "🔍 Analyze sources",
+    "studio.analyzing": "Analyzing…",
+    "studio.analyze_refused": "Analysis refused: {message}",
+    "studio.analyze_failed": "Analysis failed: {error}",
+    "studio.untitled": "(untitled)",
+    "studio.tech_up_to": "🎞️ up to {height}p{codecs}",
+    # the outputs
+    "studio.outputs_section": "2 · Outputs",
+    "studio.outputs_hint": (
+        "Enable the outputs you want; each is produced from a source."
+    ),
+    "studio.output_blocked": "⛔️ no source can produce this — {reasons}",
+    "studio.from_source": "from source",
+    "studio.status_on_source": "↳ {status} on {source}",
+    # their options
+    "studio.opt.max_height": "max height",
+    "studio.opt.codec": "codec",
+    "studio.opt.container": "container",
+    "studio.opt.sponsorblock": "sponsorblock",
+    "studio.opt.format": "format",
+    "studio.opt.languages": "languages (comma-sep)",
+    "studio.opt.language": "language",
+    "studio.opt.length": "length",
+    "studio.opt.target_language": "target language",
+    "studio.opt.source_language": "source language",
+    # preferences and constraints
+    "studio.preferences_section": "Preferences & constraints",
+    "studio.allow_cloud": "allow cloud providers",
+    "studio.reuse_existing": "reuse_existing (cache)",
+    # launching
+    "studio.launch_section": "3 · Launch",
+    "studio.request_preview": "GenerationRequest preview",
+    "studio.submit_button": "🚀 Submit job",
+    "studio.submit_refused": "Request refused: {message}",
+    "studio.submit_failed": "Submit failed: {error}",
+    # following the job
+    "studio.job_not_found": "Job not found: {error}",
+    "studio.steps_progress": "{done}/{total} steps",
+    "studio.artifacts": "**Artifacts**",
+    "studio.download_artifact": "⬇︎ download",
+    "studio.no_artifacts": "no artifacts",
+    "studio.cancel": "Cancel",
+    "studio.retry": "Retry",
 }
