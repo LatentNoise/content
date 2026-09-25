@@ -19,6 +19,7 @@ from content.processors.transcript import TranscriptProcessor
 from content.providers.base import ProviderRegistry
 from content.providers.ffmpeg import FfmpegProvider
 from content.providers.ollama import OllamaProvider
+from content.storage.roots import owner_roots
 from tests.conftest import make_request, resolved_capabilities
 from tests.test_transcript_external import clip_with_subs  # noqa: F401 — fixture
 
@@ -100,10 +101,7 @@ def test_summary_from_local_file_via_ollama(tmp_path, clip_with_subs):  # noqa: 
     assert artifact["type"] == "summary"
     assert artifact["provenance"]["attributes"]["model"] == MODEL
     path = (
-        settings.data_dir
-        / "jobs"
-        / LOCAL_OWNER
-        / result.job_id
+        owner_roots(settings, LOCAL_OWNER).job(result.job_id)
         / "artifacts"
         / artifact["filename"]
     )

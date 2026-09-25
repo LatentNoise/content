@@ -18,6 +18,7 @@ from content.planning.feasibility import output_feasibility
 from content.processors.transcript import TranscriptProcessor
 from content.providers.base import ProviderRegistry
 from content.providers.ffmpeg import FfmpegProvider
+from content.storage.roots import owner_roots
 from tests.conftest import make_request, resolved_capabilities
 
 HAVE_FFMPEG = shutil.which("ffmpeg") is not None and shutil.which("ffprobe") is not None
@@ -139,10 +140,7 @@ def test_transcript_from_local_file_with_embedded_subs(tmp_path, clip_with_subs)
     assert artifact["media_type"] == "application/json"
 
     path = (
-        settings.data_dir
-        / "jobs"
-        / LOCAL_OWNER
-        / result.job_id
+        owner_roots(settings, LOCAL_OWNER).job(result.job_id)
         / "artifacts"
         / artifact["filename"]
     )

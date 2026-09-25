@@ -18,6 +18,7 @@ from content.persistence.store import Store
 from content.providers.base import ProviderRegistry
 from content.providers.ffmpeg import FfmpegProvider
 from content.providers.ytdlp import YtDlpProvider
+from content.storage.roots import owner_roots
 from tests.conftest import make_request
 
 HAVE_TOOLS = all(shutil.which(t) for t in ("ffmpeg", "ffprobe", "yt-dlp"))
@@ -81,7 +82,11 @@ def pipeline(tmp_path):
             JobExecutor(store, settings, providers).execute(claimed)
             return store, result.job_id
 
-        return run
+        # The settings travel with the runner so a test can ask
+        # `owner_roots()` where an artifact landed instead of assembling the
+        # layout by hand — `jobs/<owner>/<job>` has not been the layout since
+        # ADR 0037, and these tests kept asserting against it.
+        return run, settings
 
     return _make
 
@@ -92,7 +97,7 @@ def test_ffmpeg_remux_mp4_to_mkv(tmp_path, pipeline):
     clip = input_root / "clip.mp4"
     generate_clip(clip)
 
-    run = pipeline(
+    run, settings = pipeline(
         ProviderRegistry([FfmpegProvider()]),
         allowed_input_roots=(input_root.resolve(),),
     )
@@ -110,11 +115,7 @@ def test_ffmpeg_remux_mp4_to_mkv(tmp_path, pipeline):
     assert artifact["filename"] == "video_mkv.mkv"
     assert artifact["media_type"] == "video/x-matroska"
     produced = (
-        tmp_path
-        / "data"
-        / "jobs"
-        / LOCAL_OWNER
-        / job_id
+        owner_roots(settings, LOCAL_OWNER).job(job_id)
         / "artifacts"
         / artifact["filename"]
     )
@@ -149,7 +150,7 @@ def test_ytdlp_video_from_local_http(tmp_path, pipeline):
         thread = threading.Thread(target=httpd.serve_forever, daemon=True)
         thread.start()
         try:
-            run = pipeline(
+            run, _ = pipeline(
                 ProviderRegistry([YtDlpProvider()]),
                 allow_private_networks=True,  # localhost test server
             )

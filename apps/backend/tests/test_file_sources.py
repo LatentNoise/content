@@ -16,6 +16,7 @@ from content.identity import LOCAL_OWNER
 from content.persistence.store import Store
 from content.providers.base import ProviderRegistry
 from content.providers.ffmpeg import FfmpegProvider, check_path_allowed
+from content.storage.roots import owner_roots
 from tests.conftest import make_request, resolved_capabilities
 
 HAVE_FFMPEG = shutil.which("ffmpeg") is not None and shutil.which("ffprobe") is not None
@@ -186,13 +187,7 @@ def test_file_video_to_audio_metadata_thumbnail(tmp_path, sample_video):
     assert artifacts["audio"]["filename"].endswith(".m4a")  # aac stream-copied
     assert artifacts["thumb"]["media_type"] == "image/jpeg"
     assert artifacts["audio"]["provenance"]["producer"]["provider"] == "ffmpeg"
+    artifacts_dir = owner_roots(settings, LOCAL_OWNER).job(result.job_id) / "artifacts"
     for artifact in artifacts.values():
-        path = (
-            settings.data_dir
-            / "jobs"
-            / LOCAL_OWNER
-            / result.job_id
-            / "artifacts"
-            / artifact["filename"]
-        )
+        path = artifacts_dir / artifact["filename"]
         assert path.is_file() and path.stat().st_size > 0
