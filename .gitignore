@@ -128,9 +128,18 @@ data/
 build/
 dist/
 
-# Local editor/agent state stays local: the tracked instruction file is
-# AGENTS.md (the vendor-neutral convention); tool-specific pointers and
-# configuration directories are never committed.
+# Local editor/agent state stays local, AGENTS.md included: the agent
+# instructions are NOT published with this repository.
+#
+# The comment here used to claim AGENTS.md was "the tracked instruction file",
+# which contradicted the very rule below it and was wrong in the dangerous
+# direction: AGENTS.md's own § Public identity spells out the private account
+# and mail address that must never reach anything public — that is the whole
+# point of the section. Tracking the file would put them in the public history,
+# permanently. So un-ignoring AGENTS.md is not a tidy-up of a stale comment, it
+# is the leak that section exists to prevent. If the instructions should ever
+# ship, a redacted copy under a different name is the way.
+# tests/test_public_identity.py holds this shut.
 CLAUDE.md
 AGENTS.md
 .claude/
