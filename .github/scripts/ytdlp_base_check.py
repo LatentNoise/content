@@ -155,7 +155,7 @@ def issue_body(pinned_version, pinned_digest, new_version, new_digest) -> str:
 {headline} **Nothing has been changed** — this issue is a notification, and the
 bump is a deliberate, validated act.
 
-| | Pinned now | Available |
+| | Pinned now | Available, at this check |
 | --- | --- | --- |
 | Version | `{pinned_version}` | `{named}` |
 | Digest | `{pinned_digest}` | `{new_digest}` |
@@ -168,9 +168,15 @@ Base image: https://hub.docker.com/r/{IMAGE}/tags
 Run this locally — it is the whole gate. Do not commit until every step passes.
 
 ```bash
-# 1. Update the pin in apps/backend/Dockerfile
+# 1. Update the pin in apps/backend/Dockerfile. Re-run the check first and take
+#    the digest it prints: this check runs weekly, upstream rebuilds `latest`
+#    more often than that, so the digest in the table above may already be
+#    superseded by the time you read it.
+python3 .github/scripts/ytdlp_base_check.py
+
 #      ARG YTDLP_BASE_VERSION={new_version or "<version>"}
-#      ARG YTDLP_BASE_DIGEST={new_digest}
+#      ARG YTDLP_BASE_DIGEST=<what the line above printed>
+#      (at this check: {new_digest})
 
 # 2. Build the backend image on the new base
 docker compose build content

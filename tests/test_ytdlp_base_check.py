@@ -51,6 +51,34 @@ def test_the_body_opens_on_the_distinction_too():
         assert "Nothing has been changed" in body
 
 
+def test_the_body_does_not_present_its_digest_as_still_current():
+    """The digest goes stale between runs, so the body must not invite a copy.
+
+    This check runs weekly; upstream rebuilds `latest` several times a week. So
+    a reader who copies the digest out of an open issue can pin a *superseded*
+    rebuild — the older set of distro patches, which is the one thing the bump
+    exists to collect. It has happened: issue #88's bump went to the 21/09
+    rebuild rather than the digest the issue named, because `2026.08.19` had been
+    republished twice in the interval.
+
+    The remedy is not a fresher digest — it cannot be, at a weekly cadence — it
+    is a body that says so and points at the one command that answers it now.
+    """
+    body = issue_body("2026.07.04", "sha256:old", "2026.08.19", DIGEST)
+
+    # The table is dated rather than presented as the present tense.
+    assert "Available, at this check" in body
+    assert "| Available |" not in body
+
+    # Step 1 sends the reader to the check rather than to the table.
+    assert "python3 .github/scripts/ytdlp_base_check.py" in body
+    assert "superseded" in body
+    # The digest is still shown — it is the evidence that triggered the issue —
+    # but labelled as a snapshot, never as the value to paste into the pin.
+    assert f"(at this check: {DIGEST})" in body
+    assert f"ARG YTDLP_BASE_DIGEST={DIGEST}" not in body
+
+
 # --- what the refresh workflow builds with -------------------------------------
 
 

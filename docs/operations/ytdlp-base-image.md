@@ -128,13 +128,26 @@ python3 .github/scripts/ytdlp_base_check.py     # stdlib only
 
 Accepting a bump is a validated act. Run every step; commit only if all pass.
 
-**1. Update the pin** in `apps/backend/Dockerfile` — both lines, copied from the
-issue:
+**1. Update the pin** in `apps/backend/Dockerfile` — both lines. Take the digest
+from a **fresh run of the check**, not from the issue:
+
+```bash
+python3 .github/scripts/ytdlp_base_check.py     # stdlib only
+```
 
 ```dockerfile
-ARG YTDLP_BASE_VERSION=<version from the issue>
-ARG YTDLP_BASE_DIGEST=<digest from the issue>
+ARG YTDLP_BASE_VERSION=<version the check printed>
+ARG YTDLP_BASE_DIGEST=<digest the check printed>
 ```
+
+> ⚠️ **Why the digest is not copied out of the issue.** The check runs weekly;
+> upstream rebuilds `latest` several times a week. The digest an open issue
+> quotes is therefore a snapshot that goes stale between runs, and copying it
+> pins a *superseded* rebuild — the older set of distro patches, which is the one
+> thing the bump exists to collect. This has already happened: issue #88's bump
+> went to the 21/09 rebuild rather than the digest the issue named, because
+> `2026.08.19` had been republished twice in the interval. The **version** in the
+> issue is stable and worth quoting in the commit message; the **digest** is not.
 
 **2. Build the backend image** on the new base:
 
