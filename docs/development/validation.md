@@ -29,6 +29,7 @@ It chains, in order, and **fails on the first red**:
 | `make test-ui` | The Streamlit AppTests against a fake client (hermetic, own venv) |
 | `make test-ui-live` | The same three UIs against a **real** backend (slow, `release`) |
 | `make validate-all` | `validate` + the UI AppTests + the `external` tests |
+| `make test-mailer` | The outbound-email service suite (format + lint + tests, hermetic, own venv — ADR 0031) |
 | `make install` | Recreates the venv with the `test` + `dev` extras |
 
 ## External tests
@@ -67,6 +68,15 @@ repository's CI is a supply-chain surface.
 | --- | --- |
 | `make validate-all` (`-m external`) | needs real yt-dlp / ffmpeg / Ollama; CI must not silently depend on tools and daemons |
 | `make validate-release` (`-m release`) | needs a live page, a media URL and an LLM daemon — precisely what breaks *between* releases, so it is run deliberately before one |
+| `make test-mailer` | **not by design** — see below |
+
+⚠️ **The mailer suite runs nowhere automatically.** `make test-mailer` is
+hermetic and self-contained (its own venv, no network, no engine import), so
+unlike the two rows above there is nothing stopping it from running on CI — but
+no job runs it, `make validate` does not chain it and neither does
+`make validate-all`. Touch `services/mailer/` and you must run it by hand, or
+nothing checks it at all. Whether to give it a CI job is an open decision, not
+a settled policy.
 
 The CI runner is bare on purpose: no ffmpeg, no yt-dlp, no Typst, no poppler, no
 Ollama. That is what makes "hermetic" mean something. Checks needing one of
