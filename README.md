@@ -111,8 +111,18 @@ clients.
 Update later with:
 
 ```bash
+curl -fsSLO https://raw.githubusercontent.com/LatentNoise/content/main/deploy/docker-compose.yml
 docker compose pull && docker compose up -d
 ```
+
+The first line is not optional, and it is the one that is easy to skip.
+`docker compose pull` refreshes the **images**; the stack definition is the
+local copy you downloaded on day one, and new settings arrive in *it* — a
+container receives only what its `environment:` block names. A compose file
+left at its original version therefore keeps silently dropping every setting
+added since, however correctly you write it in `.env`. Your `.env` is yours and
+is never touched; compare it against the current
+[`.env.example`](.env.example) when you want the new knobs.
 
 <details>
 <summary><b>Build from source instead</b> — for development or to include the
