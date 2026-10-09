@@ -21,7 +21,7 @@ import time
 from content.analysis.service import AnalysisService
 from content.application.submit import submit_generation
 from content.domain.analysis import CollectionEntry
-from content.execution.executor import JobExecutor
+from content.execution.executor import JobExecutor, _RunState
 from content.identity import LOCAL_OWNER
 from content.providers.base import StepExecutionError
 from tests.conftest import FakeProvider, make_request, minimal_payload
@@ -198,10 +198,43 @@ def test_fail_fast_lets_running_members_finish_and_starts_no_new_ones(
     required member stops members that have not started, while a member
     already downloading runs to completion — its artifact is valid work and is
     kept. With three members and a bound of 2: member 1 fails, member 2 (in
-    flight when the failure lands) still succeeds, member 3 never starts."""
+    flight when the failure lands) still succeeds, member 3 never starts.
+
+    The choreography is a gate, never a duration. Member 2 holds its worker
+    until it *observes* member 1's failure flip the stop flag, so the premise
+    the assertions rest on ("the failure had landed while member 2 was still
+    running") is established rather than assumed. That matters because the
+    only way member 3 can start is a free worker, and both are held: member 1
+    until it sets the flag, member 2 until it sees the flag set. There is no
+    window left for member 3 to pass the gate legitimately, so a second
+    artifact now means a real fail-fast regression.
+
+    A `time.sleep(0.05)` stood here until 2026-10-09 and made this the one
+    flaky test in the suite — red three CI runs in a row, then green on the
+    identical tree. Instrumented CI caught it asserting a premise it never
+    established: `started:v1 started:v2 succeeded:v2 started:v3 failed:v1`.
+    Member 2's 50 ms had to outlast member 1's `_move_step` *and* its
+    `step.failed` publish before `request_stop()` is reached, and on a
+    two-core runner under GIL contention it often did not — so member 2 freed
+    a worker while `stopping` was still False and member 3 started for the one
+    reason the feature is allowed to behave that way. The product was always
+    correct; the test was not.
+    """
     barrier = threading.Barrier(2)
     original_execute = FakeProvider.execute
     original_analyze = FakeProvider.analyze
+
+    # Flipped by member 1's failure, inside the executor, at the exact moment
+    # `stopping` becomes True — the flag is set *after* the call through, so a
+    # waiter that wakes on it is guaranteed to see the gate already closed.
+    stop_requested = threading.Event()
+    original_request_stop = _RunState.request_stop
+
+    def record_stop(self) -> None:
+        original_request_stop(self)
+        stop_requested.set()
+
+    monkeypatch.setattr(_RunState, "request_stop", record_stop)
 
     def analyze_with_three_members(self, source, ctx):
         analysis = original_analyze(self, source, ctx)
@@ -218,7 +251,13 @@ def test_fail_fast_lets_running_members_finish_and_starts_no_new_ones(
             raise StepExecutionError("provider_error", "simulated member failure")
         if uri.endswith("/v2"):
             barrier.wait(timeout=_BARRIER_TIMEOUT)
-            time.sleep(0.05)  # still running when member 1's failure lands
+            # Stay in flight until member 1's failure has actually closed the
+            # gate, rather than for a hopeful 50 ms.
+            assert stop_requested.wait(timeout=_BARRIER_TIMEOUT), (
+                "member 1's failure never requested a stop: fail_fast no "
+                "longer stops new members, or the failing step is no longer "
+                "treated as required"
+            )
         return original_execute(self, step, ctx)
 
     monkeypatch.setattr(FakeProvider, "analyze", analyze_with_three_members)
