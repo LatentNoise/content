@@ -39,6 +39,13 @@
 # chart. The chart ships defaults; a deployment ships its own file.
 deploy/charts/**/values-home.yaml
 !pyproject.toml
+# The repository-wide ruff baseline. It must sit at the root to stop ruff's
+# upward config search: a pyproject.toml with no [tool.ruff] section does not
+# stop it, so eight of the directories `make lint` checks resolved no
+# configuration at all and ran on whatever the installed ruff defaulted to.
+# Anchored to the root, because per-directory settings belong in that
+# directory's own pyproject.toml ([tool.ruff]) rather than in a second file.
+!/ruff.toml
 # The MCP registry's manifest for `content-mcp` (apps/mcp): one file at the
 # repository root, published by `mcp-publisher` from exactly this copy. It is
 # named here rather than allowing *.json repo-wide, which would sweep in

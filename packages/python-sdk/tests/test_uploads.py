@@ -60,13 +60,17 @@ def test_the_file_content_really_travels(document):
 
 
 def test_a_source_id_can_be_chosen(document):
-    handler = lambda request: httpx.Response(201, json=RECORD)
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(201, json=RECORD)
+
     source = _client(handler).upload_file(document, id="attachment")
     assert source["id"] == "attachment"
 
 
 def test_upload_returns_the_record_for_callers_who_want_it(document):
-    handler = lambda request: httpx.Response(201, json=RECORD)
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(201, json=RECORD)
+
     record = _client(handler).upload(document)
     assert record["sha256"] == "sha256:abc"
     assert record["size_bytes"] == 11

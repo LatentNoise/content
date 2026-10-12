@@ -88,7 +88,7 @@ NOTIFICATIONS: list = []
 # the whole suite (as 0.2.0 did to a hard-coded "0.1.0"). content_sdk is one
 # of the lockstep declarations and is installed in the UI venv: the honest
 # source. Mismatch tests patch their own, deliberately impossible versions.
-from content_sdk import __version__ as ENGINE_VERSION
+from content_sdk import __version__ as ENGINE_VERSION  # noqa: E402
 
 UPLOADED: list[dict] = []
 

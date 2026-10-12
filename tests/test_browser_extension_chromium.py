@@ -1,4 +1,6 @@
-"""Guard-rails for the Chromium browser extension — the first non-Python client (ADR 0016).
+"""Guard-rails for the Chromium browser extension — the first non-Python client.
+
+ADR 0016.
 
 The extension cannot use `content_sdk`: it is JavaScript, so it speaks `/api/v1`
 directly. That puts it outside every check the Python consumers get, including
@@ -376,7 +378,8 @@ def test_every_fixture_is_what_the_builder_really_emits():
         "import {buildRequest} from './lib/request.js';"
         f"const states = {json.dumps(states)};"
         "const out = {};"
-        "for (const [name, state] of Object.entries(states)) out[name] = buildRequest(state);"
+        "for (const [name, state] of Object.entries(states)) "
+        "out[name] = buildRequest(state);"
         "console.log(JSON.stringify(out));"
     )
     assert set(built) == {path.stem for path in FIXTURES}, (
@@ -412,9 +415,10 @@ def test_no_intent_sends_no_delivery_block():
     )
     assert "delivery" not in body["outputs"][0]
 
+    with_folder = json.dumps({**state, "folder": "Tech"})
     body = _run_node(
         "import {buildRequest} from './lib/request.js';"
-        f"console.log(JSON.stringify(buildRequest({json.dumps({**state, 'folder': 'Tech'})})));"
+        f"console.log(JSON.stringify(buildRequest({with_folder})));"
     )
     assert body["outputs"][0]["delivery"] == {"folder": "Tech"}
 
@@ -448,7 +452,8 @@ def test_the_builder_refuses_subtitles_without_a_language():
     outcome = _run_node(
         "import {buildRequest} from './lib/request.js';"
         "let error = '';"
-        f"try {{ buildRequest({json.dumps(state)}); }} catch (e) {{ error = e.message; }}"
+        f"try {{ buildRequest({json.dumps(state)}); }}"
+        " catch (e) { error = e.message; }"
         "console.log(JSON.stringify({error}));"
     )
     assert "language" in outcome["error"], outcome

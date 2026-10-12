@@ -1,0 +1,37 @@
+# The repository-wide lint baseline.
+#
+# `make lint` advertises "ruff: E, F, W, I" over the whole tree, but only three
+# directories actually declared it: apps/backend, apps/web-hometube and
+# services/mailer, each in its own pyproject.toml. Everything else the Makefile
+# lints -- apps/web-studio, apps/web-admin, apps/web-tests, apps/cli, apps/mcp,
+# packages/python-sdk, tests and .github/scripts -- resolved no ruff
+# configuration at all and so ran on whatever ruff's built-in defaults happened
+# to be. That made the gate a function of the installed ruff rather than of this
+# repository: `ruff>=0.8` is unpinned, and 0.17.0 widened its defaults to include
+# UP, FURB, B, S, ASYNC and more, which turned ten pre-existing call sites in
+# content_sdk, content_mcp and tests/ into errors without a line of code
+# changing.
+#
+# The baseline is deliberately conservative and is the same one apps/backend has
+# carried since the start: real errors, pyflakes, warnings, import order. It
+# excludes the opinionated rewrites (UP, RUF, FURB) on purpose -- they would
+# churn the public contract's datetime and typing spellings without a concrete
+# need. See docs/development/validation.md.
+#
+# A per-directory pyproject.toml with its own [tool.ruff] still wins over this
+# file, so the three directories above keep their own settings (the mailer's
+# line-length of 100 among them).
+
+line-length = 88
+target-version = "py311"
+
+[lint]
+select = ["E", "F", "W", "I"]
+
+[lint.per-file-ignores]
+# Three lines of 90-93 characters, pre-existing and never linted for length
+# before this file existed. They are NOT ignored on their merits: the maintainer
+# has uncommitted work in app.py (the storage-report metrics), so a night pass
+# must not touch it. Fold the three lines in and delete this entry the next time
+# the file is clean -- see work/NEXT.md.
+"apps/web-admin/app.py" = ["E501"]

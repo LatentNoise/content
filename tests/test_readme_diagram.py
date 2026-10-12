@@ -21,7 +21,15 @@ import xml.etree.ElementTree as ET
 REPO = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "scripts"))
 
-from gen_readme_diagram import ARTIFACTS, CLIENTS, MARGIN, SOURCES, TARGETS, W, render
+from gen_readme_diagram import (  # noqa: E402
+    ARTIFACTS,
+    CLIENTS,
+    MARGIN,
+    SOURCES,
+    TARGETS,
+    W,
+    render,
+)
 
 README = REPO / "README.md"
 

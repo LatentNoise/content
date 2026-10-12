@@ -19,7 +19,7 @@ import sys
 REPO = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "scripts"))
 
-from gen_deploy_compose import SOURCE, TARGET, render, strip_build_blocks
+from gen_deploy_compose import SOURCE, TARGET, render, strip_build_blocks  # noqa: E402
 
 
 def test_the_committed_deploy_file_matches_its_source():
