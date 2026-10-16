@@ -58,14 +58,35 @@ class JobQueue:
         self._tasks = []
 
     async def _worker_loop(self, worker_id: int) -> None:
+        """Claim and run, and outlive anything either of them does.
+
+        The guard is the same promise `_sweep_loop` makes below, for a stronger
+        reason: `claim_next_queued` is a blocking SQLite call on every pass, so
+        a locked database, a full disk or an unmounted volume raises *here*,
+        outside the executor's own safety net. Unguarded, one exception ends
+        the task — and a dead worker is worse than a stopped queue, because the
+        API keeps accepting jobs that nothing will ever claim while `/health`
+        still answers 200. `CancelledError` is a `BaseException`, so `stop()`
+        still stops this.
+        """
         loop = asyncio.get_running_loop()
         while self._running:
-            job = self.store.claim_next_queued()
-            if job is None:
+            try:
+                job = self.store.claim_next_queued()
+                if job is None:
+                    await asyncio.sleep(self.poll_interval)
+                    continue
+                logger.info("worker %d running job %s", worker_id, job["id"])
+                await loop.run_in_executor(None, self.runner, job)
+            except Exception:  # noqa: BLE001 — a worker must outlive its jobs
+                # `JobExecutor.execute` already persists every outcome and
+                # promises not to raise; it keeps that promise with a database
+                # write, which can itself fail. Losing one job is acceptable
+                # here — startup re-queues whatever stayed `running` — losing
+                # the loop is not. The backoff keeps a broken database from
+                # becoming a hot error loop.
+                logger.exception("worker %d failed; continuing", worker_id)
                 await asyncio.sleep(self.poll_interval)
-                continue
-            logger.info("worker %d running job %s", worker_id, job["id"])
-            await loop.run_in_executor(None, self.runner, job)
 
     async def _sweep_loop(self) -> None:
         """Housekeeping on its own clock.
