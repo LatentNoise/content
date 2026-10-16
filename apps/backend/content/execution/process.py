@@ -6,12 +6,15 @@ cancellation that also works when the process emits no output (watchdog
 thread), and no shell — argument lists only.
 """
 
+import logging
 import subprocess
 import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+
+logger = logging.getLogger("content.process")
 
 _KILL_GRACE_SECONDS = 5
 
@@ -68,7 +71,21 @@ def run_process(
 
         def _watchdog() -> None:
             while proc.poll() is None:
-                if cancel_check():
+                # `cancel_check` is a database read on a 0.3 s clock for the
+                # whole life of every download and transcode — the most
+                # frequent query in the engine, on a bare daemon thread. Let it
+                # raise and this thread ends, taking the "mandatory timeout"
+                # this module's docstring promises with it: the process then
+                # runs unbounded and the job cannot be cancelled either, with
+                # nothing but a stderr traceback to say so. A check that cannot
+                # answer is read as "not cancelled" so the deadline below —
+                # which needs no I/O — keeps being enforced.
+                try:
+                    cancelled = cancel_check()
+                except Exception:  # noqa: BLE001 — the deadline must outlive it
+                    logger.exception("cancel check failed; assuming not cancelled")
+                    cancelled = False
+                if cancelled:
                     state["cancelled"] = True
                     _terminate()
                     return

@@ -1,6 +1,9 @@
 """Operational resilience: cancellation mid-run, startup recovery, missing
 tools, satisfiable constraints (docs/domain.md §4, docs/architecture.md §6)."""
 
+import sqlite3
+import sys
+
 import pytest
 
 from content.analysis.service import AnalysisService
@@ -128,3 +131,65 @@ def test_plan_steps_come_out_in_topological_order(store, providers, settings):
     # Deterministic: same request twice, same order.
     plan_b = build_plan(request, analysis, providers, settings)
     assert [s.id for s in plan_b.ordered_steps()] == [s.id for s in ordered]
+
+
+def _quiet_sleeper(seconds: float) -> list[str]:
+    """A child that outputs nothing, so only the watchdog can end it.
+
+    Silence is the point: `run_process` reads stdout on the main thread, so a
+    process that never writes leaves the watchdog as the only thing enforcing
+    either the deadline or a cancellation.
+    """
+    return [sys.executable, "-c", f"import time; time.sleep({seconds})"]
+
+
+def test_a_failing_cancel_check_does_not_disable_the_timeout(tmp_path, caplog):
+    """`cancel_check` is `store.is_cancel_requested`, polled every 0.3 s.
+
+    It is the engine's most frequent database read, it runs on a bare daemon
+    thread for the whole life of every download and transcode, and nothing used
+    to guard it. One exception ended the watchdog, and with it the "mandatory
+    timeout" this module's docstring promises — leaving an unbounded process
+    and an uncancellable job behind a stderr traceback nobody reads.
+    """
+
+    def exploding_check() -> bool:
+        raise sqlite3.OperationalError("database is locked")
+
+    with caplog.at_level("ERROR", logger="content.process"):
+        result = run_process(
+            _quiet_sleeper(5),
+            cwd=tmp_path,
+            timeout_seconds=0.5,
+            stdout_log=tmp_path / "out.log",
+            stderr_log=tmp_path / "err.log",
+            cancel_check=exploding_check,
+        )
+
+    assert result.timed_out, "the deadline stopped being enforced"
+    assert not result.ok
+    assert [r for r in caplog.records if "cancel check failed" in r.getMessage()]
+
+
+def test_a_cancel_check_that_recovers_still_cancels(tmp_path):
+    """Read as "not cancelled" while it cannot answer, honoured once it can."""
+    answers = [sqlite3.OperationalError("database is locked"), False, True]
+
+    def flaky_check() -> bool:
+        answer = answers.pop(0) if answers else True
+        if isinstance(answer, Exception):
+            raise answer
+        return answer
+
+    result = run_process(
+        _quiet_sleeper(5),
+        cwd=tmp_path,
+        timeout_seconds=30,
+        stdout_log=tmp_path / "out.log",
+        stderr_log=tmp_path / "err.log",
+        cancel_check=flaky_check,
+    )
+
+    assert result.cancelled
+    assert not result.timed_out
+    assert not result.ok
