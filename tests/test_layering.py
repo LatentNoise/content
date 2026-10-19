@@ -23,9 +23,13 @@ CONSUMER_SOURCES = [
 ]
 
 # Direct HTTP clients. urllib.parse is fine (URL manipulation, not requests).
+# `httpx2?` covers both spellings deliberately: plain `httpx\b` cannot match
+# `import httpx2` (there is no word boundary between "x" and "2"), and httpx2 is
+# not hypothetical here -- `mcp` depends on it, so it is importable today from
+# apps/mcp/content_mcp, the consumer most likely to reach for it.
 FORBIDDEN = re.compile(
     r"^\s*(?:import|from)\s+"
-    r"(requests|httpx|aiohttp|urllib3|urllib\.request|http\.client)\b",
+    r"(requests|httpx2?|aiohttp|urllib3|urllib\.request|http\.client)\b",
     re.MULTILINE,
 )
 
@@ -55,3 +59,31 @@ def test_the_sdk_is_the_only_place_that_imports_httpx():
     meaningful (it would catch a consumer that bypassed the SDK)."""
     sdk_transport = (REPO / "packages/python-sdk/content_sdk/_transport.py").read_text()
     assert "import httpx" in sdk_transport
+
+
+def test_the_pattern_catches_every_spelling_it_claims_to():
+    """The scan above is only worth its name if the pattern matches what a real
+    bypass would look like. `import httpx2` slipped through until 2026-10-19:
+    `httpx\\b` finds no word boundary before the "2", and httpx2 ships in this
+    venv as a dependency of `mcp`. Negative cases keep the pattern honest the
+    other way -- urllib.parse and a name that merely starts with a client's.
+    """
+    for line in (
+        "import requests",
+        "import httpx",
+        "import httpx2",
+        "from httpx2 import Client",
+        "    import aiohttp",
+        "from urllib.request import urlopen",
+        "import http.client",
+        "import urllib3",
+    ):
+        assert FORBIDDEN.search(line), f"should be forbidden but is not: {line!r}"
+
+    for line in (
+        "from urllib.parse import urlparse",
+        "import requests_like_helper",
+        "from content_sdk import Client",
+        "# import httpx",
+    ):
+        assert not FORBIDDEN.search(line), f"should be allowed but is not: {line!r}"
