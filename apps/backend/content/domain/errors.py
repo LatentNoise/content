@@ -2,6 +2,11 @@
 
 Codes are stable, machine-readable identifiers (see docs/contract.md §6);
 human messages may evolve freely.
+
+Adding a code here is an addition to the **public contract**, so §6 has to name
+it: that list is what a client branches on. `tests/test_contract_error_codes.py`
+fails until it does, including if the new code lands on the wrong side of the
+error/warning split.
 """
 
 from pydantic import BaseModel, Field
