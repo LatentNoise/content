@@ -58,6 +58,10 @@ The flow, and what each step defends against:
    *and* again at the callback. An open redirect on a sign-in endpoint is how
    a phishing page borrows your domain: the link is genuinely yours, the mail
    is genuinely yours, and the browser still lands on someone else's form.
+   The target is **normalized the way a browser normalizes it, before the
+   check** — ASCII tab and newline removed, backslash read as slash — because
+   `/\evil.test` and `//evil.test` are one destination, and a guard that reads
+   the raw string refuses only the spelling it happens to recognize.
 
 ### Sessions are rows, not signed tokens
 

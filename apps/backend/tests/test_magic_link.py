@@ -14,6 +14,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from content.api.app import create_app
+from content.api.auth_routes import redirect_is_allowed
 from content.identity import LOCAL_OWNER, credentials
 from content.persistence.store import utcnow
 
@@ -250,6 +251,66 @@ def test_an_open_redirect_is_refused_again_at_the_callback(client, mailer):
         follow_redirects=False,
     )
     assert response.status_code == 400
+
+
+# Every one of these resolves to `https://evil.test/` in a browser, exactly as
+# `//evil.test` does — verified against Ada, the WHATWG URL parser Node.js
+# uses. The guard blocked the last spelling and allowed the rest, because it
+# read the raw string while the browser reads it normalized: ASCII tab and
+# newline removed, and a backslash treated as a slash in an http(s) URL.
+BORROWED_DOMAIN = (
+    "/\\evil.test",  # backslash is a slash in the authority position
+    "/\\/evil.test",
+    "\\\\evil.test",
+    "\\/evil.test",
+    "https:/\\evil.test",  # a scheme does not make it relative
+    "/\t/evil.test",  # the tab is removed, leaving //evil.test
+    "/\n/evil.test",
+    "//evil.test",  # the only one that was already refused
+)
+
+
+@pytest.mark.parametrize("target", BORROWED_DOMAIN)
+def test_a_browser_normalized_open_redirect_is_refused(target):
+    """A guard that judges the string the caller wrote rather than the one the
+    browser resolves is a guard against a different attack than the real one."""
+    assert not redirect_is_allowed(target, (SURFACE,))
+
+
+@pytest.mark.parametrize("target", BORROWED_DOMAIN)
+def test_the_doors_refuse_a_borrowed_domain(client, mailer, target):
+    """The same spellings, at the boundary that matters: asking for a link, the
+    callback, and the sign-out door — which is a GET that needs no identity."""
+    assert (
+        client.post(
+            "/api/v1/auth/link",
+            json={"email": "someone@example.com", "next": target},
+        ).status_code
+        == 422
+    )
+
+    client.post("/api/v1/auth/link", json={"email": "someone@example.com"})
+    callback = client.get(
+        "/api/v1/auth/callback",
+        params={"token": _token_of(mailer.last_link), "next": target},
+        follow_redirects=False,
+    )
+    assert callback.status_code == 400
+
+    door = client.get("/auth/sign-out", params={"next": target}, follow_redirects=False)
+    assert door.status_code == 303
+    assert door.headers["location"] == "/auth/sign-in"
+
+
+def test_a_relative_target_still_works(client, mailer):
+    """The fix must not shut the door it is guarding: a path on this origin is
+    where a surface legitimately sends someone back to."""
+    assert redirect_is_allowed("/jobs", (SURFACE,))
+    assert redirect_is_allowed(f"{SURFACE}/jobs", (SURFACE,))
+    response = client.get(
+        "/auth/sign-out", params={"next": f"{SURFACE}/jobs"}, follow_redirects=False
+    )
+    assert response.headers["location"] == f"{SURFACE}/jobs"
 
 
 # --- the session cookie ---------------------------------------------------------

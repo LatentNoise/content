@@ -84,6 +84,16 @@ def _iso_ago(**delta) -> str:
     return (datetime.now(timezone.utc) - timedelta(**delta)).isoformat()
 
 
+# A browser does two things to a URL before it resolves it, and a guard that
+# skips either one judges a different string than the one that takes effect:
+# every ASCII tab, carriage return and newline is removed, and in an http(s)
+# URL a backslash is read as a slash (WHATWG URL — "remove all ASCII tab or
+# newline", then the special-authority-slashes states). So `/\evil.com`,
+# "/<tab>/evil.com" and `//evil.com` are one destination wearing three
+# spellings, and only the third looks like it.
+_BROWSER_IGNORES = str.maketrans("", "", "\t\r\n")
+
+
 def redirect_is_allowed(target: str, allowed_origins: tuple[str, ...]) -> bool:
     """Is this a place a sign-in may send the browser?
 
@@ -93,16 +103,22 @@ def redirect_is_allowed(target: str, allowed_origins: tuple[str, ...]) -> bool:
     whole origins — scheme, host and port together, since `https://evil.com`
     and `http://evil.com` are different places and so are two ports.
 
+    The target is first normalized the way the browser will normalize it
+    (`_BROWSER_IGNORES` above). Judging the raw string instead let five
+    spellings of `//evil.com` through while blocking the sixth.
+
     An empty target means "nowhere in particular", which is allowed: the
     caller then picks its own default.
     """
     if not target:
         return True
-    parsed = urlparse(target)
-    if not parsed.scheme or not parsed.netloc:
+    candidate = target.translate(_BROWSER_IGNORES).replace("\\", "/")
+    parsed = urlparse(candidate)
+    if not parsed.netloc:
         # A relative target ("/jobs") stays on this origin, which is safe by
-        # construction — there is nowhere else for it to go.
-        return not target.startswith("//")
+        # construction — there is nowhere else for it to go. A scheme with no
+        # authority ("javascript:…") is not that, and no caller sends one.
+        return not parsed.scheme and not candidate.startswith("//")
     origin = f"{parsed.scheme}://{parsed.netloc}"
     return origin in allowed_origins
 
