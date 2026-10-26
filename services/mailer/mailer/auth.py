@@ -17,10 +17,21 @@ def client_from_key(api_keys: dict[str, str], presented: str) -> str | None:
 
     The loop runs over every key on purpose: returning early on the first
     mismatch would leak, through timing, how many keys were checked.
+
+    Compared as **bytes**, and that is the whole point of the encode calls:
+    `hmac.compare_digest` refuses two `str` arguments outright when either
+    carries a non-ASCII character, and both sides can. The presented one
+    arrives from a header, which Starlette hands over latin-1 decoded, so any
+    non-ASCII byte a stranger sends used to raise `TypeError` here and turn a
+    plain 401 into a 500. The configured one is an operator's, so a single key
+    with an accent in it raised on *every* lookup — including the one that
+    should have matched — and the service answered nobody. Encoding first
+    costs nothing and the comparison stays constant time.
     """
     found: str | None = None
+    presented_bytes = presented.encode("utf-8")
     for secret, name in api_keys.items():
-        if hmac.compare_digest(secret, presented):
+        if hmac.compare_digest(secret.encode("utf-8"), presented_bytes):
             found = name
     return found
 
