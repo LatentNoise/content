@@ -137,6 +137,28 @@ def resolve_request_uploads(owner_id, request, store, settings):
     return request.model_copy(update={"sources": resolved})
 
 
+# How long a row-less upload directory is left alone before it counts as an
+# orphan.
+#
+# An upload's directory exists *before* its row does: `create_upload` streams
+# the bytes to disk and calls `register_upload` only once they are all there.
+# So "a directory with no row" has two very different meanings — a crash left
+# it behind, or it is arriving right now — and the sweep cannot tell them apart
+# by looking. Treating every row-less directory as an orphan made housekeeping
+# delete uploads that were still being written: the drain then failed on
+# `os.replace` with the directory gone (a 500 on a valid upload), or, when the
+# tick landed in the narrower window after the drain, the row was written
+# pointing at bytes that had just been deleted — the confusing "file not found"
+# this module's ordering exists to prevent.
+#
+# An hour is chosen to be far longer than any single drain can take (the bytes
+# are already buffered locally by then, so this is a disk-to-disk copy bounded
+# by `max_upload_bytes`) and far shorter than the shortest sensible TTL. A real
+# orphan simply waits one more tick, which costs nothing: it is invisible and
+# reclaimable by definition.
+ORPHAN_GRACE_SECONDS = 3600.0
+
+
 def sweep_expired_uploads(store, settings) -> dict:
     """Delete uploads no job has referenced within the TTL.
 
@@ -150,6 +172,10 @@ def sweep_expired_uploads(store, settings) -> dict:
     confusing "file not found" instead of the honest `upload_expired`. Orphans
     from an earlier crash are swept here too, which makes the pass
     self-healing.
+
+    That self-healing waits :data:`ORPHAN_GRACE_SECONDS` before acting, because
+    an upload being written looks exactly like an orphan from here — see the
+    constant for what went wrong without it.
 
     Never silent: the caller logs what was removed. Deleting a user's file
     without a trace is precisely what should leave one.
@@ -171,14 +197,24 @@ def sweep_expired_uploads(store, settings) -> dict:
             reclaimed += int(row.get("size_bytes") or 0)
 
     orphans = 0
+    now = datetime.now(timezone.utc).timestamp()
     for root in upload_roots_on_disk(store, settings):
         for directory in root.iterdir():
-            if directory.is_dir() and not store.upload_exists_any_owner(directory.name):
+            if not directory.is_dir() or store.upload_exists_any_owner(directory.name):
+                continue
+            try:
+                if now - directory.stat().st_mtime < ORPHAN_GRACE_SECONDS:
+                    continue
                 reclaimed += sum(
                     p.stat().st_size for p in directory.rglob("*") if p.is_file()
                 )
-                shutil.rmtree(directory, ignore_errors=True)
-                orphans += 1
+            except OSError:
+                # It went while we were looking at it — a concurrent delete, or
+                # the very upload this grace period protects finishing its
+                # rename. Either way it is not this pass's to account for.
+                continue
+            shutil.rmtree(directory, ignore_errors=True)
+            orphans += 1
 
     return {"removed": removed, "orphans": orphans, "bytes_reclaimed": reclaimed}
 

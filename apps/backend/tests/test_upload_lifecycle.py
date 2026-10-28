@@ -11,19 +11,27 @@ policies and guarantees that were claimed in prose and never asserted.
 
 from __future__ import annotations
 
+import os
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 
 from content.api.app import create_app
-from content.application.uploads import sweep_expired_uploads
+from content.application.uploads import (
+    ORPHAN_GRACE_SECONDS,
+    sweep_expired_uploads,
+    upload_path,
+)
 from content.config import ContentSettings, uploads_root
 from content.identity import LOCAL_OWNER
 from content.persistence.store import Store
 from content.processors.transcript import TranscriptProcessor
 from content.providers.base import ProviderRegistry
 from content.providers.documents import DocumentProvider
+from content.storage.layout import UploadStore
+from content.storage.roots import owner_roots
 
 MARKDOWN = b"# A title\n\nA paragraph long enough to be a document.\n"
 
@@ -57,6 +65,12 @@ def _upload(client, name="notes.md", body=MARKDOWN) -> str:
     )
     assert response.status_code == 201, response.text
     return response.json()["upload_id"]
+
+
+def _age_directory(directory: Path, seconds: float) -> None:
+    """Backdate a directory's mtime — what the orphan grace period reads."""
+    stamp = directory.stat().st_mtime - seconds
+    os.utime(directory, (stamp, stamp))
 
 
 def _age(store: Store, upload_id: str, hours: float) -> None:
@@ -128,14 +142,88 @@ def test_an_expired_upload_cannot_be_revived_by_referencing_it(client, settings)
 
 def test_an_orphan_directory_is_reclaimed(client, settings):
     """Self-healing: a crash between deleting the row and the directory leaves
-    a directory nothing points at. The next sweep takes it."""
+    a directory nothing points at. A later sweep takes it.
+
+    The directory is aged past `ORPHAN_GRACE_SECONDS` first, because a row-less
+    directory that is merely *recent* is indistinguishable from an upload still
+    being written — see `test_an_upload_in_flight_is_not_swept_as_an_orphan`.
+    """
     upload_id = _upload(client)
     store = Store(settings.db_path)
     store.delete_upload(LOCAL_OWNER, upload_id)  # the crash, simulated
+    directory = uploads_root(settings) / upload_id
+    _age_directory(directory, ORPHAN_GRACE_SECONDS + 60)
 
     result = sweep_expired_uploads(store, settings)
     assert result["orphans"] == 1
-    assert not (uploads_root(settings) / upload_id).exists()
+    assert not directory.exists()
+
+
+def test_a_recent_orphan_waits_for_the_next_sweep(client, settings):
+    """The other side of the grace period: a fresh row-less directory is left
+    alone. It is invisible and reclaimable, so one more tick costs nothing."""
+    upload_id = _upload(client)
+    store = Store(settings.db_path)
+    store.delete_upload(LOCAL_OWNER, upload_id)
+
+    assert sweep_expired_uploads(store, settings)["orphans"] == 0
+    assert (uploads_root(settings) / upload_id).is_dir()
+
+
+def test_an_upload_in_flight_is_not_swept_as_an_orphan(settings):
+    """The defect the grace period exists for, at the layer it happened on.
+
+    `create_upload` writes the bytes and registers the row afterwards, so for
+    the length of the drain the directory exists and no row points at it. The
+    sweep runs on its own 15-minute clock; when a tick landed in that window it
+    deleted the directory under the writer, and the drain died on `os.replace`
+    — a 500 on a perfectly valid upload.
+    """
+    store = Store(settings.db_path)
+    uploads = UploadStore(owner_roots(settings, LOCAL_OWNER).uploads)
+
+    def chunks():
+        yield MARKDOWN[:10]
+        sweep_expired_uploads(store, settings)  # the tick lands mid-stream
+        yield MARKDOWN[10:]
+
+    written = uploads.write_stream("upl_inflight", "notes.md", chunks(), limit=0)
+
+    assert written["size_bytes"] == len(MARKDOWN)
+    assert written["path"].exists(), "the sweep took an upload that was arriving"
+
+
+def test_a_sweep_just_before_registration_leaves_the_bytes(settings, monkeypatch):
+    """The narrower half of the same window, and the worse one.
+
+    If the tick lands after the drain but before `register_upload`, the request
+    still answers 201 — and the row it writes points at bytes the sweep has
+    just deleted. A later job then meets a confusing "file not found" instead
+    of the honest `upload_expired`, which is precisely what this module's
+    row-first ordering exists to prevent.
+    """
+    sweep_store = Store(settings.db_path)
+    register = Store.register_upload
+
+    def register_after_a_sweep(self, owner_id, record):
+        sweep_expired_uploads(sweep_store, settings)
+        return register(self, owner_id, record)
+
+    monkeypatch.setattr(Store, "register_upload", register_after_a_sweep)
+
+    app = create_app(
+        settings,
+        providers=ProviderRegistry([DocumentProvider()]),
+        start_worker=False,
+    )
+    with TestClient(app) as client:
+        upload_id = _upload(client)
+
+    row = Store(settings.db_path).get_upload(LOCAL_OWNER, upload_id)
+    assert row is not None
+    assert upload_path(LOCAL_OWNER, row, settings).exists(), (
+        "the row points at bytes the sweep deleted"
+    )
 
 
 def test_a_ttl_of_zero_disables_collection(client, settings):

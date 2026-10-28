@@ -185,3 +185,5 @@ of it is what a library is for.
 A crash between the two leaves an orphan directory, which housekeeping can find
 and a human can understand. The reverse leaves a row pointing at bytes that no
 longer exist, which the API would serve as a 500 forever.
+
+*Creation* runs the other way round — the bytes are streamed to disk and the row is written once they are all there — so a directory with no row is ambiguous: either a crash's leftover, or an upload arriving right now. Housekeeping cannot tell them apart by looking, so it reclaims an orphan only once the directory has gone untouched for `ORPHAN_GRACE_SECONDS` (`content/application/uploads.py`). Without that wait the sweep deleted uploads that were still being written — the drain failing on its final rename, or the row landing against bytes just removed, which is the very "file not found" this ordering exists to avoid. A real orphan waiting one more tick costs nothing.
