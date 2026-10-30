@@ -12,6 +12,7 @@ policies and guarantees that were claimed in prose and never asserted.
 from __future__ import annotations
 
 import os
+import shutil
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -19,6 +20,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from content.api.app import create_app
+from content.application.retention import _tree_bytes
 from content.application.uploads import (
     ORPHAN_GRACE_SECONDS,
     sweep_expired_uploads,
@@ -30,7 +32,7 @@ from content.persistence.store import Store
 from content.processors.transcript import TranscriptProcessor
 from content.providers.base import ProviderRegistry
 from content.providers.documents import DocumentProvider
-from content.storage.layout import UploadStore
+from content.storage.layout import JobStorage, UploadStore
 from content.storage.roots import owner_roots
 
 MARKDOWN = b"# A title\n\nA paragraph long enough to be a document.\n"
@@ -224,6 +226,100 @@ def test_a_sweep_just_before_registration_leaves_the_bytes(settings, monkeypatch
     assert upload_path(LOCAL_OWNER, row, settings).exists(), (
         "the row points at bytes the sweep deleted"
     )
+
+
+def _sweep_when_stat_is_next(monkeypatch, victim: Path, *, removes=None) -> None:
+    """Make housekeeping win the race at the one instant it can be lost.
+
+    A byte count walks the tree and asks each entry `is_file()`, then
+    `stat()`. A file removed between those two calls has already been yielded,
+    so `stat` raises `FileNotFoundError` — `rglob` itself survives a vanishing
+    directory, which is why the window is exactly this narrow and exactly this
+    reachable. Patching `is_file` to delete *as it answers true* reproduces
+    that interleaving deterministically, with no thread and no sleep.
+
+    `removes` is what the concurrent deleter actually takes: the whole
+    directory for an upload, which is the unit housekeeping reclaims, and the
+    single file where that is what goes.
+    """
+    target = victim if removes is None else removes
+    real_is_file = Path.is_file
+
+    def is_file_then_sweep(self):
+        answer = real_is_file(self)
+        if answer and self == victim:
+            if target.is_dir():
+                shutil.rmtree(target, ignore_errors=True)
+            else:
+                target.unlink(missing_ok=True)
+        return answer
+
+    monkeypatch.setattr(Path, "is_file", is_file_then_sweep)
+
+
+def test_counting_uploads_survives_one_swept_mid_walk(settings, monkeypatch):
+    """Measuring the disk must not fail because the disk changed.
+
+    The quota path walks every owner's uploads while housekeeping deletes
+    expired ones from the worker's own loop, so the two races by construction.
+    The sweep guarded its own copy of this walk from the start; the two places
+    that *count* the same bytes did not, and an unguarded `stat` made a
+    measurement raise.
+    """
+    uploads = UploadStore(owner_roots(settings, LOCAL_OWNER).uploads)
+    kept = uploads.write_stream("upl_kept", "kept.md", iter([MARKDOWN]), limit=0)
+    swept = uploads.write_stream("upl_swept", "swept.md", iter([MARKDOWN]), limit=0)
+
+    _sweep_when_stat_is_next(monkeypatch, swept["path"], removes=swept["path"].parent)
+
+    assert uploads.total_bytes() == len(MARKDOWN), (
+        "the count must report what survived, not raise"
+    )
+    assert kept["path"].exists()
+
+
+def test_a_sweep_during_the_quota_check_does_not_fail_the_upload(tmp_path, monkeypatch):
+    """The consequence at the layer a person meets it.
+
+    `create_upload` sums `total_bytes()` over every owner before accepting a
+    byte, and nothing on that path catches `OSError` — the one `try` there
+    wraps the drain and catches `UploadTooLarge`. So a sweep landing inside the
+    quota walk escaped as an unhandled `FileNotFoundError`: **a 500 on a valid
+    upload, caused by housekeeping doing its job correctly.**
+    """
+    roomy = ContentSettings(
+        data_dir=tmp_path / "data",
+        db_path=tmp_path / "db.sqlite",
+        uploads_total_bytes=10 * len(MARKDOWN),  # the walk runs; the quota is not hit
+    )
+    app = create_app(
+        roomy, providers=ProviderRegistry([DocumentProvider()]), start_worker=False
+    )
+    with TestClient(app) as client:
+        _upload(client, name="first.md")
+        uploads = UploadStore(owner_roots(roomy, LOCAL_OWNER).uploads)
+        victim = next(iter(uploads.root.glob("*/*.md")))
+        _sweep_when_stat_is_next(monkeypatch, victim, removes=victim.parent)
+
+        response = client.post(
+            "/api/v1/uploads", files={"file": ("second.md", MARKDOWN, "text/markdown")}
+        )
+
+    assert response.status_code == 201, response.text
+
+
+def test_counting_a_job_tree_survives_its_own_deletion(settings, monkeypatch):
+    """The same walk, the other caller: `delete_job` measures the tree it is
+    about to remove. A file going early must not abort the deletion and answer
+    500 — the bytes are gone either way, which is what was being counted."""
+    storage = JobStorage.from_settings(settings, LOCAL_OWNER, "job_counted").ensure()
+    (storage.artifacts / "result.md").write_bytes(MARKDOWN)
+    doomed = storage.artifacts / "going.md"
+    doomed.write_bytes(MARKDOWN)
+
+    _sweep_when_stat_is_next(monkeypatch, doomed)
+
+    assert _tree_bytes(storage.root) == len(MARKDOWN)
 
 
 def test_a_ttl_of_zero_disables_collection(client, settings):

@@ -38,6 +38,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from content.storage.layout import JobStorage, delivery_root_for
+from content.storage.paths import tree_bytes
 
 log = logging.getLogger("content.retention")
 
@@ -50,9 +51,9 @@ class Deletion:
 
 
 def _tree_bytes(path: Path) -> int:
-    if not path.exists():
-        return 0
-    return sum(p.stat().st_size for p in path.rglob("*") if p.is_file())
+    """How much this job's tree holds, counted just before it is removed — so
+    the count must not be what stops the removal (``tree_bytes``)."""
+    return tree_bytes(path)
 
 
 def delete_job(

@@ -165,7 +165,13 @@ def claim_with(staged: Path, destination: Path) -> bool:
 
 
 def _dir_stats(path: Path) -> dict:
-    """Total bytes + file count under a directory (0/0 if absent)."""
+    """Total bytes + file count under a directory (0/0 if absent).
+
+    A file that disappears between ``is_file()`` and ``stat()`` is skipped
+    rather than fatal: housekeeping deletes uploads and whole job trees from
+    its own loop, so any walk of a live storage root races it. See
+    :func:`tree_bytes` for why this guard is the shared one.
+    """
     total, count = 0, 0
     if path.exists():
         for entry in path.rglob("*"):
@@ -176,6 +182,27 @@ def _dir_stats(path: Path) -> dict:
                     continue
                 count += 1
     return {"bytes": total, "files": count}
+
+
+def tree_bytes(path: Path) -> int:
+    """Total bytes of the files under *path* (0 if absent).
+
+    The one place that answers "how much is under this tree", because the
+    answer has a race in it and each copy of the walk had to remember the same
+    guard. ``rglob`` survives a directory vanishing mid-iteration; ``stat`` on
+    an entry it already yielded does not, and raises ``FileNotFoundError``.
+
+    That window is not theoretical. Housekeeping removes expired uploads and
+    deleted job trees from the worker's own loop, and the upload quota is
+    checked by walking *every* owner's uploads — so a sweep landing between
+    "it is a file" and "how big is it" turned a valid upload into a 500. The
+    sweep itself always guarded its own walk (and says so); two callers
+    counting the same bytes did not.
+
+    Measuring is never worth failing for: what vanished mid-walk is, by
+    definition, no longer occupying the disk this number describes.
+    """
+    return _dir_stats(path)["bytes"]
 
 
 def owner_storage_report(settings, owner_id: str) -> dict:

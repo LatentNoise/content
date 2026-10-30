@@ -23,7 +23,7 @@ from pathlib import Path
 # Canonical home is content.naming.sanitize (ADR 0017); sanitize_filename is
 # re-exported here for the storage-side callers that predate the naming module.
 from content.naming.sanitize import display_name, sanitize_filename
-from content.storage.paths import claim_with, safe_segment, stage_beside
+from content.storage.paths import claim_with, safe_segment, stage_beside, tree_bytes
 from content.storage.roots import OwnerRoots, owner_roots
 
 
@@ -224,9 +224,10 @@ class UploadStore:
         }
 
     def total_bytes(self) -> int:
-        if not self.root.exists():
-            return 0
-        return sum(p.stat().st_size for p in self.root.rglob("*") if p.is_file())
+        """What this owner's uploads occupy. Read on the quota path, for every
+        owner, while housekeeping may be deleting any of them — so the walk
+        has to tolerate a file going out from under it (``tree_bytes``)."""
+        return tree_bytes(self.root)
 
     def remove(self, upload_id: str) -> None:
         shutil.rmtree(self.directory_for(upload_id), ignore_errors=True)
