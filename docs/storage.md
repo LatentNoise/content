@@ -73,11 +73,13 @@ behaviour. Mount the root wherever the library should appear
 
 | Family | Role | Lifecycle |
 | --- | --- | --- |
-| **`tmp`** | Incomplete/technical writes: download in progress, `.part`, staging before an atomic move, a copy of `cookies.txt`, probe scratch. | Disposable. Cleaned at the end of a job (`purge_tmp`) and by age. A file in `tmp` is **never** deemed valid or reusable. A crash may leave orphans behind. |
-| **`work`** | **Valid** intermediates specific to one job (audio extracted for a transcript, media shared between outputs). | Shareable between steps of the **same** job, never across jobs. Purged according to `retention.working_files` (default `24h`). |
+| **`tmp`** | Incomplete/technical writes: download in progress, `.part`, staging before an atomic move, a copy of `cookies.txt`, probe scratch. | Disposable. Removed when the job reaches a terminal status (`purge_tmp`), whatever the verdict — and by `expire_job_content` when retention is switched on. **Not** cleaned by age: `PathRoots.cleanup_tmp` exists but has no caller. A file in `tmp` is **never** deemed valid or reusable. |
+| **`work`** | **Valid** intermediates specific to one job (audio extracted for a transcript, media shared between outputs). | Shareable between steps of the **same** job, never across jobs. Removed when the job reaches a terminal status (`purge_work`). There is no age-based purge: `execution.retention.working_files` is a **reserved field the engine refuses** as inert (`domain/reserved.py`), and retention's own sweep does not touch `work/`. |
 | **`artifacts`** | Business results (video, audio, subtitles, transcript, summary, thumbnail, metadata). | An `Artifact` row + provenance, exposed by the API. Its own retention. **Never** deleted by the `tmp`/`work` cleanup. |
 | **`cache`** | Validated results reusable across jobs. | **Disabled in V1** (`CONTENT_CACHE_ENABLED=false`). The directory is not created while the cache is off. |
 | **`uploads`** | Bytes a client supplied before any job exists (ADR 0020). Immutable, one directory per opaque id. | Swept `CONTENT_UPLOAD_TTL_HOURS` after the **last** job referenced it — not after creation, so a retry still finds its input. Untouched by `purge_work`/`purge_tmp`: an upload may outlive and feed several jobs. |
+
+**What a crash leaves behind.** `tmp/` and `work/` are emptied on every path that reaches a terminal status, the unexpected-error path included — so a job that merely *fails* leaves nothing. What is not covered is the process dying mid-job (SIGKILL, OOM, a container restart): the purge never runs, and because nothing sweeps either family by age, those bytes stay until retention expires the job or someone removes the data directory by hand. On a long-lived instance that restarts under load, this accumulates.
 
 ## Retention: expiring is not deleting
 
