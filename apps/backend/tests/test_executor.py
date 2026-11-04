@@ -6,6 +6,7 @@ from content.analysis.service import AnalysisService
 from content.application.submit import submit_generation
 from content.execution.executor import JobExecutor
 from content.identity import LOCAL_OWNER
+from content.storage.layout import JobStorage
 from tests.conftest import make_request, minimal_payload
 
 
@@ -139,6 +140,60 @@ def test_subtitles_produce_one_artifact_per_language(pipeline, store):
     assert languages == {"en", "fr"}
     filenames = {a["filename"] for a in artifacts}
     assert filenames == {"subs.en.srt", "subs.fr.srt"}
+
+
+def test_an_unexpected_executor_error_leaves_no_disposable_bytes(
+    store, providers, settings
+):
+    """`execute` promises every outcome is persisted as terminal, and the two
+    paths that finish normally — `_finish_job`, including when the verdict is
+    `failed`, and `_finish_cancelled` — both purge work/ and tmp/. The path
+    that catches an *unexpected* error did not, so a job dying mid-run left
+    its scratch behind with nothing to reclaim it: retention is off by default
+    (`retention_days` is 0.0), it would not touch work/ even when on, and the
+    by-age tmp sweeper (`PathRoots.cleanup_tmp`) has no caller at all.
+
+    The forensic record is unaffected: logs/ and snapshots/ are outside both
+    purges, so this loses nothing the normal failure path keeps.
+    """
+    analysis_service = AnalysisService(store, providers, settings)
+    executor = JobExecutor(store, settings, providers)
+    payload = minimal_payload()
+    request = make_request(payload)
+    result = submit_generation(
+        LOCAL_OWNER,
+        payload,
+        request,
+        store=store,
+        settings=settings,
+        providers=providers,
+        analysis_service=analysis_service,
+    )
+    claimed = store.claim_next_queued()
+    assert claimed is not None and claimed["id"] == result.job_id
+
+    storage = JobStorage.from_settings(settings, LOCAL_OWNER, result.job_id).ensure()
+
+    def die_mid_run(job_id: str, job_row: dict) -> None:
+        # What a real run has on disk when it dies: a part-file in work/ and
+        # step scratch in tmp/.
+        (storage.work / "video.mp4.part").write_bytes(b"x" * 1024)
+        (storage.tmp / "step-scratch.bin").write_bytes(b"y" * 1024)
+        raise RuntimeError("provider exploded")
+
+    executor._execute = die_mid_run
+    executor.execute(claimed)  # never raises: the outcome is persisted
+
+    job = store.get_job(LOCAL_OWNER, result.job_id)
+    assert job["status"] == "failed"
+    assert "provider exploded" in job["error"]
+
+    assert not any(storage.work.iterdir()), "work/ still holds the dead job's bytes"
+    assert not storage.tmp.exists() or not any(storage.tmp.iterdir()), (
+        "tmp/ still holds the dead job's scratch"
+    )
+    # the record of what happened survives the cleanup
+    assert storage.logs.is_dir() and storage.snapshots.is_dir()
 
 
 def test_idempotent_resubmission_returns_same_job(store, providers, settings):

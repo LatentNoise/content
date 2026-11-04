@@ -19,6 +19,7 @@ never what a member is. Every other step keeps the strictly sequential loop.
 """
 
 import json
+import logging
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -44,6 +45,8 @@ from content.storage.layout import (
     checksum_sha256,
     delivery_root_for,
 )
+
+log = logging.getLogger("content.executor")
 
 _PROGRESS_MIN_DELTA = 1.0  # percent — event throttling, HomeTube-proven
 
@@ -193,7 +196,7 @@ class JobExecutor:
 
     def execute(self, job_row: dict) -> None:
         """Run a job already claimed as 'running'. Never raises: every outcome
-        is persisted as a terminal status."""
+        is persisted as a terminal status, and no outcome leaves scratch behind."""
         job_id = job_row["id"]
         try:
             self._execute(job_id, job_row)
@@ -202,6 +205,23 @@ class JobExecutor:
                 job_id, "failed", error=f"executor error: {exc}", finished_at=utcnow()
             )
             self._events.publish(job_id, "job.failed", {"error": str(exc)})
+            self._purge_scratch(job_row["owner_id"], job_id)
+
+    def _purge_scratch(self, owner_id: str, job_id: str) -> None:
+        """Drop a dead job's work/ and tmp/, as the two normal terminal paths do.
+
+        Without this an unexpectedly-failed job's bytes stay forever: nothing
+        sweeps tmp by age (``PathRoots.cleanup_tmp`` has no caller), and
+        retention — which would take tmp but never work/ — is off unless
+        ``CONTENT_RETENTION_DAYS`` is set. logs/ and snapshots/ sit outside both
+        purges, so the record of what happened survives.
+        """
+        try:
+            storage = JobStorage.from_settings(self._settings, owner_id, job_id)
+            storage.purge_work()
+            storage.purge_tmp()
+        except Exception:  # noqa: BLE001 — cleanup must not mask the real failure
+            log.warning("could not purge scratch for failed job %s", job_id)
 
     # --- internals -------------------------------------------------------------
 
