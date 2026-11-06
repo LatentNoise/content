@@ -40,7 +40,16 @@ class AnalysisJsonCache:
         # its `created_at`, so every record reads as expired.
         if self.ttl_seconds <= 0:
             return None
-        if time.time() - path.stat().st_mtime > self.ttl_seconds:
+        try:
+            age = time.time() - path.stat().st_mtime
+        except OSError:
+            # It went while we were looking at it: `/api/v1/cache/purge` unlinks
+            # these files from an operator's request, and `is_file()` above has
+            # already answered. The read below was guarded for exactly this case
+            # and the stat was not, so the miss escaped as an unhandled
+            # `FileNotFoundError` — a 500 on a valid analysis or submission.
+            return None
+        if age > self.ttl_seconds:
             return None
         try:
             return json.loads(path.read_text())

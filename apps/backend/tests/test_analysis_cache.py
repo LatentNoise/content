@@ -8,6 +8,7 @@ import json
 import os
 import time
 from dataclasses import replace
+from pathlib import Path
 
 import pytest
 
@@ -121,6 +122,18 @@ def test_json_cache_non_positive_ttl_never_serves(tmp_path):
         old = time.time() - 10 * 86400
         os.utime(path, (old, old))
         assert cache.load("k") is None
+
+
+def test_json_cache_load_when_the_file_goes_mid_read(tmp_path, monkeypatch):
+    """`load` answers a miss when the file goes between the `is_file` check and
+    the `stat`, which `/api/v1/cache/purge` can do under a request. The real
+    interleaving, with no thread: `is_file` has said yes and the file is gone."""
+    cache = AnalysisJsonCache(tmp_path / "cache", ttl_hours=72)
+    cache.save("k", {"a": 1})
+    cache._path("k").unlink()
+    monkeypatch.setattr(Path, "is_file", lambda self: True)
+
+    assert cache.load("k") is None
 
 
 def test_ttl_zero_does_not_serve_a_stale_file_nor_reseed_the_db(
