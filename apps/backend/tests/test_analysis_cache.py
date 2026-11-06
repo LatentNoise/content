@@ -4,6 +4,8 @@ The DB caches analyses by resource key; the file cache under cache/analysis/
 survives a DB reset and is only active when the cache is enabled.
 """
 
+import json
+import os
 import time
 from dataclasses import replace
 
@@ -34,8 +36,6 @@ def test_json_cache_expired_entry_returns_none(tmp_path):
     cache.save("k", {"a": 1})
     path = cache._path("k")
     old = time.time() - 73 * 3600
-    import os
-
     os.utime(path, (old, old))
     assert cache.load("k") is None
 
@@ -107,6 +107,61 @@ def test_db_hit_rewrites_missing_source_of_truth(cache_settings):
     service.analyze_sources(LOCAL_OWNER, list(request.sources))
     assert provider.analyze_calls == 1  # DB hit, no re-probe
     assert list(cache_dir.glob("*.json"))  # write-through recreated the file
+
+
+def test_json_cache_non_positive_ttl_never_serves(tmp_path):
+    """A TTL of 0 is "nothing is fresh", not "fresh forever" — the meaning
+    `Store.load_fresh_analysis` gives it explicitly."""
+    for ttl in (0.0, -1.0):
+        cache = AnalysisJsonCache(tmp_path / f"cache{ttl}", ttl_hours=ttl)
+        cache.save("k", {"a": 1})
+        assert cache.load("k") is None  # fresh on disk, and still not served
+
+        path = cache._path("k")
+        old = time.time() - 10 * 86400
+        os.utime(path, (old, old))
+        assert cache.load("k") is None
+
+
+def test_ttl_zero_does_not_serve_a_stale_file_nor_reseed_the_db(
+    cache_settings, tmp_path
+):
+    """The two halves of one cache agreed on every TTL but the one that turns it
+    off. With `analysis_ttl_hours=0` the DB refused on principle while the
+    durable file answered whatever its age, re-probing never happened, and the
+    stale payload was written back to the DB with a current `created_at`."""
+    settings = replace(cache_settings, analysis_ttl_hours=0.0)
+    request = make_request(minimal_payload())
+
+    store = Store(settings.db_path)
+    first = CountingProvider()
+    AnalysisService(store, ProviderRegistry([first]), settings).analyze_sources(
+        LOCAL_OWNER, list(request.sources)
+    )
+    assert first.analyze_calls == 1
+
+    # Make the durable file say something the provider never would, then age it
+    # by ten days: whatever comes back next names who answered.
+    files = list((settings.data_dir / "cache" / "analysis").glob("*.json"))
+    assert len(files) == 1  # write-through still happens; only reading it back stops
+    payload = json.loads(files[0].read_text())
+    payload["resource"]["title"] = "ten days old"
+    files[0].write_text(json.dumps(payload))
+    old = time.time() - 10 * 86400
+    os.utime(files[0], (old, old))
+
+    key = store.list_analyses()[0]["resource_key"]
+    assert store.load_fresh_analysis(key, 0.0) is None  # the DB half, unchanged
+
+    second = CountingProvider()
+    result = AnalysisService(
+        store, ProviderRegistry([second]), settings
+    ).analyze_sources(LOCAL_OWNER, list(request.sources))
+    assert second.analyze_calls == 1  # re-probed instead of serving the old file
+    assert result.sources[0].resource.title == "Fake conference"
+    # And the ten-day-old facts were never written back into the DB under a
+    # current timestamp, which is what made the DB's own guard moot.
+    assert "ten days old" not in [row["title"] for row in store.list_analyses()]
 
 
 def test_file_cache_inactive_when_cache_disabled(settings):

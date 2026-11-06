@@ -30,7 +30,17 @@ class AnalysisJsonCache:
         path = self._path(resource_key)
         if not path.is_file():
             return None
-        if self.ttl_seconds and time.time() - path.stat().st_mtime > self.ttl_seconds:
+        # `<= 0`, not a falsy test on `ttl_seconds`: a TTL of 0 made it falsy and
+        # skipped the freshness check altogether, so the one value that means
+        # "nothing is fresh" in every other TTL consumer served a file of any
+        # age here — and this cache is the source of truth, so it overrode the
+        # DB and re-seeded it with the stale payload under a current timestamp.
+        # The others: `Store.load_fresh_analysis` guards the same value by hand
+        # (`ttl_hours <= 0` → None), and a record's `expires_at` collapses onto
+        # its `created_at`, so every record reads as expired.
+        if self.ttl_seconds <= 0:
+            return None
+        if time.time() - path.stat().st_mtime > self.ttl_seconds:
             return None
         try:
             return json.loads(path.read_text())

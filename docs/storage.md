@@ -182,7 +182,10 @@ does not re-probe. The DB cache (the `analyses` table) is always active; when
 `CONTENT_CACHE_ENABLED=true`, the payload is **also** persisted as a durable file
 under `cache/analysis/<key>.json` (write-through, including on a DB hit) — the
 source of truth that survives a database reset and serves as a network-free
-fallback.
+fallback. **A TTL of `0` (or less) means nothing is ever served from cache** —
+not "no expiry": both halves refuse, and a submitted URL is re-probed every
+time. The payload is still written through, so turning the TTL back up starts
+serving again without a re-probe.
 
 **2. Downloaded video/media — content-addressed reuse.** With
 `reuse_existing=true` (the default) and the cache enabled, an acquisition step is
