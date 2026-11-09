@@ -288,3 +288,112 @@ def test_pairing_two_outputs_is_a_well_formed_request():
     rules bind `single`-scope media types and the four one-input derivations;
     this is neither, and the pairing is the product."""
     assert validate_structure(_request()).valid
+
+
+# --- planning ---------------------------------------------------------------------
+#
+# The planner is where this feature keeps its promise: five refusals, each one
+# naming a half by its type or its format so the request fails now instead of
+# discovering an empty lyrics pane after the download. None of them had a test,
+# and the structural check above is not one — it never reaches the planner.
+
+
+def _payload(audio=None, timed=None, from_outputs=("a", "t"), **output):
+    return {
+        "schema_version": "1.0",
+        "sources": [{"id": "s", "type": "url", "uri": "https://example.com/video"}],
+        "outputs": [
+            {"id": "a", "type": "audio", "options": {"format": "mp3", **(audio or {})}},
+            {"id": "t", "type": "transcript", "options": timed or {}},
+            {
+                "id": "sy",
+                "type": "synced_audio",
+                "from_outputs": list(from_outputs),
+                **output,
+            },
+        ],
+    }
+
+
+@pytest.fixture
+def plan_synced(store, settings):
+    """A registry that carries the lyrics runner, which the default fixture does
+    not — so every refusal below is the planner's, never "nothing is installed"."""
+    from content.analysis.service import AnalysisService
+    from content.identity import LOCAL_OWNER
+    from content.planning.planner import build_plan
+    from content.processors.transcript import TranscriptProcessor
+    from content.providers.base import ProviderRegistry
+    from tests.conftest import FakeProvider, make_request
+
+    def _plan(payload, *, with_lyrics=True):
+        processors = [TranscriptProcessor()]
+        if with_lyrics:
+            processors.append(SyncedAudioProcessor())
+        providers = ProviderRegistry([FakeProvider()], processors=processors)
+        request = make_request(payload)
+        analysis = AnalysisService(store, providers, settings).analyze_sources(
+            LOCAL_OWNER, list(request.sources)
+        )
+        return build_plan(request, analysis, providers, settings)
+
+    return _plan
+
+
+def _refusal(plan_synced, payload, **kwargs):
+    from content.domain.errors import RequestRejected
+
+    with pytest.raises(RequestRejected) as raised:
+        plan_synced(payload, **kwargs)
+    return raised.value.result.errors[0]
+
+
+def test_the_pairing_becomes_one_step_depending_on_both_halves(plan_synced):
+    """The product of the feature, as the plan states it: one step, the lyrics
+    runner, and both upstream steps as dependencies."""
+    result = plan_synced(_payload())
+    step = next(s for s in result.steps if s.operation == "audio.sync_text")
+    assert step.provider == SyncedAudioProcessor.name
+    assert len(step.depends_on) == 2
+    assert step.params == {"language": "auto", "lrc_sidecar": True}
+
+
+def test_the_declined_sidecar_reaches_the_step(plan_synced):
+    payload = _payload()
+    payload["outputs"][2]["options"] = {"lrc_sidecar": False}
+    result = plan_synced(payload)
+    step = next(s for s in result.steps if s.operation == "audio.sync_text")
+    assert step.params["lrc_sidecar"] is False
+
+
+def test_without_the_lyrics_runner_the_remedy_is_named(plan_synced):
+    """`capability_unavailable`, not `invalid_option`: the request is valid and
+    this installation simply cannot serve it."""
+    error = _refusal(plan_synced, _payload(), with_lyrics=False)
+    assert error.code == "capability_unavailable"
+    assert "lyrics" in error.message
+
+
+@pytest.mark.parametrize("from_outputs", [("a",), ("t",)])
+def test_one_half_alone_is_refused(plan_synced, from_outputs):
+    """Half a pairing is not a degraded output, it is a different request."""
+    error = _refusal(plan_synced, _payload(from_outputs=from_outputs))
+    assert error.code == "invalid_option"
+    assert error.path == "outputs[2].from_outputs"
+
+
+def test_only_an_mp3_can_carry_the_lyrics(plan_synced):
+    """The words go into ID3 tags, so the audio half's own `format` decides
+    whether there is anywhere to put them — said with the fix, before the
+    download rather than after it."""
+    error = _refusal(plan_synced, _payload(audio={"format": "opus"}))
+    assert error.code == "invalid_option"
+    assert "mp3" in error.message
+
+
+def test_a_transcript_asked_as_text_has_no_timings_left(plan_synced):
+    """`format: text` is a published transcript option and it drops the
+    timings, which are the whole of what gets synchronised."""
+    error = _refusal(plan_synced, _payload(timed={"format": "text"}))
+    assert error.code == "invalid_option"
+    assert "json" in error.message
