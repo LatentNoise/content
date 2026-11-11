@@ -46,9 +46,38 @@ def derive_member_request(request: GenerationRequest, params: dict) -> dict:
     A pure rewrite, not a plan: the collection source becomes an ordinary
     ``url`` source pointing at the member (carrying the collection's ``auth``,
     since a playlist's credential is the member's credential), the
-    ``each_item`` scope collapses to ``single``, and everything else — options,
-    delivery intent, execution preferences — is passed through untouched. That
-    is what makes a member behave exactly like the same video submitted alone.
+    ``each_item`` scope collapses to ``single``, and the per-output options —
+    selection, processing, delivery intent — travel inside the output they
+    belong to. That is what makes a member behave exactly like the same video
+    submitted alone.
+
+    **`preferences` and `constraints` are carried too, because the planner
+    reads them**, and a member is planned by the same ``build_plan`` as
+    anything else. Dropping them did not degrade a member, it answered a
+    different question: a collection submitted with
+    ``constraints.privacy.allow_cloud_providers: false`` fanned out into
+    members whose derived request had the default ``true``, and the summary of
+    every episode went to the cloud runner the parent request had forbidden.
+    Nothing refused and nothing warned — the guarantee simply was not there.
+    The same held for ``constraints.content.allowed_languages`` and for
+    ``preferences.providers``, which the planner consults to order the runners
+    it picks from.
+
+    ``execution`` and ``metadata`` are *not* carried, and that is a narrower
+    statement than it looks. On this path nothing reads them: the executor
+    takes ``failure_policy`` and ``reuse_existing`` from the request the job
+    was submitted with, :meth:`CollectionMemberRunner._run_member_plan`
+    consults neither, and no planner or naming rule looks at ``metadata``. So
+    copying them here would add fields nothing reads.
+
+    ⚠️ **It is load-bearing for the unbuilt sync path, so do not "finish the
+    job" by adding it.** ADR 0027 submits a derived member request as a job of
+    its own, where ``execution`` *is* read — and it sets
+    ``execution.reuse_existing: false`` explicitly *because* this function does
+    not inherit it (the model default is ``true`` and the HomeTube compose
+    enables the cache, so an inherited default would silently turn cross-job
+    reuse on for every sync ADD). Carrying ``execution`` here would change the
+    premise of that decision rather than implement it.
 
     Returns the raw payload; the caller validates it into a
     ``GenerationRequest`` so the member goes through the same model the public
@@ -76,11 +105,19 @@ def derive_member_request(request: GenerationRequest, params: dict) -> dict:
         member_output.pop("scope", None)
         outputs.append(member_output)
 
-    return {
+    member: dict = {
         "schema_version": original.get("schema_version", "1.0"),
         "sources": [member_source],
         "outputs": outputs,
     }
+    # The two request-level blocks `build_plan` reads. Copied wholesale rather
+    # than field by field: the planner gains readers of these over time, and a
+    # list of the ones it happens to read today is a list that goes stale
+    # silently — which is exactly how this was lost in the first place.
+    for block in ("preferences", "constraints"):
+        if block in original:
+            member[block] = original[block]
+    return member
 
 
 class CollectionMemberRunner:

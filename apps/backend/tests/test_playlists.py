@@ -130,6 +130,165 @@ def test_the_member_request_is_what_that_video_alone_would_have_been(
     assert output.options.processing.embed_subtitles == ["en", "es"]
 
 
+# --- what the fan-out carries across (the request-level blocks) ----------------
+#
+# The derivation used to return `schema_version`, `sources` and `outputs` and
+# nothing else, so every request-level block reverted to its model default in
+# the member. The test above does not catch it: per-output options live inside
+# the output, which was always copied. Neither does
+# `test_a_member_is_planned_from_its_own_facts`, which compares a member plan
+# against the same video submitted alone — both built from a payload that sets
+# no constraint, so both got the default and the plans matched.
+
+
+def _cloud_summary_registry(store, settings):
+    """A registry whose only summarizer is cloud-located, plus the collection
+    runner — the same shape `test_privacy_constraint_excludes_cloud_summarizer`
+    uses for a single source."""
+    from content.application.collections import attach_collection_runner
+    from content.processors.transcript import TranscriptProcessor
+    from content.providers.base import ProviderRegistry
+    from tests.conftest import FakeCloudSummarizer, FakeProvider
+
+    registry = ProviderRegistry(
+        [FakeProvider()], processors=[TranscriptProcessor(), FakeCloudSummarizer()]
+    )
+    service = AnalysisService(store, registry, settings)
+    attach_collection_runner(registry, service, settings)
+    return registry, service
+
+
+def _derived_member_of(payload, registry, service, settings) -> GenerationRequest:
+    request = make_request(payload)
+    analysis = service.analyze_sources(LOCAL_OWNER, list(request.sources))
+    plan = build_plan(request, analysis, registry, settings)
+    member = next(s for s in plan.steps if s.operation == "collection.member")
+    return GenerationRequest.model_validate(member.params["member_request"])
+
+
+def test_a_privacy_constraint_is_not_lost_on_the_way_to_a_member(store, settings):
+    """`allow_cloud_providers: false` must mean the same thing for a playlist
+    as for a video.
+
+    This is the case that matters, because it fails *open*. The constraint was
+    dropped from the derived request, so the member planned on the very cloud
+    runner the parent request forbade — and because a member is planned while
+    the job runs, nothing refused and nothing warned. The summary of every
+    episode went to the cloud silently.
+    """
+    registry, service = _cloud_summary_registry(store, settings)
+    constraints = {"privacy": {"allow_cloud_providers": False}}
+
+    # The same constraint on a single source: refused, and that is the baseline.
+    alone = make_request(
+        minimal_payload(
+            outputs=[{"id": "s", "type": "summary"}], constraints=constraints
+        )
+    )
+    with pytest.raises(RequestRejected) as excinfo:
+        build_plan(
+            alone,
+            service.analyze_sources(LOCAL_OWNER, list(alone.sources)),
+            registry,
+            settings,
+        )
+    assert excinfo.value.result.errors[0].code == "constraint_unsatisfiable"
+
+    derived = _derived_member_of(
+        minimal_payload(
+            sources=_playlist_sources(),
+            outputs=[{"id": "s", "type": "summary", "scope": "each_item"}],
+            constraints=constraints,
+        ),
+        registry,
+        service,
+        settings,
+    )
+    assert derived.constraints.privacy.allow_cloud_providers is False
+
+    # And it bites where it counts: planning the member refuses, exactly as the
+    # single source did. Asserting the payload field alone would pass again the
+    # day something else stops consulting it.
+    with pytest.raises(RequestRejected) as excinfo:
+        build_plan(
+            derived,
+            service.analyze_sources(LOCAL_OWNER, list(derived.sources)),
+            registry,
+            settings,
+        )
+    assert excinfo.value.result.errors[0].code == "constraint_unsatisfiable"
+
+
+def test_a_language_constraint_is_not_lost_on_the_way_to_a_member(
+    store, providers, settings
+):
+    """`constraints.content.allowed_languages` is read at five sites in the
+    planner; a member saw none of them."""
+    service = AnalysisService(store, providers, settings)
+    derived = _derived_member_of(
+        minimal_payload(
+            sources=_playlist_sources(),
+            outputs=[{"id": "vid", "type": "video", "scope": "each_item"}],
+            constraints={"content": {"allowed_languages": ["fr"]}},
+        ),
+        providers,
+        service,
+        settings,
+    )
+    assert derived.constraints.content.allowed_languages == ["fr"]
+
+
+def test_a_provider_preference_is_not_lost_on_the_way_to_a_member(store, settings):
+    """`preferences.providers` orders the runners the planner picks from, so a
+    member that lost it could be planned on a different provider than the one
+    the request named."""
+    registry, service = _cloud_summary_registry(store, settings)
+    derived = _derived_member_of(
+        minimal_payload(
+            sources=_playlist_sources(),
+            outputs=[{"id": "s", "type": "summary", "scope": "each_item"}],
+            preferences={"providers": {"llm": ["fake-cloud-llm"]}},
+        ),
+        registry,
+        service,
+        settings,
+    )
+    assert derived.preferences.providers == {"llm": ["fake-cloud-llm"]}
+
+
+def test_the_outer_job_s_own_policy_stays_the_outer_job_s(store, settings):
+    """`execution` and `metadata` are deliberately not carried: the executor
+    reads the policy from the request the job was submitted with, and the member
+    runner consults neither.
+
+    Pinned rather than left implicit because ADR 0027 depends on it. The sync
+    path submits a derived member request as its own job and sets
+    `execution.reuse_existing: false` itself, *because* this derivation does not
+    inherit it — so an obliging future change that carries `execution` across
+    would silently turn cross-job reuse on for every sync ADD. This test is
+    what makes that a visible choice instead of a side effect.
+    """
+    registry, service = _cloud_summary_registry(store, settings)
+    request = make_request(
+        minimal_payload(
+            sources=_playlist_sources(),
+            outputs=[{"id": "s", "type": "summary", "scope": "each_item"}],
+            execution={"failure_policy": "fail_fast"},
+            metadata={"ticket": "abc"},
+        )
+    )
+    analysis = service.analyze_sources(LOCAL_OWNER, list(request.sources))
+    plan = build_plan(request, analysis, registry, settings)
+    member = next(s for s in plan.steps if s.operation == "collection.member")
+    assert sorted(member.params["member_request"]) == [
+        "constraints",
+        "outputs",
+        "preferences",
+        "schema_version",
+        "sources",
+    ]
+
+
 def test_a_member_is_planned_from_its_own_facts(analyze, providers, settings):
     """The acceptance criterion: a member behaves like that video submitted
     alone. Planning the derived request must give exactly the plan the same
