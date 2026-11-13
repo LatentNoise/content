@@ -25,6 +25,11 @@ optimisation, it is a broken guarantee — so `execution_location` and
 `tests/test_contract_validation.py` walks the public request model and fails if
 a field appears that is neither read by the engine nor declared here, so the
 next silent-ignore cannot arrive unnoticed.
+
+That sweep covers the request-level blocks only. The per-output `options` are
+not declared here — they are refused per capability by the planner — so they get
+their own guard, `tests/test_contract_options_are_read.py`, which plans each
+option twice and demands that the plan change or the request be refused.
 """
 
 from __future__ import annotations

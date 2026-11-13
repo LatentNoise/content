@@ -252,9 +252,16 @@ def test_no_public_field_is_accepted_without_being_classified():
     field that is merely accepted fails here, at the moment it is added, rather
     than after someone has shipped code against it.
 
-    Scope is the request-level blocks. Per-output `options` are deliberately out:
-    they are validated per capability and refused with `option_not_supported`
-    by the planner, which is a different mechanism with its own tests.
+    Scope is the request-level blocks. Per-output `options` are audited by
+    `test_contract_options_are_read.py` instead, empirically rather than from a
+    list: it plans each option twice and requires the plan to change or the
+    request to be refused.
+
+    This docstring used to say the planner's `option_not_supported` refusals
+    covered the per-output half "with its own tests". They do not cover it: that
+    mechanism fires on the options a planner *looks at*, so an option no planner
+    looks at is precisely what it cannot see — which is how `transcript.timestamps`
+    shipped as a working value that nothing reads.
     """
     from content.domain.request import GenerationRequest
     from content.domain.reserved import RESERVED_PATHS
