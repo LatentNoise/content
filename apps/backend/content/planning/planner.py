@@ -26,7 +26,7 @@ from content.domain.errors import (
     ValidationIssue,
     ValidationResult,
 )
-from content.domain.languages import ORIGINAL, expand_original
+from content.domain.languages import ORIGINAL, expand_original, primary_subtag
 from content.domain.plan import ExecutionPlan, OutputDelivery
 from content.domain.request import (
     EXECUTABLE_OUTPUT_TYPES,
@@ -648,11 +648,62 @@ def _resolve_embed_subtitles(
 # --- transcript -----------------------------------------------------------------
 
 
+def _spoken_languages(original: str, resource_languages: list[str]) -> list[str]:
+    """The languages the source is known to be *spoken* in, best signal first.
+
+    Narrower than "every language the resource mentions", and D-60 is why.
+    Providers put a **dub menu** in ``resource.languages``: a YouTube video
+    dubbed into five languages lists all five, so several entries say which
+    languages the resource is *available* in — not which one was said. Picking
+    from that menu is how an English talk came back transcribed through Hindi.
+
+    Two signals survive that. ``original_audio_language`` is the voice track the
+    provider marked as the source's own, which answers "what was said" directly
+    — and the engine already stakes user-visible behaviour on it, since ADR
+    0022 resolves the ``original`` token from the same field. A resource
+    language list answers it too, but only when it holds **one** entry.
+
+    Several entries and no marked original means nothing here knows what was
+    spoken, so this returns nothing rather than guessing: rule 2's hand-written
+    track is the honest stand-in, and letting it run is the whole point.
+    """
+    candidates = []
+    if original:
+        candidates.append(original)
+    if len(resource_languages) == 1:
+        candidates.append(resource_languages[0])
+    return candidates
+
+
+def _track_for_language(language: str, available: list[str]) -> str | None:
+    """The subtitle track carrying *language*, by the track's own spelling.
+
+    Exact match first, then on the primary subtag: a spoken language arrives as
+    a regioned tag (``en-US``, ``pt-BR``) while subtitle tracks are keyed by
+    bare codes, so string equality misses every dubbed track (D-60). The
+    track's own name is what comes back, because that is the string the
+    acquisition step asks the provider for — ``en-US`` would fetch nothing.
+
+    *available* is sorted, so a bare ``pt`` wins over ``pt-BR`` when the source
+    offers both, and the choice stays deterministic when it offers neither
+    exactly.
+    """
+    if not language:
+        return None
+    if language in available:
+        return language
+    base = primary_subtag(language)
+    if not base:
+        return None
+    return next((t for t in available if primary_subtag(t) == base), None)
+
+
 def _resolve_transcript_language(
     requested: str,
     subtitle_details: dict,
     resource_languages: list[str],
     preferred_languages: tuple[str, ...] = (),
+    original_audio_language: str = "",
 ) -> str | None:
     """Deterministic language choice for a transcript.
 
@@ -660,8 +711,12 @@ def _resolve_transcript_language(
     what is actually *said*, so the order chases the source's own language and
     keeps alphabetical order as a genuine last resort:
 
-    1. the language analysis reports for the resource, from either kind of
-       track — when we know what was spoken, nothing else can beat it;
+    1. the language the source is known to be *spoken* in — the provider's
+       marked original voice track, or the resource's one reported language —
+       from either kind of track. When we know what was spoken, nothing else
+       can beat it. A list of several reported languages is a dub menu rather
+       than that knowledge, and is deliberately not used (D-60, see
+       :func:`_spoken_languages`);
     2. otherwise, among **manual** tracks: an operator-configured language
        (``CONTENT_LANGUAGE_PRIMARY`` and its secondaries), then English, then
        the first one. A hand-written track is almost always in the video's own
@@ -686,10 +741,12 @@ def _resolve_transcript_language(
     if requested != "auto":
         return requested
 
-    # 1. what the source is known to be in, whoever wrote the track.
-    for candidate in resource_languages:
-        if candidate and candidate in (set(manual) | set(automatic)):
-            return candidate
+    # 1. what the source is known to be spoken in, whoever wrote the track.
+    available = sorted(set(manual) | set(automatic))
+    for candidate in _spoken_languages(original_audio_language, resource_languages):
+        track = _track_for_language(candidate, available)
+        if track:
+            return track
 
     # Deduplicate while keeping the order; a language named twice must not let
     # a later, weaker signal jump the queue.
@@ -805,6 +862,7 @@ def _transcript_chain(
         subtitle_details,
         source_analysis.resource.languages or [],
         preferred_languages,
+        source_analysis.media.original_audio_language,
     )
     if language is None:
         # Unknown capability (e.g. direct URL): attempt a sensible default.
@@ -2088,6 +2146,7 @@ def _plan_translation(
         options.source_language,
         subtitle_details,
         source_analysis.resource.languages,
+        original_audio_language=source_analysis.media.original_audio_language,
     )
     available = set(subtitle_details["manual"]) | set(subtitle_details["automatic"])
     if language is None or (

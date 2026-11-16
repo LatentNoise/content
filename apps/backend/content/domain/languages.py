@@ -23,6 +23,20 @@ def contains_original(languages: list[str]) -> bool:
     return ORIGINAL in languages
 
 
+def primary_subtag(tag: str) -> str:
+    """The language part of a language tag: ``en-US``, ``EN_us``, ``en`` -> ``en``.
+
+    Providers disagree about the shape of the same fact. yt-dlp reports a dubbed
+    audio track as ``en-US`` while the subtitle tracks of that very video are
+    keyed ``en``, so anything crossing one of those lists with the other has to
+    compare on the part they agree about (D-60). Only the primary subtag is
+    kept, because that is the part every provider spells the same way — a
+    script or region subtag (``zh-Hans``, ``pt-BR``) is a genuine distinction,
+    but it is not one the two sides can be relied on to agree about.
+    """
+    return (tag or "").strip().lower().replace("_", "-").split("-")[0]
+
+
 def expand_original(languages: list[str], original: str) -> list[str]:
     """Replace the reserved token with the resource's own audio language.
 
