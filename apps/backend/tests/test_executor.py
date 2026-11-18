@@ -151,7 +151,7 @@ def test_an_unexpected_executor_error_leaves_no_disposable_bytes(
     that catches an *unexpected* error did not, so a job dying mid-run left
     its scratch behind with nothing to reclaim it: retention is off by default
     (`retention_days` is 0.0), it would not touch work/ even when on, and the
-    by-age tmp sweeper (`PathRoots.cleanup_tmp`) has no caller at all.
+    by-age tmp sweeper (`StoragePaths.cleanup_tmp`) has no caller at all.
 
     The forensic record is unaffected: logs/ and snapshots/ are outside both
     purges, so this loses nothing the normal failure path keeps.

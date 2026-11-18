@@ -211,7 +211,7 @@ class JobExecutor:
         """Drop a dead job's work/ and tmp/, as the two normal terminal paths do.
 
         Without this an unexpectedly-failed job's bytes stay forever: nothing
-        sweeps tmp by age (``PathRoots.cleanup_tmp`` has no caller), and
+        sweeps tmp by age (``StoragePaths.cleanup_tmp`` has no caller), and
         retention — which would take tmp but never work/ — is off unless
         ``CONTENT_RETENTION_DAYS`` is set. logs/ and snapshots/ sit outside both
         purges, so the record of what happened survives.
