@@ -270,60 +270,160 @@ def owner_storage_report(settings, owner_id: str) -> dict:
     }
 
 
+def _owners_on_disk(settings) -> list[str]:
+    """Every owner this installation keeps files for, read from the tree.
+
+    The flat layout holds exactly one owner by construction (ADR 0037), so it
+    answers ``local`` without looking; the per-user layout answers with the
+    directories under ``users/``. A directory no owner id could have produced
+    is skipped rather than fatal: measuring is never worth failing for.
+    """
+    from content.identity import LOCAL_OWNER
+    from content.storage.roots import PER_USER, layout_of, users_root
+
+    if layout_of(settings) != PER_USER:
+        return [LOCAL_OWNER]
+    root = users_root(settings)
+    if not root.is_dir():
+        return []
+    owners = []
+    for child in sorted(root.iterdir()):
+        if not child.is_dir():
+            continue
+        try:
+            owners.append(safe_segment(child.name, "owner_id"))
+        except ValueError:
+            continue
+    return owners
+
+
+def _outermost(paths: set[Path]) -> list[Path]:
+    """The given directories with any nested one dropped.
+
+    One family can resolve to several directories (one per owner) and, in the
+    flat layout, to one directory that *contains* another — ``tmp/`` holds the
+    shared analysis scratch. Measuring both would count those bytes twice.
+    """
+    return sorted(p for p in paths if not any(q in p.parents for q in paths))
+
+
+def _combined_stats(paths: set[Path]) -> dict:
+    """Bytes + file count over the directories a family resolves to."""
+    total, files = 0, 0
+    for path in _outermost(paths):
+        stats = _dir_stats(path)
+        total += stats["bytes"]
+        files += stats["files"]
+    return {"bytes": total, "files": files}
+
+
+def _family_path(entries: list[tuple[str, Path]], fallback: Path) -> str:
+    """One display string for where a family lives.
+
+    The directory itself when the layout puts it in one place; the same path
+    with the owner segment replaced by ``*`` when it is spread per owner —
+    which is what an operator would type to go and look. The owner level is
+    always one segment, so this stays true whatever ``roots.py`` decides.
+    """
+    unique = {path for _, path in entries}
+    if len(unique) == 1:
+        return str(unique.pop())
+    if not unique:
+        return str(fallback)
+    owner, sample = min(entries, key=lambda entry: str(entry[1]))
+    parts = list(sample.parts)
+    for index in range(len(parts) - 1, -1, -1):
+        if parts[index] == owner:
+            parts[index] = "*"
+            break
+    return str(Path(*parts))
+
+
 def storage_report(settings) -> dict:
     """Disk usage per storage family for observability (admin console).
 
     Reports the five lifecycles (docs/storage.md) plus a couple of useful
-    sub-counts (job count, cached analyses, delivery folders)."""
-    from content.storage.roots import PER_USER, layout_of, shared_roots, users_root
+    sub-counts (job count, cached analyses, delivery folders).
 
+    **Every family is measured where the layout actually puts it**, by asking
+    ``roots.py`` for each owner's roots — the same way ``owner_storage_report``
+    does. The flat shortcut this used to take (``<data>/uploads``,
+    ``<data>/tmp``, one jobs root) is only true of the single-owner tree: on a
+    per-user installation uploads, tmp and a per-owner library all live under
+    ``users/<owner>/``, so the report answered **0 bytes** for three families
+    whose bytes were on the disk, and counted them inside ``jobs`` instead
+    because it measured the whole ``users/`` tree. The one family that was
+    right is the cache, which belongs to nobody in either layout.
+    """
+    from content.storage.roots import owner_roots, shared_roots
+
+    # Kept for the two installation-wide values: the cache is outside every
+    # owner in both layouts, so it is the one family StoragePaths can answer.
     paths = StoragePaths.from_settings(settings)
     shared = shared_roots(settings)
-    delivery_root = Path(settings.delivery_dir or settings.data_dir / "delivery")
-    # Jobs live under each owner in the per-user layout, so the installation
-    # total is the users tree; in the flat layout it is the one jobs root.
-    jobs_root = (
-        users_root(settings) if layout_of(settings) == PER_USER else paths.jobs_root
+    data_dir = Path(settings.data_dir)
+    delivery_dir = Path(settings.delivery_dir or data_dir / "delivery")
+
+    owners = _owners_on_disk(settings)
+    roots = [(owner, owner_roots(settings, owner)) for owner in owners]
+
+    jobs_dirs = [(owner, root.jobs) for owner, root in roots]
+    # The shared analysis scratch is nobody's, and in the flat layout it sits
+    # *inside* the one tmp root — `_outermost` is what keeps it counted once.
+    tmp_dirs = [(owner, root.tmp) for owner, root in roots]
+    uploads_dirs = [(owner, root.uploads) for owner, root in roots]
+    delivery_dirs = [
+        (owner, root.output) for owner, root in roots if root.output is not None
+    ]
+    if not any(root.output_is_private for _, root in roots):
+        # One library for the whole installation (scope `shared`, or `flat`) —
+        # and the configured location is measured even when the scope is `off`,
+        # because bytes an earlier configuration delivered there are still on
+        # the disk and "why is my disk full" has to account for them.
+        delivery_dirs = [("", delivery_dir)]
+
+    job_count = sum(
+        sum(1 for entry in root.rglob("job_*") if entry.is_dir())
+        for root in _outermost({path for _, path in jobs_dirs})
+        if root.exists()
     )
-    jobs = _dir_stats(jobs_root)
-    job_count = (
-        sum(1 for _ in jobs_root.rglob("job_*") if _.is_dir())
-        if jobs_root.exists()
-        else 0
+    delivery_folders = sum(
+        sum(1 for entry in root.rglob("*") if entry.is_dir())
+        for root in _outermost({path for _, path in delivery_dirs})
+        if root.exists()
+    )
+    upload_count = sum(
+        sum(1 for entry in root.iterdir() if entry.is_dir())
+        for root in _outermost({path for _, path in uploads_dirs})
+        if root.exists()
     )
     analysis_cache = shared.cache_analysis
     cached_analyses = (
         sum(1 for p in analysis_cache.glob("*.json")) if analysis_cache.exists() else 0
     )
-    delivery_folders = (
-        sum(1 for p in delivery_root.rglob("*") if p.is_dir())
-        if delivery_root.exists()
-        else 0
-    )
-    uploads_root = Path(
-        getattr(settings, "uploads_dir", None) or settings.data_dir / "uploads"
-    )
-    upload_count = (
-        sum(1 for p in uploads_root.iterdir() if p.is_dir())
-        if uploads_root.exists()
-        else 0
-    )
     return {
-        "jobs": {**jobs, "count": job_count, "path": str(jobs_root)},
-        "delivery": {
-            **_dir_stats(delivery_root),
-            "folders": delivery_folders,
-            "path": str(delivery_root),
+        "jobs": {
+            **_combined_stats({path for _, path in jobs_dirs}),
+            "count": job_count,
+            "path": _family_path(jobs_dirs, data_dir / "jobs"),
         },
-        "tmp": {**_dir_stats(paths.tmp_root), "path": str(paths.tmp_root)},
+        "delivery": {
+            **_combined_stats({path for _, path in delivery_dirs}),
+            "folders": delivery_folders,
+            "path": _family_path(delivery_dirs, delivery_dir),
+        },
+        "tmp": {
+            **_combined_stats({path for _, path in tmp_dirs} | {shared.tmp_analysis}),
+            "path": _family_path(tmp_dirs, shared.tmp_analysis.parent),
+        },
         # The fifth family (ADR 0020). Reported so "why is my disk full" has an
         # answer without a shell, and so an operator can see the sweep working.
         "uploads": {
-            **_dir_stats(uploads_root),
+            **_combined_stats({path for _, path in uploads_dirs}),
             "count": upload_count,
             "ttl_hours": getattr(settings, "upload_ttl_hours", 0),
             "quota_bytes": getattr(settings, "uploads_total_bytes", 0),
-            "path": str(uploads_root),
+            "path": _family_path(uploads_dirs, data_dir / "uploads"),
         },
         "cache": {
             **_dir_stats(paths.cache_root),

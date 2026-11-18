@@ -5,6 +5,7 @@ the cache-disabled default (no inter-job reuse in V1).
 """
 
 import errno
+from dataclasses import replace
 
 import pytest
 
@@ -18,7 +19,9 @@ from content.storage.paths import (
     publish_file,
     safe_segment,
     stage_beside,
+    storage_report,
 )
+from content.storage.roots import owner_roots, shared_roots
 from tests.conftest import make_request, minimal_payload
 
 # --- path safety (INV-STORAGE-006) ---------------------------------------------
@@ -291,3 +294,124 @@ def test_no_reuse_warning_when_reuse_disabled(pipeline):
     result = pipeline(minimal_payload(execution={"reuse_existing": False}))
     codes = {w.code for w in result.warnings}
     assert "reuse_unavailable" not in codes
+
+
+# --- the installation-wide report measures where the layout puts things --------
+#
+# `storage_report` answers "why is my disk full" for the operator console. It
+# used to read the flat tree's locations whatever the layout, so on a per-user
+# installation — the only kind that has several owners, and the one the hosted
+# engine runs — uploads, tmp and a per-owner library all reported **0 bytes**
+# while their bytes sat under `users/<owner>/`, counted inside `jobs` because
+# that family measured the whole `users/` tree.
+
+
+def _occupy(settings, owner: str) -> None:
+    """One owner's five families, each with a distinguishable size."""
+    roots = owner_roots(settings, owner)
+    _write(roots.jobs / "job_1" / "artifacts" / "out.mp4", 2000)
+    _write(roots.tmp / "job_1" / "download.part", 500)
+    _write(roots.uploads / "upl_1" / "film.mp4", 1000)
+    if roots.output is not None:
+        _write(roots.output / "Film.mp4", 300)
+
+
+def _write(path, size: int) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b"x" * size)
+
+
+@pytest.fixture
+def hosted(settings):
+    """What `CONTENT_AUTH_MODE=token` forces: several owners, one tree each."""
+    return replace(settings, storage_layout="per_user", delivery_scope="per_owner")
+
+
+def test_report_finds_uploads_in_the_per_user_layout(hosted):
+    _occupy(hosted, "usr_alice")
+    _occupy(hosted, "usr_bob")
+    uploads = storage_report(hosted)["uploads"]
+    assert uploads["bytes"] == 2000  # 1000 each, not 0
+    assert uploads["count"] == 2
+
+
+def test_report_finds_tmp_and_the_library_in_the_per_user_layout(hosted):
+    _occupy(hosted, "usr_alice")
+    _occupy(hosted, "usr_bob")
+    report = storage_report(hosted)
+    assert report["tmp"]["bytes"] == 1000
+    assert report["delivery"]["bytes"] == 600
+
+
+def test_jobs_no_longer_swallows_the_other_families(hosted):
+    """The symptom that made the three zeros above hard to notice: `jobs`
+    measured `users/`, so the missing bytes were silently inside it."""
+    _occupy(hosted, "usr_alice")
+    _occupy(hosted, "usr_bob")
+    jobs = storage_report(hosted)["jobs"]
+    assert jobs["bytes"] == 4000  # the artifacts alone, not 7600
+    assert jobs["files"] == 2
+
+
+def test_a_tmp_directory_named_after_its_job_is_not_counted_as_a_job(hosted):
+    """`tmp/<job_id>/` shares the job's name, so a report that walked `users/`
+    for `job_*` counted every job twice."""
+    _occupy(hosted, "usr_alice")
+    assert storage_report(hosted)["jobs"]["count"] == 1
+
+
+def test_report_names_the_owner_wildcard_for_a_spread_family(hosted):
+    _occupy(hosted, "usr_alice")
+    _occupy(hosted, "usr_bob")
+    report = storage_report(hosted)
+    assert report["uploads"]["path"] == str(hosted.data_dir / "users" / "*" / "uploads")
+    assert report["jobs"]["path"] == str(hosted.data_dir / "users" / "*" / "jobs")
+    # The cache belongs to nobody in either layout: one real path, no wildcard.
+    assert report["cache"]["path"] == str(hosted.data_dir / "cache")
+
+
+def test_a_shared_library_is_measured_once_not_once_per_owner(settings):
+    """`delivery_scope: shared` gives every owner the *same* directory, so
+    summing per owner would multiply the library by the number of accounts."""
+    shared = replace(settings, storage_layout="per_user", delivery_scope="shared")
+    _occupy(shared, "usr_alice")
+    _occupy(shared, "usr_bob")
+    assert storage_report(shared)["delivery"]["bytes"] == 300
+
+
+def test_the_shared_analysis_scratch_is_counted_once_under_flat_tmp(settings):
+    """Flat puts the shared probe scratch *inside* the one tmp root; counting
+    the two directories separately would double it."""
+    _write(shared_roots(settings).tmp_analysis / "probe.json", 70)
+    assert storage_report(settings)["tmp"]["bytes"] == 70
+
+
+def test_a_directory_no_owner_id_could_have_produced_is_skipped(hosted):
+    """Measuring is never worth failing for (the `_dir_stats` rule)."""
+    _occupy(hosted, "usr_alice")
+    (hosted.data_dir / "users" / "..stray").mkdir(parents=True)
+    assert storage_report(hosted)["uploads"]["bytes"] == 1000
+
+
+def test_the_flat_report_is_unchanged_by_all_of_this(settings):
+    """The self-hosted majority: one owner, the historical locations."""
+    _occupy(settings, LOCAL_OWNER)
+    report = storage_report(settings)
+    assert report["jobs"]["path"] == str(settings.data_dir / "jobs")
+    assert report["uploads"]["path"] == str(settings.data_dir / "uploads")
+    assert report["tmp"]["path"] == str(settings.data_dir / "tmp")
+    assert report["jobs"]["bytes"] == 2000
+    assert report["tmp"]["bytes"] == 500
+    assert report["uploads"]["bytes"] == 1000
+
+
+def test_a_switched_off_library_still_reports_what_was_delivered_before(settings):
+    """`delivery_scope: off` gives no owner a library, but bytes an earlier
+    configuration delivered are still on the disk, and "why is my disk full"
+    has to account for them."""
+    off = replace(settings, storage_layout="per_user", delivery_scope="off")
+    _occupy(off, "usr_alice")
+    _write(off.data_dir / "delivery" / "Film.mp4", 300)
+    report = storage_report(off)
+    assert report["delivery"]["bytes"] == 300
+    assert report["delivery"]["path"] == str(off.data_dir / "delivery")

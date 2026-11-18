@@ -60,6 +60,8 @@ exactly one owner by construction. `migrate_layout` files an existing disk into
 the configured layout on every start — idempotent, interruptible, and
 conservative about what it touches.
 
+**Reading the disk back: `GET /api/v1/operator/storage`.** The installation-wide report (`storage_report`) asks `roots.py` for each owner's roots and sums them, rather than assuming the flat locations — so on a `per_user` tree `uploads`, `tmp` and a `per_owner` library are measured under `users/<owner>/`, where they are, and `jobs` is the jobs directories alone instead of the whole `users/` subtree. A family spread across owners reports its `path` with the owner segment as `*` (`<data>/users/*/uploads`), which is what an operator would type to go and look; a family that lives in one place reports that place. The analysis scratch and the cache belong to nobody in either layout, and a directory several owners share — a `shared` library — is counted once, not once per account.
+
 The **delivery library** is the user-facing copy of finished artifacts
 (ADR 0018): files land under their `display_filename` (ADR 0017), the path is
 recorded per artifact (`delivered_path`), and the job store remains the source
