@@ -188,6 +188,8 @@ def _add_launch_flags(parser: argparse.ArgumentParser) -> None:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="content", description=__doc__)
+    # Declared so `--help` lists it; the value is taken by `_peel_api_url`
+    # before argparse runs, because the client exists before the command does.
     parser.add_argument("--api-url", dest="api_url", help="Content API base URL")
     parser.add_argument("--json", action="store_true", help="raw JSON output")
     # The installed release, from the package's own metadata rather than a
@@ -323,19 +325,49 @@ def _describe(exc: ContentError) -> str:
     return str(body if body is not None else exc)
 
 
+_NO_VALUE = object()
+
+
+def _peel_api_url(argv: list[str]):
+    """Take `--api-url` out of *argv* and return its value, if it is there.
+
+    It is peeled rather than read off the parsed namespace so that it can be
+    given *after* the subcommand too, which is where a hand reaches for it.
+    `argv` is modified in place.
+
+    Returns ``None`` when the flag is absent, and :data:`_NO_VALUE` when it is
+    present without a usable one — a missing value used to raise IndexError
+    here, a traceback for a typo.
+    """
+    for i, token in enumerate(argv):
+        # Both spellings, because argparse accepts both for every other flag
+        # and `--api-url=URL` is what a script writes. It was registered on the
+        # parser and never read off the namespace, so the `=` form parsed
+        # cleanly and was discarded: the CLI then talked to CONTENT_API_URL (or
+        # localhost) while reporting nothing, which is the one failure a flag
+        # naming the engine must not have.
+        if token == "--api-url":
+            value = argv[i + 1] if i + 1 < len(argv) else ""
+            del argv[i : i + 2]
+        elif token.startswith("--api-url="):
+            value = token.split("=", 1)[1]
+            del argv[i]
+        else:
+            continue
+        # An empty value is refused rather than ignored: `--api-url="$ENGINE"`
+        # with `ENGINE` unset is the most likely way to get one, and the SDK
+        # treats an empty base URL as "not given" — so accepting it would reach
+        # a different engine than the one the command named.
+        return value.strip() or _NO_VALUE
+    return None
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
-    # Peel the global --api-url before argparse sees it, so it can be given
-    # before the subcommand. A missing value used to raise IndexError here —
-    # a traceback for a typo.
-    api_url = None
-    if "--api-url" in argv:
-        i = argv.index("--api-url")
-        if i + 1 >= len(argv):
-            print("error: --api-url needs a value", file=sys.stderr)
-            return 2
-        api_url = argv[i + 1]
-        del argv[i : i + 2]
+    api_url = _peel_api_url(argv)
+    if api_url is _NO_VALUE:
+        print("error: --api-url needs a value", file=sys.stderr)
+        return 2
     client = ContentClient(api_url)
     try:
         return run(argv, client)

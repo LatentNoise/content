@@ -192,3 +192,117 @@ def test_api_url_without_a_value_is_a_message_not_an_indexerror(capsys):
     code = cli.main(["--api-url"])
     assert code == 2
     assert "--api-url needs a value" in capsys.readouterr().err
+
+
+# --- the engine the command names is the engine it reaches ----------------------
+
+
+class _Quiet:
+    """A client that answers everything with nothing, so only the URL matters."""
+
+    def health(self):
+        return {}
+
+    def __getattr__(self, _name):
+        return lambda *_a, **_k: {}
+
+
+def _urls_reached(monkeypatch) -> list:
+    """Record the base URL every `main()` call builds its client with."""
+    reached: list = []
+
+    def build(url):
+        reached.append(url)
+        return _Quiet()
+
+    monkeypatch.setattr(cli, "ContentClient", build)
+    return reached
+
+
+def test_api_url_is_honoured_in_both_spellings(monkeypatch, capsys):
+    """`--api-url=URL` parsed cleanly and was then thrown away.
+
+    The flag was registered on the parser and read nowhere — only the
+    hand-peeled `--api-url URL` form reached the client — so the `=` spelling
+    every other flag accepts left the CLI talking to `CONTENT_API_URL`, or to
+    localhost, while reporting success. Targeting the wrong installation
+    silently is the one failure a flag that names the engine must not have.
+    """
+    reached = _urls_reached(monkeypatch)
+    assert cli.main(["--api-url=http://engine:8010", "health"]) == 0
+    assert cli.main(["--api-url", "http://engine:8010", "health"]) == 0
+    capsys.readouterr()
+    assert reached == ["http://engine:8010", "http://engine:8010"]
+
+
+def test_api_url_is_peeled_after_the_subcommand_too(monkeypatch, capsys):
+    """Wherever it sits, it is a global flag: the client exists before the
+    command does, so argparse never gets to see it."""
+    reached = _urls_reached(monkeypatch)
+    assert cli.main(["health", "--api-url=http://engine:8010"]) == 0
+    assert cli.main(["health", "--api-url", "http://engine:8010"]) == 0
+    capsys.readouterr()
+    assert reached == ["http://engine:8010", "http://engine:8010"]
+
+
+def test_an_empty_api_url_is_refused_rather_than_ignored(monkeypatch, capsys):
+    """`--api-url="$ENGINE"` with `ENGINE` unset is the likely way to get one.
+
+    The SDK reads an empty base URL as "not given" and falls back to the
+    environment, so accepting it would reach an engine the command did not
+    name. Both spellings answer the same way as a missing value.
+    """
+    reached = _urls_reached(monkeypatch)
+    for argv in (["--api-url=", "health"], ["--api-url", "  ", "health"]):
+        assert cli.main(argv) == 2
+        assert "--api-url needs a value" in capsys.readouterr().err
+    assert reached == [], "no client may be built against the wrong engine"
+
+
+def test_no_api_url_leaves_the_sdk_to_resolve_it(monkeypatch, capsys):
+    """Absent is not empty: the SDK's own CONTENT_API_URL/default resolution
+    stays the one place that decides, and the CLI passes None through."""
+    reached = _urls_reached(monkeypatch)
+    assert cli.main(["health"]) == 0
+    capsys.readouterr()
+    assert reached == [None]
+
+
+# --- the exit codes of a watched job (ADR 0021) ---------------------------------
+
+
+class _Watched:
+    """A job that is already terminal, watched through the polling fallback."""
+
+    def __init__(self, status: str):
+        self._status = status
+
+    def stream_events(self, _job_id, **_kw):
+        raise RuntimeError("no stream here")
+
+    def events(self, _job_id, **_kw):
+        return []
+
+    def get_job(self, _job_id):
+        return type("Job", (), {"status": self._status})()
+
+
+def test_a_watched_job_exits_with_its_outcome(monkeypatch, capsys):
+    """The three codes the README publishes, which nothing exercised.
+
+    `2` is deliberately distinct from `1`: a playlist that yielded five videos
+    of six is not a success, and a script that reads it as one moves on with
+    missing files.
+    """
+    for status, expected in (
+        ("succeeded", 0),
+        ("partially_succeeded", 2),
+        ("failed", 1),
+        ("cancelled", 1),
+    ):
+        monkeypatch.setattr(cli, "ContentClient", lambda _url, s=status: _Watched(s))
+        assert cli.main(["watch", "job_x"]) == expected, status
+        out = capsys.readouterr()
+        assert f"→ {status}" in out.out
+        # A refused stream is said out loud rather than silently degraded.
+        assert "event stream unavailable" in out.err
