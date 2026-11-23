@@ -266,6 +266,48 @@ def test_deleting_an_unknown_job_is_a_404(client):
     assert client.delete("/api/v1/jobs/job_nope").status_code == 404
 
 
+def _delivered_copy(settings, store, job_id: str, owner: str = LOCAL_OWNER):
+    """A job whose artifact also sits in the library, as delivery leaves it."""
+    delivered = delivery_root_for(settings, owner) / "My Film.mp4"
+    delivered.parent.mkdir(parents=True, exist_ok=True)
+    delivered.write_bytes(b"y" * 2048)
+    artifact_id = store.list_artifacts(owner, job_id)[0]["id"]
+    store.set_artifact_delivered(owner, artifact_id, "My Film.mp4")
+    return delivered
+
+
+def test_the_api_keeps_the_library_copy_by_default(client, settings, store):
+    """`?delivered` is the only way a client can reach `include_delivered`, and
+    the wiring between the two was not exercised by anything — so the flag
+    could have been inverted, or dropped, with every other test still green."""
+    job_id, _ = _finished_job(store, settings, owner=LOCAL_OWNER)
+    delivered = _delivered_copy(settings, store, job_id)
+
+    assert client.delete(f"/api/v1/jobs/{job_id}").status_code == 204
+    assert delivered.exists()
+
+
+def test_the_api_removes_the_library_copy_when_asked(client, settings, store):
+    job_id, _ = _finished_job(store, settings, owner=LOCAL_OWNER)
+    delivered = _delivered_copy(settings, store, job_id)
+
+    response = client.delete(f"/api/v1/jobs/{job_id}", params={"delivered": True})
+    assert response.status_code == 204
+    assert not delivered.exists()
+
+
+def test_delivered_false_is_read_as_false_and_not_as_present(client, settings, store):
+    """A client that states the default explicitly — `?delivered=false`, which
+    is what an SDK sending the flag every time produces — must not be read as
+    "the flag is there, so remove it"."""
+    job_id, _ = _finished_job(store, settings, owner=LOCAL_OWNER)
+    delivered = _delivered_copy(settings, store, job_id)
+
+    response = client.delete(f"/api/v1/jobs/{job_id}", params={"delivered": False})
+    assert response.status_code == 204
+    assert delivered.exists()
+
+
 def test_a_running_job_must_be_cancelled_first(client, settings, store):
     job_id = store.create_job(LOCAL_OWNER, {"sources": []}, "fail_fast", None)
     _reach_running(store, job_id)

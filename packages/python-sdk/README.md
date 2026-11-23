@@ -108,3 +108,19 @@ the same for bytes that were never a file, which is what a browser upload is.
 The async client mirrors all of it, with one deliberate difference: it buffers
 rather than streams, because handing httpx a blocking file handle inside an
 async send only relocates the stall. For a large upload, prefer the sync client.
+
+## Freeing space
+
+A storage quota with no way to delete is a dead end, so `delete_job` is the
+other half of `usage()`:
+
+```python
+client.usage()  # where you stand against this engine's limits
+client.delete_job("job_123")  # the job, its artifacts and the bytes they hold
+```
+
+The copies a job delivered to the library are **kept** unless you ask for them
+too (`delete_job(job_id, delivered=True)`): that library is organised by a
+human, and a request about a job should not quietly take a film out of somebody's
+collection. A job still running raises `Conflict` — cancel it first, which is a
+different verb with a different meaning.

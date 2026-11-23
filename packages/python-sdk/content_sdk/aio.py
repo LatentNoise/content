@@ -309,6 +309,16 @@ class AsyncContentClient:
         data = await self._t.post(f"/jobs/{job_id}/retry")
         return AsyncJob(JobData.model_validate(data), self)
 
+    async def delete_job(self, job_id: str, *, delivered: bool = False) -> None:
+        """Delete one of your jobs and free what it holds.
+
+        `delivered=True` also removes the copies it put in the library (off by
+        default). `Conflict` (409) while the job still runs — cancel it first.
+        """
+        await self._t.request(
+            "DELETE", f"/jobs/{job_id}", params={"delivered": delivered}
+        )
+
     async def events(self, job_id: str, after_sequence: int = 0) -> list[Event]:
         rows = await self._t.get(
             f"/jobs/{job_id}/events", params={"after_sequence": after_sequence}

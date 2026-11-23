@@ -281,6 +281,21 @@ class ContentClient:
     def retry(self, job_id: str) -> Job:
         return Job(JobData.model_validate(self._t.post(f"/jobs/{job_id}/retry")), self)
 
+    def delete_job(self, job_id: str, *, delivered: bool = False) -> None:
+        """Delete one of your jobs and free what it holds.
+
+        The other half of a storage quota: without a way to delete, someone who
+        reaches the ceiling can never do anything again.
+
+        `delivered=True` also removes the copies the job put in the library —
+        off by default, because that library is a human's, and a request about a
+        job should not quietly take a film out of somebody's collection.
+
+        Raises `Conflict` (409) while the job is still running: cancel it first,
+        which is a different verb with a different meaning.
+        """
+        self._t.request("DELETE", f"/jobs/{job_id}", params={"delivered": delivered})
+
     def events(self, job_id: str, after_sequence: int = 0) -> list[Event]:
         rows = self._t.get(
             f"/jobs/{job_id}/events", params={"after_sequence": after_sequence}
