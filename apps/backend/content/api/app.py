@@ -367,16 +367,22 @@ def create_app(
     executor = JobExecutor(store, settings, providers)
 
     def _housekeeping() -> dict:
-        """One chore per sweep tick: expired uploads, then old jobs.
+        """One chore per sweep tick: expired uploads, old jobs, dead credentials.
 
         Retention runs here rather than on its own timer because it is the same
         kind of work — unattended, failure-tolerant, and irrelevant to latency.
         A second loop would be a second thing to reason about for no gain.
+
+        Each chore reports only when it did something, so a quiet tick stays
+        one short line in the log rather than three zeroes.
         """
         swept = sweep_expired_uploads(store, settings)
         reclaimed = retention.sweep_all(store=store, settings=settings)
         if reclaimed.get("jobs"):
             swept = {**swept, "retention": reclaimed}
+        credentials_swept = retention.sweep_expired_credentials(store=store)
+        if credentials_swept.get("rows"):
+            swept = {**swept, "credentials": credentials_swept}
         return swept
 
     # Housekeeping runs beside the queue: uploads nobody referenced within
@@ -420,6 +426,12 @@ def create_app(
     app.state.store = store
     app.state.settings = settings
     app.state.executor = executor
+    # The sweep tick, reachable so a test can run the chore the queue runs
+    # rather than re-listing its parts. Nothing could reach it before, which is
+    # how two of its chores came to be written, tested and never called: the
+    # test that claimed housekeeping cleared spent sign-in links was calling
+    # the store directly, so it passed with the wiring absent.
+    app.state.housekeeping = _housekeeping
 
     @app.exception_handler(RequestValidationError)
     def _one_validation_shape(_request: Request, exc: RequestValidationError):

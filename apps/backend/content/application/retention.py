@@ -37,6 +37,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from content.identity import MAGIC_LINK_RATE_WINDOW_HOURS
 from content.storage.layout import JobStorage, delivery_root_for
 from content.storage.paths import tree_bytes
 
@@ -179,3 +180,40 @@ def sweep_all(*, store, settings, now: datetime | None = None) -> dict:
             "retention expired the content of %s job(s), freeing %s bytes", jobs, freed
         )
     return {"enabled": True, "jobs": jobs, "freed_bytes": freed}
+
+
+def sweep_expired_credentials(*, store, now: datetime | None = None) -> dict:
+    """Drop the credential rows that have stopped meaning anything.
+
+    Rows, not bytes — which is why this is the one chore in this module that
+    frees no disk. It is here anyway because it is the same *kind* of work as
+    `sweep_all`: unattended, failure-tolerant, irrelevant to latency, and
+    driven by a TTL that is already documented. The store has had
+    `delete_expired_auth_tokens` and `delete_expired_sessions` since sign-in
+    shipped, both tested, and **nothing ever called either** — so on an
+    installation that asks people to sign in, every session that ever expired
+    and every link that was ever sent is still on disk. A documented TTL that
+    deletes nothing is a bug, not a missing feature: `sweep_expired_uploads`
+    says so in those words about the same defect one table over.
+
+    An auth-token row is not inert while it waits, either. It **names an email
+    address**, so an engine that never sweeps keeps a list of every address
+    that ever asked for a link, long after the link stopped working.
+
+    The one subtlety is the rate limit, and it is handled in the store: an
+    unopened link is the only evidence of a flood, so it outlives its expiry
+    by :data:`MAGIC_LINK_RATE_WINDOW_HOURS`. See
+    `Store.delete_expired_auth_tokens`.
+    """
+    moment = now or datetime.now(timezone.utc)
+    stamp = moment.isoformat()
+    unused_cutoff = (moment - timedelta(hours=MAGIC_LINK_RATE_WINDOW_HOURS)).isoformat()
+    tokens = store.delete_expired_auth_tokens(stamp, unused_cutoff)
+    sessions = store.delete_expired_sessions(stamp)
+    if tokens or sessions:
+        log.info(
+            "housekeeping removed %s spent sign-in link(s) and %s dead session(s)",
+            tokens,
+            sessions,
+        )
+    return {"tokens": tokens, "sessions": sessions, "rows": tokens + sessions}

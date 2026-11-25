@@ -28,6 +28,20 @@ from enum import Enum
 
 LOCAL_OWNER = "local"
 
+# The window the magic-link rate limit counts over. It lives here because two
+# queries in two different modules must agree on it: the limit counts the
+# unopened links created inside it (`Store.count_recent_auth_tokens`, read by
+# the sign-in route), and housekeeping must *not* delete the rows it counts
+# (`Store.delete_expired_auth_tokens`).
+#
+# The two were written a release apart and the overlap is easy to miss: a link
+# expires in 15 minutes by default and is counted for an hour, so for 45 of
+# every 60 minutes the evidence of a flood is expired — and therefore
+# deletable — while it is still the only thing standing between a stranger's
+# inbox and the next request. Named once, so a sweep cannot quietly reset the
+# limit it is supposed to leave alone.
+MAGIC_LINK_RATE_WINDOW_HOURS = 1.0
+
 
 class AuthMode(str, Enum):
     """How ``current_user`` establishes identity.

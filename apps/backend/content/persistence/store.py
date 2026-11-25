@@ -1260,13 +1260,30 @@ class Store:
             ).fetchone()
         return int(row["n"])
 
-    def delete_expired_auth_tokens(self, now: str) -> int:
+    def delete_expired_auth_tokens(self, now: str, unused_cutoff: str) -> int:
         """Housekeeping: a spent or stale token is a hash of nothing useful,
-        but it still occupies a row and names an address."""
+        but it still occupies a row and names an address.
+
+        `unused_cutoff` is what keeps this from undoing the rate limit, and it
+        is the whole reason the method takes two timestamps instead of one.
+
+        A link that was **opened** is spent the moment it is claimed and goes
+        immediately: `count_recent_auth_tokens` counts only unopened ones, so
+        nothing is watching it any more.
+
+        A link **nobody opened** is the evidence of a flood — somebody asking
+        for links to an address that is not theirs — and the limit counts it
+        for :data:`MAGIC_LINK_RATE_WINDOW_HOURS`, which outlasts its
+        fifteen-minute expiry fourfold. So an unopened row survives until it is
+        **both** expired and older than that window. Deleting it on expiry
+        alone, which is what the single-argument form did, erased the count on
+        every tick and would have left the limit reading zero mid-flood.
+        """
         with self._conn() as conn:
             cursor = conn.execute(
-                "DELETE FROM auth_tokens WHERE expires_at <= ? OR used_at != ''",
-                (now,),
+                "DELETE FROM auth_tokens WHERE used_at != '' "
+                "OR (expires_at <= ? AND created_at <= ?)",
+                (now, unused_cutoff),
             )
         return cursor.rowcount
 

@@ -16,7 +16,6 @@ from fastapi.testclient import TestClient
 from content.api.app import create_app
 from content.api.auth_routes import redirect_is_allowed
 from content.identity import LOCAL_OWNER, credentials
-from content.persistence.store import utcnow
 
 SURFACE = "https://studio.example.test"
 
@@ -68,6 +67,12 @@ def client(hosted, store, providers, mailer):
 
 def _token_of(link: str) -> str:
     return parse_qs(urlparse(link).query)["token"][0]
+
+
+def _ago(**delta) -> str:
+    """The same shape as `auth_routes._iso_ago`, which is what the rate limit
+    passes — so these tests ask the question the engine asks."""
+    return (datetime.now(timezone.utc) - timedelta(**delta)).isoformat()
 
 
 def _sign_in(client, mailer, email: str = "someone@example.com") -> None:
@@ -419,12 +424,111 @@ def test_a_session_for_a_deleted_account_still_resolves_to_its_owner(
     assert client.get("/api/v1/auth/me").json()["account"] is False
 
 
+def _age_token(store, token_hash: str, *, created: str, expires: str) -> None:
+    """Backdate one token row — the only way to reach the ages that matter
+    without waiting a quarter of an hour for the TTL."""
+    with store._conn() as conn:
+        conn.execute(
+            "UPDATE auth_tokens SET created_at = ?, expires_at = ? "
+            "WHERE token_hash = ?",
+            (created, expires, token_hash),
+        )
+
+
 def test_housekeeping_clears_spent_tokens_and_dead_sessions(client, mailer, store):
+    """The chore the queue actually runs, not the store methods it calls.
+
+    This test is reached through `app.state.housekeeping` deliberately. Its
+    previous form called `store.delete_expired_auth_tokens` and
+    `store.delete_expired_sessions` by hand, so it passed while the sweep tick
+    called neither — the wiring was missing for as long as the test existed.
+    """
     _sign_in(client, mailer)
-    assert store.delete_expired_auth_tokens(utcnow()) == 1
     owner = client.get("/api/v1/auth/me").json()["owner_id"]
     store.revoke_all_sessions(owner)
-    assert store.delete_expired_sessions(utcnow()) == 1
+
+    report = client.app.state.housekeeping()["credentials"]
+
+    assert report == {"tokens": 1, "sessions": 1, "rows": 2}
+    # And it is idempotent: a second tick finds nothing left to remove.
+    assert "credentials" not in client.app.state.housekeeping()
+
+
+def test_an_unopened_link_outlives_its_expiry_while_the_rate_limit_counts_it(
+    client, mailer, store
+):
+    """The trap in wiring the sweep: it must not erase the rate limit.
+
+    A link expires in fifteen minutes and is counted for an hour, so for most
+    of that hour the evidence of a flood is expired — and a sweep keyed on
+    expiry alone would delete it. Housekeeping runs every fifteen minutes, so
+    somebody pointing this endpoint at a stranger's inbox would have found the
+    count back at zero on every tick, whatever `magic_link_max_per_hour` said.
+    """
+    email = "victim@example.com"
+    limit = 3  # the `hosted` fixture's magic_link_max_per_hour
+    for _ in range(limit):
+        assert (
+            client.post("/api/v1/auth/link", json={"email": email}).status_code == 202
+        )
+    hashes = [
+        credentials.fingerprint(_token_of(m["variables"]["link"])) for m in mailer.sent
+    ]
+    # Every one of them unopened and expired: asked for twenty minutes ago,
+    # dead for five. All still inside the hour the limit counts over.
+    for token_hash in hashes:
+        _age_token(store, token_hash, created=_ago(minutes=20), expires=_ago(minutes=5))
+
+    assert "credentials" not in client.app.state.housekeeping()
+    assert store.count_recent_auth_tokens(email, _ago(hours=1)) == limit
+
+    # So the limit still fires — no mail is issued for the next request.
+    sent_before = len(mailer.sent)
+    assert client.post("/api/v1/auth/link", json={"email": email}).status_code == 202
+    assert len(mailer.sent) == sent_before
+
+
+def test_an_unopened_link_is_swept_once_it_leaves_the_rate_limit_window(
+    client, mailer, store
+):
+    """The other half: the row is kept for the limit's sake, not forever.
+
+    Past the window nothing counts it any more, and it is a hash of a dead
+    secret beside an email address — exactly what housekeeping exists to drop.
+    """
+    assert (
+        client.post(
+            "/api/v1/auth/link", json={"email": "someone@example.com"}
+        ).status_code
+        == 202
+    )
+    token_hash = credentials.fingerprint(_token_of(mailer.last_link))
+    _age_token(store, token_hash, created=_ago(hours=2), expires=_ago(hours=2))
+
+    assert client.app.state.housekeeping()["credentials"]["tokens"] == 1
+
+
+def test_housekeeping_keeps_a_live_session_and_an_unexpired_link(client, mailer, store):
+    """A positive control: the sweep removes the dead, never the living.
+
+    Signing in is settled first — that link is genuinely spent, and a tick
+    carries it off — so what remains is only living credentials.
+    """
+    _sign_in(client, mailer, "other@example.com")
+    assert client.app.state.housekeeping()["credentials"]["tokens"] == 1
+
+    # Now a link nobody has opened yet, beside a session in active use.
+    assert (
+        client.post(
+            "/api/v1/auth/link", json={"email": "someone@example.com"}
+        ).status_code
+        == 202
+    )
+    assert "credentials" not in client.app.state.housekeeping()
+
+    # The signed-in caller is still signed in, and the pending link still counts.
+    assert client.get("/api/v1/jobs").status_code == 200
+    assert store.count_recent_auth_tokens("someone@example.com", _ago(hours=1)) == 1
 
 
 # --- where a sign-in lands --------------------------------------------------------
