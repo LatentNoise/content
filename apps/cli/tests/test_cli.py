@@ -306,3 +306,165 @@ def test_a_watched_job_exits_with_its_outcome(monkeypatch, capsys):
         assert f"→ {status}" in out.out
         # A refused stream is said out loud rather than silently degraded.
         assert "event stream unavailable" in out.err
+
+
+# --- the read verbs: the other half nothing executed ----------------------------
+#
+# `jobs`, `job`, `artifacts`, `download`, `cancel` and `retry` had no test at
+# all, which is the same gap the `--api-url` defect sat in. A published client
+# whose listing commands nothing runs is a client whose output nobody checks.
+
+
+class _Library:
+    """An engine with one finished job, one artifact, and both of its names.
+
+    The artifact carries a technical `filename` and a different, user-facing
+    `display_filename` — the pair ADR 0017 creates and `docs/contract.md`
+    describes. Keeping them distinct here is the point: a fake that gives them
+    the same value cannot tell which one a client printed.
+    """
+
+    JOB = {
+        "job_id": "job_x",
+        "status": "partially_succeeded",
+        "steps": [
+            {"step_id": "fetch", "status": "succeeded"},
+            {"step_id": "mux", "status": "failed", "error": "container refused"},
+        ],
+    }
+    ARTIFACT = {
+        "id": "art_x",
+        "job_id": "job_x",
+        "filename": "audio_main_2f9c1a.m4a",
+        "display_filename": "Fake conference.m4a",
+        "size_bytes": 2048,
+    }
+
+    def __init__(self):
+        self.calls: list[tuple[str, tuple]] = []
+
+    def handler(self, request: httpx.Request) -> httpx.Response:
+        path, method = request.url.path, request.method
+        self.calls.append((f"{method} {path}", ()))
+        if path == "/api/v1/jobs" and method == "GET":
+            return httpx.Response(200, json=[self.JOB])
+        if path == "/api/v1/jobs/job_x" and method == "GET":
+            return httpx.Response(200, json=self.JOB)
+        if path == "/api/v1/jobs/job_x/artifacts":
+            return httpx.Response(200, json=[self.ARTIFACT])
+        if path == "/api/v1/jobs/job_x/cancel":
+            return httpx.Response(
+                200, json={"job_id": "job_x", "cancel_requested": True}
+            )
+        if path == "/api/v1/jobs/job_x/retry":
+            return httpx.Response(
+                201, json={"job_id": "job_y", "status": "queued", "retry_of": "job_x"}
+            )
+        if path == "/api/v1/artifacts/art_x/content":
+            return httpx.Response(
+                200, content=b"\x00binary", headers={"content-type": "audio/mp4"}
+            )
+        return httpx.Response(404, json={"detail": f"unhandled {method} {path}"})
+
+
+def _library() -> tuple[_Library, ContentClient]:
+    lib = _Library()
+    http = httpx.Client(transport=httpx.MockTransport(lib.handler))
+    return lib, ContentClient("http://testserver", http_client=http)
+
+
+def test_artifacts_are_listed_under_the_name_a_person_recognises(capsys):
+    """The listing showed the technical name, alone among every client.
+
+    `filename` is an id-based implementation detail kept stable for addressing
+    (`docs/contract.md`); `display_filename` is the name the engine computed
+    from the analyzed resource, and it is what a human asked for. The MCP
+    server, both Streamlit surfaces, the browser extension, the SDK's own
+    `download_artifact` and the engine's `Content-Disposition` header all read
+    `display_filename or filename` — the CLI read `filename` and printed
+    `audio_main_2f9c1a.m4a` at somebody looking for their conference recording.
+    """
+    _lib, client = _library()
+    assert run(["artifacts", "job_x"], client) == 0
+    out = capsys.readouterr().out
+    assert "Fake conference.m4a" in out
+    assert "audio_main_2f9c1a.m4a" not in out, (
+        "the technical name is not a display name"
+    )
+    assert "art_x" in out, "the id stays, because download takes it"
+    assert "2048B" in out
+
+
+def test_an_artifact_from_before_the_naming_engine_falls_back(capsys):
+    """`display_filename` is `""` on artifacts registered before ADR 0017, and
+    the contract says those download under their technical name. Falling back
+    is the documented behaviour, not a defensive reflex."""
+    lib, client = _library()
+    lib.ARTIFACT = {**lib.ARTIFACT, "display_filename": ""}
+    assert run(["artifacts", "job_x"], client) == 0
+    assert "audio_main_2f9c1a.m4a" in capsys.readouterr().out
+
+
+def test_artifacts_as_json_carries_both_names_untouched(capsys):
+    """`--json` is the contract's own view: it must not substitute anything."""
+    _lib, client = _library()
+    assert run(["--json", "artifacts", "job_x"], client) == 0
+    rows = json.loads(capsys.readouterr().out)
+    assert rows[0]["filename"] == "audio_main_2f9c1a.m4a"
+    assert rows[0]["display_filename"] == "Fake conference.m4a"
+
+
+def test_a_job_detail_prints_its_steps_and_the_reason_one_failed(capsys):
+    """The human view of `content job` — where a partially succeeded job is
+    explained. The engine records the reason on the step, not on the job, so a
+    listing that drops step errors loses the only explanation there is."""
+    _lib, client = _library()
+    assert run(["job", "job_x"], client) == 0
+    out = capsys.readouterr().out
+    assert "partially_succeeded" in out
+    assert "job_x" in out
+    assert "fetch" in out and "mux" in out
+    assert "container refused" in out
+
+
+def test_jobs_lists_each_job_with_its_status(capsys):
+    _lib, client = _library()
+    assert run(["jobs"], client) == 0
+    out = capsys.readouterr().out
+    assert "job_x" in out and "partially_succeeded" in out
+
+
+def test_jobs_as_json_is_the_contract_shape(capsys):
+    _lib, client = _library()
+    assert run(["--json", "jobs"], client) == 0
+    rows = json.loads(capsys.readouterr().out)
+    assert rows[0]["job_id"] == "job_x"
+
+
+def test_download_writes_the_bytes_to_the_named_file(capsys, tmp_path):
+    """`-o` takes a path, and the count it reports is the count it wrote."""
+    _lib, client = _library()
+    target = tmp_path / "out.m4a"
+    assert run(["download", "art_x", "-o", str(target)], client) == 0
+    assert target.read_bytes() == b"\x00binary"
+    assert f"wrote 7 bytes to {target}" in capsys.readouterr().out
+
+
+def test_download_to_stdout_stays_binary(capsys):
+    """The default is `-`, and a media file piped through it must arrive
+    byte-for-byte: writing through the text layer would mangle it."""
+    _lib, client = _library()
+    assert run(["download", "art_x"], client) == 0
+    assert capsys.readouterr().out == "\x00binary"
+
+
+def test_cancel_and_retry_reach_their_routes(capsys):
+    """Retry is a *new* job (never a resurrection), so the id it prints is not
+    the id it was given — the one thing a caller must not misread."""
+    lib, client = _library()
+    assert run(["cancel", "job_x"], client) == 0
+    assert run(["retry", "job_x"], client) == 0
+    out = capsys.readouterr().out
+    assert "POST /api/v1/jobs/job_x/cancel" in [c[0] for c in lib.calls]
+    assert "POST /api/v1/jobs/job_x/retry" in [c[0] for c in lib.calls]
+    assert "job_y" in out

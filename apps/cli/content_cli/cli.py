@@ -291,8 +291,13 @@ def run(argv: list[str], client: ContentClient) -> int:
         if args.json:
             _out([a.model_dump() for a in arts], True)
         else:
+            # The name the engine computed (ADR 0017), not the id-based one it
+            # stores under: `filename` is an addressing detail, and every other
+            # client — MCP, both surfaces, the extension, the SDK's own
+            # `download_artifact`, the engine's own download header — shows
+            # `display_filename or filename`. `--json` above keeps both.
             for a in arts:
-                print(f"{a.id}  {a.filename}  {a.size_bytes}B")
+                print(f"{a.id}  {a.display_filename or a.filename}  {a.size_bytes}B")
     elif cmd == "download":
         return _cmd_download(client, args)
     elif cmd == "cancel":
